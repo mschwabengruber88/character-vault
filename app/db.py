@@ -78,6 +78,32 @@ def get_character(character_id: int) -> dict | None:
         return character
 
 
+def delete_character(character_id: int) -> bool:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM assets WHERE character_id = ?", (character_id,))
+        cur = conn.execute("DELETE FROM characters WHERE id = ?", (character_id,))
+        return cur.rowcount > 0
+
+
+def list_assets(kind: str | None = None) -> list[dict]:
+    with get_conn() as conn:
+        if kind is None:
+            rows = conn.execute(
+                """SELECT assets.*, characters.name AS character_name
+                   FROM assets JOIN characters ON characters.id = assets.character_id
+                   ORDER BY assets.id"""
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT assets.*, characters.name AS character_name
+                   FROM assets JOIN characters ON characters.id = assets.character_id
+                   WHERE assets.kind = ?
+                   ORDER BY assets.id""",
+                (kind,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
 def add_asset(
     character_id: int,
     kind: str,

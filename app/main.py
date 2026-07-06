@@ -1,17 +1,29 @@
-from fastapi import Depends, FastAPI, Header, HTTPException
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import db
 from app.config import CORS_ORIGINS, GENERATE_API_KEY
 from app.pipelines import generate_character_portrait, generate_character_voice_line
+
+logger = logging.getLogger("character_vault")
 
 
 def require_api_key(x_api_key: str = Header(default="")):
     if not GENERATE_API_KEY or x_api_key != GENERATE_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
-app = FastAPI(title="Character Vault")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    yield
+
+
+app = FastAPI(title="Character Vault", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,22 +33,17 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def on_startup():
-    db.init_db()
-
-
 class CharacterCreate(BaseModel):
-    name: str
-    description: str = ""
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=1000)
 
 
 class PortraitRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(min_length=1, max_length=500)
 
 
 class VoiceLineRequest(BaseModel):
-    text: str
+    text: str = Field(min_length=1, max_length=500)
 
 
 @app.get("/health")
@@ -62,6 +69,17 @@ def get_character(character_id: int):
     return character
 
 
+@app.delete("/characters/{character_id}", status_code=204)
+def delete_character(character_id: int):
+    if not db.delete_character(character_id):
+        raise HTTPException(status_code=404, detail="Character not found")
+
+
+@app.get("/assets")
+def list_assets(kind: str | None = Query(default=None, pattern="^(image|voice)$")):
+    return db.list_assets(kind)
+
+
 @app.post("/characters/{character_id}/generate/image", dependencies=[Depends(require_api_key)])
 def generate_image(character_id: int, body: PortraitRequest):
     character = db.get_character(character_id)
@@ -69,8 +87,9 @@ def generate_image(character_id: int, body: PortraitRequest):
         raise HTTPException(status_code=404, detail="Character not found")
     try:
         result = generate_character_portrait(character_id, body.prompt)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Image generation failed: {exc}")
+    except Exception:
+        logger.exception("Image generation failed for character %s", character_id)
+        raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
     return db.add_asset(
         character_id=character_id,
         kind="image",
@@ -89,8 +108,9 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
         raise HTTPException(status_code=404, detail="Character not found")
     try:
         result = generate_character_voice_line(character_id, body.text)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Voice generation failed: {exc}")
+    except Exception:
+        logger.exception("Voice generation failed for character %s", character_id)
+        raise HTTPException(status_code=502, detail="Voice generation failed. Please try again.")
     return db.add_asset(
         character_id=character_id,
         kind="voice",
