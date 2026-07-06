@@ -14,7 +14,7 @@ the vault is traceable back to the exact provider, model, and prompt that made i
 | Purpose          | Provider   | Model         |
 |-------------------|-----------|---------------|
 | Storage           | Backblaze B2 (via `genblaze-s3`) | S3-compatible object storage |
-| Character portrait | OpenAI (`genblaze-openai`) | `dall-e-3` |
+| Character portrait | OpenAI (`genblaze-openai`) | `gpt-image-1` |
 | Character voice line | ElevenLabs (`genblaze-elevenlabs`) | `eleven_v3` |
 
 ## B2 + Genblaze usage
