@@ -26,6 +26,16 @@ pipeline run returns a verified provenance `Manifest` alongside the asset URL;
 both the URL and the manifest's `sha256`/verification result are persisted in
 the local metadata store (SQLite) next to the character record.
 
+## Web UI
+
+The app ships with a built-in web UI served at `/` — create characters,
+generate portraits and voice lines, and browse the vault with per-asset
+provenance (SHA-256 + manifest-verified badge). Generation requires the
+shared API key, entered once via the "API key" button (stored in the
+browser's localStorage). Assets live in a private B2 bucket; the API
+returns short-lived presigned URLs so the UI can display them without
+making the bucket public.
+
 ## Setup
 
 ```bash

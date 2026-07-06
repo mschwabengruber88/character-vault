@@ -1,13 +1,17 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import db
 from app.config import CORS_ORIGINS, GENERATE_API_KEY
 from app.pipelines import generate_character_portrait, generate_character_voice_line
+from app.storage import with_signed_url
 
 logger = logging.getLogger("character_vault")
 
@@ -31,6 +35,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 class CharacterCreate(BaseModel):
@@ -66,6 +78,7 @@ def get_character(character_id: int):
     character = db.get_character(character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
+    character["assets"] = [with_signed_url(a) for a in character["assets"]]
     return character
 
 
@@ -77,7 +90,7 @@ def delete_character(character_id: int):
 
 @app.get("/assets")
 def list_assets(kind: str | None = Query(default=None, pattern="^(image|voice)$")):
-    return db.list_assets(kind)
+    return [with_signed_url(a) for a in db.list_assets(kind)]
 
 
 @app.post("/characters/{character_id}/generate/image", dependencies=[Depends(require_api_key)])
@@ -90,7 +103,7 @@ def generate_image(character_id: int, body: PortraitRequest):
     except Exception:
         logger.exception("Image generation failed for character %s", character_id)
         raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
-    return db.add_asset(
+    return with_signed_url(db.add_asset(
         character_id=character_id,
         kind="image",
         url=result["url"],
@@ -98,7 +111,7 @@ def generate_image(character_id: int, body: PortraitRequest):
         mime_type=result["mime_type"],
         prompt=body.prompt,
         manifest_verified=result["manifest_verified"],
-    )
+    ))
 
 
 @app.post("/characters/{character_id}/generate/voice", dependencies=[Depends(require_api_key)])
@@ -111,7 +124,7 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
     except Exception:
         logger.exception("Voice generation failed for character %s", character_id)
         raise HTTPException(status_code=502, detail="Voice generation failed. Please try again.")
-    return db.add_asset(
+    return with_signed_url(db.add_asset(
         character_id=character_id,
         kind="voice",
         url=result["url"],
@@ -119,4 +132,4 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
         mime_type=result["mime_type"],
         prompt=body.text,
         manifest_verified=result["manifest_verified"],
-    )
+    ))

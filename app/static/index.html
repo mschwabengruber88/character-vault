@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Character Vault</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128274;</text></svg>">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="wordmark">
+      <span class="wordmark-glyph">▣</span>
+      <h1>Character Vault</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="provenance-note">Every asset stored on Backblaze B2 with a verified provenance manifest</span>
+      <button id="key-button" class="key-button" title="Set generation API key">API key</button>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <h2>Characters</h2>
+        <button id="new-character-button" class="button primary small">New</button>
+      </div>
+
+      <form id="create-form" class="create-form" hidden>
+        <input id="create-name" type="text" placeholder="Name" maxlength="100" required>
+        <textarea id="create-description" placeholder="Short description (optional)" maxlength="1000" rows="2"></textarea>
+        <div class="form-row">
+          <button type="submit" class="button primary small">Create</button>
+          <button type="button" id="create-cancel" class="button small">Cancel</button>
+        </div>
+      </form>
+
+      <ul id="character-list" class="character-list"></ul>
+      <p id="character-empty" class="empty-note" hidden>No characters yet. Create your first one.</p>
+    </aside>
+
+    <section class="detail" id="detail">
+      <div id="detail-placeholder" class="placeholder">
+        <p class="placeholder-glyph">▣</p>
+        <p>Select a character — or create one — to start generating portraits and voice lines.</p>
+      </div>
+
+      <div id="detail-content" hidden>
+        <div class="detail-head">
+          <div>
+            <h2 id="detail-name"></h2>
+            <p id="detail-description" class="detail-description"></p>
+          </div>
+          <button id="delete-button" class="button danger small">Delete</button>
+        </div>
+
+        <div class="generate-panel">
+          <div class="generate-card">
+            <h3>Portrait</h3>
+            <p class="generate-hint">OpenAI gpt-image-1 → Backblaze B2</p>
+            <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="500" rows="2"></textarea>
+            <button id="generate-image-button" class="button primary">Generate portrait</button>
+          </div>
+          <div class="generate-card">
+            <h3>Voice line</h3>
+            <p class="generate-hint">ElevenLabs eleven_v3 (OpenAI TTS fallback) → Backblaze B2</p>
+            <textarea id="voice-text" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
+            <button id="generate-voice-button" class="button primary">Generate voice line</button>
+          </div>
+        </div>
+
+        <div id="generation-status" class="generation-status" hidden></div>
+
+        <h3 class="assets-heading">Assets</h3>
+        <div id="asset-grid" class="asset-grid"></div>
+        <p id="asset-empty" class="empty-note" hidden>No assets yet — generate a portrait or voice line above.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <dialog id="key-dialog" class="key-dialog">
+    <form method="dialog">
+      <h3>Generation API key</h3>
+      <p>Portrait and voice generation call paid provider APIs, so they require the shared key. It is stored only in this browser.</p>
+      <input id="key-input" type="password" placeholder="X-API-Key value" autocomplete="off">
+      <div class="form-row">
+        <button value="save" class="button primary small">Save</button>
+        <button value="cancel" class="button small">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
