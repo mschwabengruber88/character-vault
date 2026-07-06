@@ -2,7 +2,7 @@ import tempfile
 
 from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline, StepStatus
 from genblaze_elevenlabs import ElevenLabsTTSProvider
-from genblaze_openai import DalleProvider
+from genblaze_openai import DalleProvider, OpenAITTSProvider
 from genblaze_s3 import S3StorageBackend
 
 from app.config import B2_BUCKET_NAME, B2_REGION, ELEVENLABS_VOICE_ID
@@ -50,16 +50,31 @@ def generate_character_portrait(character_id: int, prompt: str) -> dict:
 
 
 def generate_character_voice_line(character_id: int, text: str) -> dict:
-    if not ELEVENLABS_VOICE_ID:
-        raise ValueError("ELEVENLABS_VOICE_ID is not set")
+    if ELEVENLABS_VOICE_ID:
+        try:
+            result = (
+                Pipeline(f"character-{character_id}-voice-line")
+                .step(
+                    ElevenLabsTTSProvider(output_dir=tempfile.gettempdir()),
+                    model="eleven_v3",
+                    prompt=text,
+                    modality=Modality.AUDIO,
+                    voice_id=ELEVENLABS_VOICE_ID,
+                )
+                .run(sink=get_storage_sink(), timeout=120)
+            )
+            return _asset_result(result)
+        except Exception:
+            pass  # fall through to OpenAI TTS below
+
     result = (
-        Pipeline(f"character-{character_id}-voice-line")
+        Pipeline(f"character-{character_id}-voice-line-openai")
         .step(
-            ElevenLabsTTSProvider(output_dir=tempfile.gettempdir()),
-            model="eleven_v3",
+            OpenAITTSProvider(),
+            model="gpt-4o-mini-tts",
             prompt=text,
             modality=Modality.AUDIO,
-            voice_id=ELEVENLABS_VOICE_ID,
+            voice="onyx",
         )
         .run(sink=get_storage_sink(), timeout=120)
     )
