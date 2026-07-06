@@ -48,8 +48,12 @@ curl http://localhost:8000/health
 - `POST /characters` `{name, description}` — create a character
 - `GET /characters` — list characters
 - `GET /characters/{id}` — character detail incl. generated assets
-- `POST /characters/{id}/generate/image` `{prompt}` — generate + store a portrait
-- `POST /characters/{id}/generate/voice` `{text}` — generate + store a voice line
+- `POST /characters/{id}/generate/image` `{prompt}` — generate + store a portrait (requires `X-API-Key` header, see below)
+- `POST /characters/{id}/generate/voice` `{text}` — generate + store a voice line (requires `X-API-Key` header, see below)
+
+Since generation calls paid third-party APIs, both endpoints require a shared
+secret: set `GENERATE_API_KEY` in the environment, then pass it as the
+`X-API-Key` request header. Requests without a matching key get `401`.
 
 ## Deploy (Railway)
 

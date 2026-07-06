@@ -1,10 +1,15 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import db
-from app.config import CORS_ORIGINS
+from app.config import CORS_ORIGINS, GENERATE_API_KEY
 from app.pipelines import generate_character_portrait, generate_character_voice_line
+
+
+def require_api_key(x_api_key: str = Header(default="")):
+    if not GENERATE_API_KEY or x_api_key != GENERATE_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 app = FastAPI(title="Character Vault")
 
@@ -57,7 +62,7 @@ def get_character(character_id: int):
     return character
 
 
-@app.post("/characters/{character_id}/generate/image")
+@app.post("/characters/{character_id}/generate/image", dependencies=[Depends(require_api_key)])
 def generate_image(character_id: int, body: PortraitRequest):
     character = db.get_character(character_id)
     if character is None:
@@ -77,7 +82,7 @@ def generate_image(character_id: int, body: PortraitRequest):
     )
 
 
-@app.post("/characters/{character_id}/generate/voice")
+@app.post("/characters/{character_id}/generate/voice", dependencies=[Depends(require_api_key)])
 def generate_voice(character_id: int, body: VoiceLineRequest):
     character = db.get_character(character_id)
     if character is None:

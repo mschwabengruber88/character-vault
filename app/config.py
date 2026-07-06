@@ -20,3 +20,5 @@ CORS_ORIGINS = [
 ]
 
 DB_PATH = os.environ.get("DB_PATH", "character_vault.db")
+
+GENERATE_API_KEY = os.environ.get("GENERATE_API_KEY", "")
