@@ -30,7 +30,14 @@
 
       <form id="create-form" class="create-form" hidden>
         <input id="create-name" type="text" placeholder="Name" maxlength="100" required>
-        <textarea id="create-description" placeholder="Short description (optional)" maxlength="1000" rows="2"></textarea>
+        <textarea id="create-description" placeholder="Appearance / short description" maxlength="1000" rows="2"></textarea>
+        <textarea id="create-personality" placeholder="Personality &amp; traits — e.g. 'shy, doesn't speak directly to women' or 'strong, confident, charismatic'" maxlength="1000" rows="2"></textarea>
+        <input id="create-purpose" type="text" placeholder="Purpose / use-case (optional)" maxlength="500">
+        <input id="create-seed" type="number" min="0" placeholder="Seed (optional, for reproducibility)">
+        <label class="upload-field">
+          <span>Reference photo (optional — create from your own image)</span>
+          <input id="create-image" type="file" accept="image/png,image/jpeg,image/webp">
+        </label>
         <div class="form-row">
           <button type="submit" class="button primary small">Create</button>
           <button type="button" id="create-cancel" class="button small">Cancel</button>
@@ -54,10 +61,30 @@
           <div>
             <h2 id="detail-name"></h2>
             <p id="detail-description" class="detail-description"></p>
+            <dl id="detail-profile" class="detail-profile"></dl>
             <p id="detail-spend" class="detail-spend" hidden></p>
           </div>
-          <button id="delete-button" class="button danger small">Delete</button>
+          <div class="detail-actions">
+            <label class="button small upload-button" title="Upload a reference photo">
+              Upload photo
+              <input id="upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+            </label>
+            <button id="edit-profile-button" class="button small">Edit profile</button>
+            <button id="delete-button" class="button danger small">Delete</button>
+          </div>
         </div>
+
+        <form id="edit-form" class="edit-form" hidden>
+          <input id="edit-name" type="text" placeholder="Name" maxlength="100">
+          <textarea id="edit-description" placeholder="Appearance / short description" maxlength="1000" rows="2"></textarea>
+          <textarea id="edit-personality" placeholder="Personality &amp; traits" maxlength="1000" rows="2"></textarea>
+          <input id="edit-purpose" type="text" placeholder="Purpose / use-case" maxlength="500">
+          <input id="edit-seed" type="number" min="0" placeholder="Seed">
+          <div class="form-row">
+            <button type="submit" class="button primary small">Save</button>
+            <button type="button" id="edit-cancel" class="button small">Cancel</button>
+          </div>
+        </form>
 
         <div class="generate-panel">
           <div class="generate-card">

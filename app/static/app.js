@@ -245,6 +245,23 @@ function renderDetail(character) {
 
   el("detail-name").textContent = character.name;
   el("detail-description").textContent = character.description || "";
+  el("edit-form").hidden = true;
+
+  const profile = el("detail-profile");
+  profile.innerHTML = "";
+  const rows = [
+    ["Personality", character.personality],
+    ["Purpose", character.purpose],
+    ["Seed", character.seed != null ? String(character.seed) : ""],
+  ];
+  for (const [label, value] of rows) {
+    if (!value) continue;
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    profile.append(dt, dd);
+  }
 
   const imageCount = character.assets.filter((a) => a.kind === "image").length;
   el("identity-row").hidden = imageCount === 0;
@@ -393,18 +410,89 @@ function setupCreateForm() {
   el("create-cancel").addEventListener("click", () => { form.hidden = true; });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const seedVal = el("create-seed").value.trim();
     try {
       const created = await api("/characters", {
         method: "POST",
         body: JSON.stringify({
           name: el("create-name").value.trim(),
           description: el("create-description").value.trim(),
+          personality: el("create-personality").value.trim() || null,
+          purpose: el("create-purpose").value.trim() || null,
+          seed: seedVal ? Number(seedVal) : null,
         }),
       });
+      const fileInput = el("create-image");
+      if (fileInput.files.length) {
+        await uploadReferenceImage(created.id, fileInput.files[0]);
+      }
       form.reset();
       form.hidden = true;
       await loadCharacters(created.id);
       toast(`Created “${created.name}”`);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+}
+
+async function uploadReferenceImage(characterId, file) {
+  if (!apiKey()) { openKeyDialog(); throw new Error("API key required to upload."); }
+  const data = new FormData();
+  data.append("file", file);
+  const resp = await fetch(`/characters/${characterId}/reference`, {
+    method: "POST", headers: { "X-API-Key": apiKey() }, body: data,
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : "Upload failed");
+  }
+  return resp.json();
+}
+
+function setupProfileEditing() {
+  el("edit-profile-button").addEventListener("click", () => {
+    const c = state.currentCharacter;
+    if (!c) return;
+    el("edit-name").value = c.name || "";
+    el("edit-description").value = c.description || "";
+    el("edit-personality").value = c.personality || "";
+    el("edit-purpose").value = c.purpose || "";
+    el("edit-seed").value = c.seed ?? "";
+    el("edit-form").hidden = false;
+  });
+  el("edit-cancel").addEventListener("click", () => { el("edit-form").hidden = true; });
+  el("edit-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const seedVal = el("edit-seed").value.trim();
+    try {
+      await api(`/characters/${state.selectedId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: el("edit-name").value.trim(),
+          description: el("edit-description").value.trim(),
+          personality: el("edit-personality").value.trim(),
+          purpose: el("edit-purpose").value.trim(),
+          seed: seedVal ? Number(seedVal) : null,
+        }),
+      });
+      el("edit-form").hidden = true;
+      await selectCharacter(state.selectedId);
+      await loadCharacters();
+      toast("Profile saved.");
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+  el("upload-image").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      await uploadReferenceImage(state.selectedId, file);
+      event.target.value = "";
+      await selectCharacter(state.selectedId);
+      await loadCharacters();
+      toast("Reference photo uploaded.");
     } catch (err) {
       toast(err.message, true);
     }
@@ -680,6 +768,7 @@ function setupLightbox() {
 
 function init() {
   setupCreateForm();
+  setupProfileEditing();
   setupDelete();
   setupKeyDialog();
   setupLightbox();

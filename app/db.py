@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS characters (
     description TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     voice_provider TEXT,
-    voice_id TEXT
+    voice_id TEXT,
+    personality TEXT,
+    purpose TEXT,
+    seed INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS assets (
@@ -55,6 +58,9 @@ MIGRATIONS = (
     "ALTER TABLE assets ADD COLUMN model TEXT",
     "ALTER TABLE characters ADD COLUMN voice_provider TEXT",
     "ALTER TABLE characters ADD COLUMN voice_id TEXT",
+    "ALTER TABLE characters ADD COLUMN personality TEXT",
+    "ALTER TABLE characters ADD COLUMN purpose TEXT",
+    "ALTER TABLE characters ADD COLUMN seed INTEGER",
 )
 
 
@@ -84,13 +90,36 @@ def init_db():
                 pass  # column already exists
 
 
-def create_character(name: str, description: str) -> dict:
+def create_character(
+    name: str,
+    description: str,
+    personality: str | None = None,
+    purpose: str | None = None,
+    seed: int | None = None,
+) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO characters (name, description, created_at) VALUES (?, ?, ?)",
-            (name, description, now()),
+            """INSERT INTO characters (name, description, created_at, personality, purpose, seed)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (name, description, now(), personality, purpose, seed),
         )
         character_id = cur.lastrowid
+    return get_character(character_id)
+
+
+def update_character(character_id: int, fields: dict) -> dict | None:
+    allowed = {"name", "description", "personality", "purpose", "seed"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return get_character(character_id)
+    with get_conn() as conn:
+        assignments = ", ".join(f"{k} = ?" for k in updates)
+        cur = conn.execute(
+            f"UPDATE characters SET {assignments} WHERE id = ?",
+            (*updates.values(), character_id),
+        )
+        if cur.rowcount == 0:
+            return None
     return get_character(character_id)
 
 

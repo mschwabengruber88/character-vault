@@ -4,6 +4,8 @@ Genblaze stores plain object URLs; the bucket is private, so browsers
 get a 401 on them. This module re-signs those URLs on the way out.
 """
 
+import hashlib
+import uuid
 from functools import lru_cache
 from urllib.parse import urlparse
 
@@ -54,3 +56,14 @@ def with_signed_url(asset: dict) -> dict:
     except Exception:
         asset["signed_url"] = None
     return asset
+
+
+def upload_reference_image(character_id: int, data: bytes, content_type: str) -> tuple[str, str]:
+    """Store a user-uploaded reference image in B2. Returns (plain_url, sha256)."""
+    ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(content_type, "png")
+    key = f"uploads/characters/{character_id}/{uuid.uuid4().hex}.{ext}"
+    _s3_client().put_object(
+        Bucket=B2_BUCKET_NAME, Key=key, Body=data, ContentType=content_type
+    )
+    url = f"https://s3.{B2_REGION}.backblazeb2.com/{B2_BUCKET_NAME}/{key}"
+    return url, hashlib.sha256(data).hexdigest()

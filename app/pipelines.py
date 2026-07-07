@@ -153,6 +153,8 @@ def generate_character_portrait(
     references: list[dict] | None = None,
     quality: str = "draft",
     model: str = DEFAULT_IMAGE_MODEL,
+    personality: str | None = None,
+    seed: int | None = None,
 ) -> dict:
     from app.disclosure import apply_image_disclosure
 
@@ -170,10 +172,16 @@ def generate_character_portrait(
             step_kwargs["external_inputs"] = inputs
             final_prompt = IDENTITY_INSTRUCTION + prompt
 
+    # The character's personality shapes expression, posture and mood.
+    if personality:
+        final_prompt = f"{final_prompt}. Character personality to convey through expression and body language: {personality}"
+
     if meta["provider"] == "gmi":
         from genblaze_gmicloud import GMICloudImageProvider
 
         provider = GMICloudImageProvider()
+        if seed is not None:
+            step_kwargs["seed"] = seed
     else:
         provider = DalleProvider()
         step_kwargs["size"] = "1024x1024"

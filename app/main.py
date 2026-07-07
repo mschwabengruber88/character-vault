@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +21,7 @@ from app.pipelines import (
     generate_character_voice_line,
     generate_scene,
 )
-from app.storage import presign_asset_url, with_signed_url
+from app.storage import presign_asset_url, upload_reference_image, with_signed_url
 
 logger = logging.getLogger("character_vault")
 
@@ -82,6 +82,17 @@ def index():
 class CharacterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
+    personality: str | None = Field(default=None, max_length=1000)
+    purpose: str | None = Field(default=None, max_length=500)
+    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+
+
+class CharacterUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    personality: str | None = Field(default=None, max_length=1000)
+    purpose: str | None = Field(default=None, max_length=500)
+    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
 
 
 class PortraitRequest(BaseModel):
@@ -157,7 +168,18 @@ def voices():
 
 @app.post("/characters")
 def create_character(body: CharacterCreate):
-    return db.create_character(body.name, body.description)
+    return db.create_character(
+        body.name, body.description, body.personality, body.purpose, body.seed
+    )
+
+
+@app.patch("/characters/{character_id}")
+def update_character(character_id: int, body: CharacterUpdate):
+    character = db.update_character(character_id, body.model_dump(exclude_unset=True))
+    if character is None:
+        raise HTTPException(status_code=404, detail="Character not found")
+    character["assets"] = [with_signed_url(a) for a in character["assets"]]
+    return character
 
 
 @app.get("/characters")
@@ -176,6 +198,34 @@ def get_character(character_id: int):
         raise HTTPException(status_code=404, detail="Character not found")
     character["assets"] = [with_signed_url(a) for a in character["assets"]]
     return character
+
+
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+ALLOWED_UPLOAD_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
+@app.post("/characters/{character_id}/reference", dependencies=[Depends(require_api_key)])
+async def upload_reference(character_id: int, file: UploadFile = File(...)):
+    character = db.get_character(character_id)
+    if character is None:
+        raise HTTPException(status_code=404, detail="Character not found")
+    if file.content_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a PNG, JPEG or WebP image.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Image too large (max 12 MB).")
+    url, sha256 = upload_reference_image(character_id, data, file.content_type)
+    return with_signed_url(db.add_asset(
+        character_id=character_id,
+        kind="image",
+        url=url,
+        sha256=sha256,
+        mime_type=file.content_type,
+        prompt="Uploaded reference photo",
+        manifest_verified=False,
+        original_url=url,
+        model="upload",
+    ))
 
 
 @app.put("/characters/{character_id}/voice")
@@ -223,7 +273,8 @@ def generate_image(character_id: int, body: PortraitRequest):
     with generation_slot(character_id, "image"):
         try:
             result = generate_character_portrait(
-                character_id, body.prompt, body.disclosure, references, body.quality, body.model
+                character_id, body.prompt, body.disclosure, references, body.quality,
+                body.model, character.get("personality"), character.get("seed"),
             )
         except HTTPException:
             raise

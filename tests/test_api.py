@@ -95,7 +95,7 @@ def test_generate_image_success(client):
     assert data["url"] == "https://example.com/a.visible.png"
     assert data["disclosure"] == "visible"
     assert data["original_url"] == "https://example.com/a.png"
-    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft", "gpt-image-1")
+    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft", "gpt-image-1", None, None)
 
     character = client.get(f"/characters/{char_id}").json()
     assert len(character["assets"]) == 1
@@ -120,7 +120,7 @@ def test_generate_image_disclosure_defaults_to_invisible(client):
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
-    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft", "gpt-image-1")
+    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft", "gpt-image-1", None, None)
 
 
 def test_generate_image_rejects_unknown_disclosure(client):
@@ -370,6 +370,46 @@ def test_assign_and_use_character_voice(client):
     assert resp.json()["model"] == "openai:nova"
     # the character's assigned voice is passed through to the pipeline
     mock_voice.assert_called_once_with(char_id, "hello there", "openai", "nova")
+
+
+def test_create_character_with_profile_fields(client):
+    resp = client.post("/characters", json={
+        "name": "Aria", "description": "hero",
+        "personality": "strong, confident, charismatic",
+        "purpose": "marketing campaigns", "seed": 4242,
+    })
+    assert resp.status_code == 200
+    c = resp.json()
+    assert c["personality"] == "strong, confident, charismatic"
+    assert c["purpose"] == "marketing campaigns"
+    assert c["seed"] == 4242
+
+
+def test_update_character_profile(client):
+    cid = client.post("/characters", json={"name": "Edit Me"}).json()["id"]
+    resp = client.patch(f"/characters/{cid}", json={"personality": "shy and reserved", "seed": 7})
+    assert resp.status_code == 200
+    assert resp.json()["personality"] == "shy and reserved"
+    assert resp.json()["seed"] == 7
+    # unchanged fields stay
+    assert resp.json()["name"] == "Edit Me"
+
+
+def test_personality_and_seed_flow_into_generation(client):
+    cid = client.post("/characters", json={
+        "name": "Vivid", "personality": "playful and bold", "seed": 99,
+    }).json()["id"]
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/v.png", "original_url": "https://example.com/v.png",
+            "sha256": "s", "mime_type": "image/png", "manifest_verified": True,
+            "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011, "model": "gpt-image-1",
+        }
+        client.post(f"/characters/{cid}/generate/image",
+                    json={"prompt": "a portrait"}, headers={"X-API-Key": API_KEY})
+    # personality + seed are passed through (positions 7 and 8)
+    assert mock_gen.call_args.args[6] == "playful and bold"
+    assert mock_gen.call_args.args[7] == 99
 
 
 def test_scene_requires_two_characters_with_portraits(client):
