@@ -48,6 +48,22 @@ const TRANSLATIONS = {
     audioDesc: "Turn a script into spoken audio — narration, voiceover, dialogue. Pick a catalog voice, or bring your own ElevenLabs voice by its Voice ID.",
     videoTitle: "Video",
     videoDesc: "Bring a character to life — animate one of their portraits into a short clip (identity held via image-to-video), or generate video straight from a prompt.",
+    wsGateTitle: "Your workspace",
+    wsGateIntro: "Character Vault is multi-tenant: your characters, images, audio and videos live in your own private workspace. Create one, or open an existing workspace with its token.",
+    wsNameLabel: "New workspace name",
+    wsCreate: "Create workspace",
+    wsOr: "or",
+    wsTokenLabel: "Open with a workspace token",
+    wsOpen: "Open workspace",
+    wsInfoTitle: "Workspace",
+    wsTokenNote: "Share this token to give someone access to this exact workspace, or use it to open it on another device. Keep it private otherwise.",
+    wsCopy: "Copy",
+    wsSwitch: "Switch workspace",
+    wsClose: "Close",
+    wsNeedName: "Give your workspace a name.",
+    wsBadToken: "That workspace token was not found.",
+    wsError: "Could not create the workspace. Try again.",
+    wsCopied: "Workspace token copied.",
   },
   de: {
     provenanceNote: "Jedes Asset auf Backblaze B2 gespeichert – mit verifiziertem Herkunftsnachweis",
@@ -88,6 +104,22 @@ const TRANSLATIONS = {
     audioDesc: "Mach aus einem Skript gesprochenes Audio – Erzählung, Voiceover, Dialog. Wähle eine Katalog-Stimme oder bring deine eigene ElevenLabs-Stimme per Voice-ID mit.",
     videoTitle: "Video",
     videoDesc: "Erwecke einen Charakter zum Leben – animiere eines seiner Porträts zu einem kurzen Clip (Identität via Image-to-Video gehalten) oder generiere Video direkt aus einem Prompt.",
+    wsGateTitle: "Dein Workspace",
+    wsGateIntro: "Character Vault ist mandantenfähig: Deine Charaktere, Bilder, Audios und Videos liegen in deinem eigenen privaten Workspace. Erstelle einen – oder öffne einen bestehenden mit seinem Token.",
+    wsNameLabel: "Name des neuen Workspace",
+    wsCreate: "Workspace erstellen",
+    wsOr: "oder",
+    wsTokenLabel: "Mit Workspace-Token öffnen",
+    wsOpen: "Workspace öffnen",
+    wsInfoTitle: "Workspace",
+    wsTokenNote: "Teile diesen Token, um jemandem Zugriff auf genau diesen Workspace zu geben, oder öffne ihn damit auf einem anderen Gerät. Ansonsten bitte privat halten.",
+    wsCopy: "Kopieren",
+    wsSwitch: "Workspace wechseln",
+    wsClose: "Schließen",
+    wsNeedName: "Gib deinem Workspace einen Namen.",
+    wsBadToken: "Dieser Workspace-Token wurde nicht gefunden.",
+    wsError: "Workspace konnte nicht erstellt werden. Bitte erneut versuchen.",
+    wsCopied: "Workspace-Token kopiert.",
   },
 };
 
@@ -135,7 +167,7 @@ async function api(path, options = {}) {
   const { headers, ...rest } = options;
   const resp = await fetch(path, {
     ...rest,
-    headers: { "Content-Type": "application/json", ...(headers || {}) },
+    headers: { "Content-Type": "application/json", "X-Workspace-Id": workspaceId(), ...(headers || {}) },
   });
   if (resp.status === 204) return null;
   const body = await resp.json().catch(() => ({}));
@@ -150,6 +182,112 @@ async function api(path, options = {}) {
 
 function apiKey() {
   return localStorage.getItem(KEY_STORAGE) || "";
+}
+
+/* ---------- Workspaces (multitenancy) ---------- */
+
+const WORKSPACE_STORAGE = "cv_workspace_id";
+
+function workspaceId() {
+  return localStorage.getItem(WORKSPACE_STORAGE) || "";
+}
+
+async function validateWorkspace(id) {
+  try {
+    const resp = await fetch("/workspaces/current", { headers: { "X-Workspace-Id": id } });
+    return resp.ok ? await resp.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+let workspaceResolve = null;
+
+function ensureWorkspace() {
+  return (async () => {
+    const id = workspaceId();
+    if (id) {
+      const ws = await validateWorkspace(id);
+      if (ws) { setWorkspaceChip(ws); return; }
+      localStorage.removeItem(WORKSPACE_STORAGE);
+    }
+    await new Promise((resolve) => {
+      workspaceResolve = resolve;
+      el("ws-gate-error").hidden = true;
+      el("ws-name").value = "";
+      el("ws-token").value = "";
+      el("workspace-gate").showModal();
+    });
+  })();
+}
+
+function gateError(key) {
+  const node = el("ws-gate-error");
+  node.textContent = t(key);
+  node.hidden = false;
+}
+
+function adoptWorkspace(ws) {
+  localStorage.setItem(WORKSPACE_STORAGE, ws.id);
+  setWorkspaceChip(ws);
+  if (el("workspace-gate").open) el("workspace-gate").close();
+  if (workspaceResolve) { workspaceResolve(); workspaceResolve = null; }
+}
+
+function setWorkspaceChip(ws) {
+  const chip = el("workspace-chip");
+  chip.textContent = `◈ ${ws.name}`;
+  chip.dataset.token = ws.id;
+  chip.dataset.name = ws.name;
+  chip.hidden = false;
+}
+
+function setupWorkspace() {
+  el("ws-create").addEventListener("click", async () => {
+    const name = el("ws-name").value.trim();
+    if (!name) { gateError("wsNeedName"); return; }
+    try {
+      const resp = await fetch("/workspaces", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!resp.ok) throw new Error();
+      adoptWorkspace(await resp.json());
+    } catch { gateError("wsError"); }
+  });
+
+  el("ws-open").addEventListener("click", async () => {
+    const token = el("ws-token").value.trim();
+    if (!token) { gateError("wsBadToken"); return; }
+    const ws = await validateWorkspace(token);
+    if (!ws) { gateError("wsBadToken"); return; }
+    adoptWorkspace(ws);
+  });
+
+  // The gate is mandatory — don't let Esc dismiss it without a workspace.
+  el("workspace-gate").addEventListener("cancel", (event) => {
+    if (!workspaceId()) event.preventDefault();
+  });
+
+  el("workspace-chip").addEventListener("click", () => {
+    el("ws-info-name").textContent = el("workspace-chip").dataset.name || "";
+    el("ws-info-token").value = el("workspace-chip").dataset.token || "";
+    el("workspace-info").showModal();
+  });
+
+  el("ws-copy").addEventListener("click", () => {
+    navigator.clipboard?.writeText(el("ws-info-token").value).then(() => toast(t("wsCopied")));
+  });
+
+  el("ws-switch").addEventListener("click", async () => {
+    el("workspace-info").close();
+    localStorage.removeItem(WORKSPACE_STORAGE);
+    el("workspace-chip").hidden = true;
+    state.selectedId = null;
+    await ensureWorkspace();
+    renderDetail(null);
+    await loadCharacters();
+  });
 }
 
 /* ---------- Image models ---------- */
@@ -569,7 +707,7 @@ async function uploadReferenceImage(characterId, file) {
   const data = new FormData();
   data.append("file", file);
   const resp = await fetch(`/characters/${characterId}/reference`, {
-    method: "POST", headers: { "X-API-Key": apiKey() }, body: data,
+    method: "POST", headers: { "X-API-Key": apiKey(), "X-Workspace-Id": workspaceId() }, body: data,
   });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
@@ -1828,6 +1966,7 @@ function init() {
   setupStudio();
   setupAudio();
   setupVideo();
+  setupWorkspace();
   applyI18n();
   el("lang-toggle").addEventListener("click", () => setLang(lang === "de" ? "en" : "de"));
   el("landing-create").addEventListener("click", () => {
@@ -1836,11 +1975,11 @@ function init() {
     el("create-name").focus();
     form.scrollIntoView({ block: "center", behavior: "smooth" });
   });
-  Promise.all([
-    loadImageModels(),
-    loadVoices(),
-  ]).catch((err) => toast(err.message, true))
-    .finally(() => loadCharacters().catch((err) => toast(err.message, true)));
+  ensureWorkspace().then(() =>
+    Promise.all([loadImageModels(), loadVoices()])
+      .catch((err) => toast(err.message, true))
+      .finally(() => loadCharacters().catch((err) => toast(err.message, true)))
+  );
 }
 
 init();

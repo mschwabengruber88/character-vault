@@ -1,12 +1,25 @@
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from app.config import DB_PATH
 
+# Existing (pre-multitenancy) rows are backfilled to this workspace so nothing
+# is orphaned. A user can reach that legacy data by entering "default" as their
+# workspace token.
+DEFAULT_WORKSPACE = "default"
+
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS workspaces (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS characters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -36,6 +49,7 @@ CREATE TABLE IF NOT EXISTS assets (
 
 CREATE TABLE IF NOT EXISTS scenes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     prompt TEXT NOT NULL,
     url TEXT NOT NULL,
     original_url TEXT,
@@ -51,6 +65,7 @@ CREATE TABLE IF NOT EXISTS scenes (
 
 CREATE TABLE IF NOT EXISTS studio_images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     kind TEXT NOT NULL,
     prompt TEXT NOT NULL,
     url TEXT NOT NULL,
@@ -66,6 +81,7 @@ CREATE TABLE IF NOT EXISTS studio_images (
 
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     character_id INTEGER,
     character_name TEXT,
     kind TEXT NOT NULL,
@@ -86,6 +102,7 @@ CREATE TABLE IF NOT EXISTS videos (
 
 CREATE TABLE IF NOT EXISTS audio_clips (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     text TEXT NOT NULL,
     voice TEXT,
     url TEXT NOT NULL,
@@ -99,6 +116,7 @@ CREATE TABLE IF NOT EXISTS audio_clips (
 
 CREATE TABLE IF NOT EXISTS batch_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     character_id INTEGER NOT NULL REFERENCES characters(id),
     mode TEXT NOT NULL,
     prompt TEXT NOT NULL,
@@ -127,6 +145,13 @@ MIGRATIONS = (
     "ALTER TABLE characters ADD COLUMN purpose TEXT",
     "ALTER TABLE characters ADD COLUMN seed INTEGER",
     "ALTER TABLE assets ADD COLUMN batch_id INTEGER",
+    # Multitenancy: scope every top-level table to a workspace.
+    "ALTER TABLE characters ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
+    "ALTER TABLE scenes ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
+    "ALTER TABLE studio_images ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
+    "ALTER TABLE videos ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
+    "ALTER TABLE audio_clips ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
+    "ALTER TABLE batch_jobs ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
 )
 
 
@@ -154,9 +179,39 @@ def init_db():
                 conn.execute(migration)
             except sqlite3.OperationalError:
                 pass  # column already exists
+        # Ensure the legacy workspace exists so backfilled rows resolve.
+        conn.execute(
+            "INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
+            (DEFAULT_WORKSPACE, "Default", now()),
+        )
 
+
+# ── Workspaces (tenants) ─────────────────────────────────────────────────
+
+def create_workspace(name: str) -> dict:
+    workspace_id = uuid.uuid4().hex
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
+            (workspace_id, name, now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM workspaces WHERE id = ?", (workspace_id,)
+        ).fetchone())
+
+
+def get_workspace(workspace_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM workspaces WHERE id = ?", (workspace_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+# ── Characters ───────────────────────────────────────────────────────────
 
 def create_character(
+    workspace_id: str,
     name: str,
     description: str,
     personality: str | None = None,
@@ -165,57 +220,60 @@ def create_character(
 ) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO characters (name, description, created_at, personality, purpose, seed)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (name, description, now(), personality, purpose, seed),
+            """INSERT INTO characters
+               (workspace_id, name, description, created_at, personality, purpose, seed)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, name, description, now(), personality, purpose, seed),
         )
         character_id = cur.lastrowid
-    return get_character(character_id)
+    return get_character(workspace_id, character_id)
 
 
-def update_character(character_id: int, fields: dict) -> dict | None:
+def update_character(workspace_id: str, character_id: int, fields: dict) -> dict | None:
     allowed = {"name", "description", "personality", "purpose", "seed"}
     updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not updates:
-        return get_character(character_id)
+        return get_character(workspace_id, character_id)
     with get_conn() as conn:
         assignments = ", ".join(f"{k} = ?" for k in updates)
         cur = conn.execute(
-            f"UPDATE characters SET {assignments} WHERE id = ?",
-            (*updates.values(), character_id),
+            f"UPDATE characters SET {assignments} WHERE id = ? AND workspace_id = ?",
+            (*updates.values(), character_id, workspace_id),
         )
         if cur.rowcount == 0:
             return None
-    return get_character(character_id)
+    return get_character(workspace_id, character_id)
 
 
-def set_character_voice(character_id: int, voice_provider: str, voice_id: str) -> dict | None:
+def set_character_voice(workspace_id: str, character_id: int, voice_provider: str, voice_id: str) -> dict | None:
     with get_conn() as conn:
         cur = conn.execute(
-            "UPDATE characters SET voice_provider = ?, voice_id = ? WHERE id = ?",
-            (voice_provider, voice_id, character_id),
+            "UPDATE characters SET voice_provider = ?, voice_id = ? WHERE id = ? AND workspace_id = ?",
+            (voice_provider, voice_id, character_id, workspace_id),
         )
         if cur.rowcount == 0:
             return None
-    return get_character(character_id)
+    return get_character(workspace_id, character_id)
 
 
-def list_characters() -> list[dict]:
+def list_characters(workspace_id: str) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT characters.*,
                       (SELECT url FROM assets
                        WHERE assets.character_id = characters.id AND assets.kind = 'image'
                        ORDER BY assets.id DESC LIMIT 1) AS thumbnail_source_url
-               FROM characters ORDER BY characters.id"""
+               FROM characters WHERE workspace_id = ? ORDER BY characters.id""",
+            (workspace_id,),
         ).fetchall()
         return [dict(row) for row in rows]
 
 
-def get_character(character_id: int) -> dict | None:
+def get_character(workspace_id: str, character_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM characters WHERE id = ?", (character_id,)
+            "SELECT * FROM characters WHERE id = ? AND workspace_id = ?",
+            (character_id, workspace_id),
         ).fetchone()
         if row is None:
             return None
@@ -227,34 +285,41 @@ def get_character(character_id: int) -> dict | None:
         return character
 
 
-def delete_character(character_id: int) -> bool:
+def delete_character(workspace_id: str, character_id: int) -> bool:
     with get_conn() as conn:
+        owned = conn.execute(
+            "SELECT 1 FROM characters WHERE id = ? AND workspace_id = ?",
+            (character_id, workspace_id),
+        ).fetchone()
+        if owned is None:
+            return False
         conn.execute("DELETE FROM assets WHERE character_id = ?", (character_id,))
         cur = conn.execute("DELETE FROM characters WHERE id = ?", (character_id,))
         return cur.rowcount > 0
 
 
-def delete_asset(asset_id: int) -> bool:
+# ── Assets (inherit workspace via their character) ───────────────────────
+
+def delete_asset(workspace_id: str, asset_id: int) -> bool:
     with get_conn() as conn:
-        cur = conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+        cur = conn.execute(
+            """DELETE FROM assets WHERE id = ? AND character_id IN
+               (SELECT id FROM characters WHERE workspace_id = ?)""",
+            (asset_id, workspace_id),
+        )
         return cur.rowcount > 0
 
 
-def list_assets(kind: str | None = None) -> list[dict]:
+def list_assets(workspace_id: str, kind: str | None = None) -> list[dict]:
     with get_conn() as conn:
+        base = """SELECT assets.*, characters.name AS character_name
+                  FROM assets JOIN characters ON characters.id = assets.character_id
+                  WHERE characters.workspace_id = ?"""
         if kind is None:
-            rows = conn.execute(
-                """SELECT assets.*, characters.name AS character_name
-                   FROM assets JOIN characters ON characters.id = assets.character_id
-                   ORDER BY assets.id"""
-            ).fetchall()
+            rows = conn.execute(base + " ORDER BY assets.id", (workspace_id,)).fetchall()
         else:
             rows = conn.execute(
-                """SELECT assets.*, characters.name AS character_name
-                   FROM assets JOIN characters ON characters.id = assets.character_id
-                   WHERE assets.kind = ?
-                   ORDER BY assets.id""",
-                (kind,),
+                base + " AND assets.kind = ? ORDER BY assets.id", (workspace_id, kind)
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -281,20 +346,9 @@ def add_asset(
                 created_at, disclosure, original_url, quality, cost_usd, model, batch_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                character_id,
-                kind,
-                url,
-                sha256,
-                mime_type,
-                prompt,
-                int(manifest_verified),
-                now(),
-                disclosure,
-                original_url,
-                quality,
-                cost_usd,
-                model,
-                batch_id,
+                character_id, kind, url, sha256, mime_type, prompt,
+                int(manifest_verified), now(), disclosure, original_url,
+                quality, cost_usd, model, batch_id,
             ),
         )
         row = conn.execute(
@@ -303,7 +357,10 @@ def add_asset(
         return dict(row)
 
 
+# ── Scenes ───────────────────────────────────────────────────────────────
+
 def create_scene(
+    workspace_id: str,
     prompt: str,
     url: str,
     original_url: str | None,
@@ -320,11 +377,11 @@ def create_scene(
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO scenes
-               (prompt, url, original_url, sha256, model, disclosure, cost_usd,
+               (workspace_id, prompt, url, original_url, sha256, model, disclosure, cost_usd,
                 manifest_verified, participant_ids, participant_names, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                prompt, url, original_url, sha256, model, disclosure, cost_usd,
+                workspace_id, prompt, url, original_url, sha256, model, disclosure, cost_usd,
                 int(manifest_verified), json.dumps(participant_ids),
                 json.dumps(participant_names), now(),
             ),
@@ -341,11 +398,13 @@ def _scene_row(conn, scene_id: int) -> dict:
     return row
 
 
-def list_scenes() -> list[dict]:
+def list_scenes(workspace_id: str) -> list[dict]:
     import json
 
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM scenes ORDER BY id DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM scenes WHERE workspace_id = ? ORDER BY id DESC", (workspace_id,)
+        ).fetchall()
         out = []
         for row in rows:
             d = dict(row)
@@ -355,13 +414,18 @@ def list_scenes() -> list[dict]:
         return out
 
 
-def delete_scene(scene_id: int) -> bool:
+def delete_scene(workspace_id: str, scene_id: int) -> bool:
     with get_conn() as conn:
-        cur = conn.execute("DELETE FROM scenes WHERE id = ?", (scene_id,))
+        cur = conn.execute(
+            "DELETE FROM scenes WHERE id = ? AND workspace_id = ?", (scene_id, workspace_id)
+        )
         return cur.rowcount > 0
 
 
+# ── Studio images ────────────────────────────────────────────────────────
+
 def create_studio_image(
+    workspace_id: str,
     kind: str,
     prompt: str,
     url: str,
@@ -376,10 +440,10 @@ def create_studio_image(
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO studio_images
-               (kind, prompt, url, original_url, sha256, model, quality, disclosure,
+               (workspace_id, kind, prompt, url, original_url, sha256, model, quality, disclosure,
                 cost_usd, manifest_verified, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (kind, prompt, url, original_url, sha256, model, quality, disclosure,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, kind, prompt, url, original_url, sha256, model, quality, disclosure,
              cost_usd, int(manifest_verified), now()),
         )
         return dict(conn.execute(
@@ -387,24 +451,34 @@ def create_studio_image(
         ).fetchone())
 
 
-def list_studio_images(kind: str | None = None) -> list[dict]:
+def list_studio_images(workspace_id: str, kind: str | None = None) -> list[dict]:
     with get_conn() as conn:
         if kind:
             rows = conn.execute(
-                "SELECT * FROM studio_images WHERE kind = ? ORDER BY id DESC", (kind,)
+                "SELECT * FROM studio_images WHERE workspace_id = ? AND kind = ? ORDER BY id DESC",
+                (workspace_id, kind),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM studio_images ORDER BY id DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM studio_images WHERE workspace_id = ? ORDER BY id DESC",
+                (workspace_id,),
+            ).fetchall()
         return [dict(row) for row in rows]
 
 
-def delete_studio_image(image_id: int) -> bool:
+def delete_studio_image(workspace_id: str, image_id: int) -> bool:
     with get_conn() as conn:
-        cur = conn.execute("DELETE FROM studio_images WHERE id = ?", (image_id,))
+        cur = conn.execute(
+            "DELETE FROM studio_images WHERE id = ? AND workspace_id = ?",
+            (image_id, workspace_id),
+        )
         return cur.rowcount > 0
 
 
+# ── Videos ───────────────────────────────────────────────────────────────
+
 def create_video(
+    workspace_id: str,
     character_id: int | None,
     character_name: str | None,
     kind: str,
@@ -416,10 +490,10 @@ def create_video(
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO videos
-               (character_id, character_name, kind, prompt, model, duration,
+               (workspace_id, character_id, character_name, kind, prompt, model, duration,
                 aspect_ratio, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (character_id, character_name, kind, prompt, model, duration,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, character_id, character_name, kind, prompt, model, duration,
              aspect_ratio, now()),
         )
         return dict(conn.execute(
@@ -427,9 +501,11 @@ def create_video(
         ).fetchone())
 
 
-def get_video(video_id: int) -> dict | None:
+def get_video(workspace_id: str, video_id: int) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM videos WHERE id = ? AND workspace_id = ?", (video_id, workspace_id)
+        ).fetchone()
         return dict(row) if row else None
 
 
@@ -447,19 +523,26 @@ def finish_video(video_id: int, *, status: str, url: str | None = None,
         )
 
 
-def list_videos() -> list[dict]:
+def list_videos(workspace_id: str) -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM videos ORDER BY id DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM videos WHERE workspace_id = ? ORDER BY id DESC", (workspace_id,)
+        ).fetchall()
         return [dict(row) for row in rows]
 
 
-def delete_video(video_id: int) -> bool:
+def delete_video(workspace_id: str, video_id: int) -> bool:
     with get_conn() as conn:
-        cur = conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        cur = conn.execute(
+            "DELETE FROM videos WHERE id = ? AND workspace_id = ?", (video_id, workspace_id)
+        )
         return cur.rowcount > 0
 
 
+# ── Audio clips ──────────────────────────────────────────────────────────
+
 def create_audio_clip(
+    workspace_id: str,
     text: str,
     voice: str | None,
     url: str,
@@ -472,9 +555,10 @@ def create_audio_clip(
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO audio_clips
-               (text, voice, url, sha256, mime_type, model, cost_usd, manifest_verified, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (text, voice, url, sha256, mime_type, model, cost_usd,
+               (workspace_id, text, voice, url, sha256, mime_type, model, cost_usd,
+                manifest_verified, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, text, voice, url, sha256, mime_type, model, cost_usd,
              int(manifest_verified), now()),
         )
         return dict(conn.execute(
@@ -482,19 +566,26 @@ def create_audio_clip(
         ).fetchone())
 
 
-def list_audio_clips() -> list[dict]:
+def list_audio_clips(workspace_id: str) -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM audio_clips ORDER BY id DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM audio_clips WHERE workspace_id = ? ORDER BY id DESC", (workspace_id,)
+        ).fetchall()
         return [dict(row) for row in rows]
 
 
-def delete_audio_clip(clip_id: int) -> bool:
+def delete_audio_clip(workspace_id: str, clip_id: int) -> bool:
     with get_conn() as conn:
-        cur = conn.execute("DELETE FROM audio_clips WHERE id = ?", (clip_id,))
+        cur = conn.execute(
+            "DELETE FROM audio_clips WHERE id = ? AND workspace_id = ?", (clip_id, workspace_id)
+        )
         return cur.rowcount > 0
 
 
+# ── Batch jobs ───────────────────────────────────────────────────────────
+
 def create_batch(
+    workspace_id: str,
     character_id: int,
     mode: str,
     prompt: str,
@@ -507,10 +598,10 @@ def create_batch(
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO batch_jobs
-               (character_id, mode, prompt, requested, quality, model, disclosure,
+               (workspace_id, character_id, mode, prompt, requested, quality, model, disclosure,
                 cost_estimate, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (character_id, mode, prompt, requested, quality, model, disclosure,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, character_id, mode, prompt, requested, quality, model, disclosure,
              cost_estimate, now()),
         )
         return dict(conn.execute(

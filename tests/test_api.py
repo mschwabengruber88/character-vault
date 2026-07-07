@@ -30,6 +30,54 @@ def test_health(client):
     assert resp.json() == {"status": "ok"}
 
 
+# ── Multitenancy ─────────────────────────────────────────────────────────
+
+def test_requests_without_workspace_are_rejected():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as bare:
+        assert bare.get("/characters").status_code == 401
+        assert bare.post("/characters", json={"name": "X"}).status_code == 401
+        # unknown workspace token is also rejected
+        assert bare.get("/characters", headers={"X-Workspace-Id": "nope"}).status_code == 401
+
+
+def test_workspace_create_and_validate(client):
+    ws = client.post("/workspaces", json={"name": "My Space"}).json()
+    assert ws["id"] and ws["name"] == "My Space"
+    # the current-workspace check echoes the caller's own workspace
+    current = client.get("/workspaces/current")
+    assert current.status_code == 200
+    assert current.json()["id"] == client.workspace_id
+
+
+def test_characters_are_isolated_between_workspaces(client, other_client):
+    mine = client.post("/characters", json={"name": "Mine"}).json()
+    # the other tenant sees none of my characters
+    assert other_client.get("/characters").json() == []
+    assert any(c["id"] == mine["id"] for c in client.get("/characters").json())
+    # cannot fetch, edit or delete across the tenant boundary, even with the id
+    assert other_client.get(f"/characters/{mine['id']}").status_code == 404
+    assert other_client.patch(f"/characters/{mine['id']}", json={"name": "Hijack"}).status_code == 404
+    assert other_client.delete(f"/characters/{mine['id']}").status_code == 404
+    # mine is untouched
+    assert client.get(f"/characters/{mine['id']}").json()["name"] == "Mine"
+
+
+def test_studio_and_audio_isolated(client, other_client):
+    with patch("app.main.generate_studio_image", return_value={
+        "url": "https://example.com/s.png", "original_url": "https://example.com/s.png",
+        "sha256": "s", "mime_type": "image/png", "manifest_verified": True,
+        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
+        "model": "gpt-image-1", "kind": "photo-art",
+    }):
+        img = client.post("/studio", json={"kind": "photo-art", "prompt": "x"},
+                          headers={"X-API-Key": API_KEY}).json()
+    assert other_client.get("/studio").json() == []
+    assert any(s["id"] == img["id"] for s in client.get("/studio").json())
+    assert other_client.delete(f"/studio/{img['id']}").status_code == 404
+
+
 def test_create_and_get_character(client):
     resp = client.post("/characters", json={"name": "Test", "description": "desc"})
     assert resp.status_code == 200

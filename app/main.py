@@ -40,36 +40,50 @@ def require_api_key(x_api_key: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 
+def require_workspace(x_workspace_id: str = Header(default="")) -> str:
+    """Every data request is scoped to a workspace (tenant). The workspace id is
+    a bearer token the client stores; unknown/missing → 401. Data of other
+    workspaces is never visible or reachable, even by guessing row IDs."""
+    workspace = db.get_workspace(x_workspace_id) if x_workspace_id else None
+    if workspace is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or unknown workspace. Create a workspace or enter your workspace token.",
+        )
+    return workspace["id"]
+
+
 _inflight_lock = threading.Lock()
-_inflight: set[tuple[int, str]] = set()
+_inflight: set[tuple] = set()
 
 
-def _acquire_slot(character_id: int, kind: str) -> None:
-    key = (character_id, kind)
+def _acquire_slot(scope, kind: str) -> None:
+    key = (scope, kind)
     with _inflight_lock:
         if key in _inflight:
             raise HTTPException(
                 status_code=409,
-                detail="A generation for this character is already running. Please wait for it to finish.",
+                detail="A generation is already running here. Please wait for it to finish.",
             )
         _inflight.add(key)
 
 
-def _release_slot(character_id: int, kind: str) -> None:
+def _release_slot(scope, kind: str) -> None:
     with _inflight_lock:
-        _inflight.discard((character_id, kind))
+        _inflight.discard((scope, kind))
 
 
 @contextmanager
-def generation_slot(character_id: int, kind: str):
-    """One paid generation per character+kind at a time — a duplicate
-    request (double-click, impatient retry) is rejected instead of
-    silently billed twice."""
-    _acquire_slot(character_id, kind)
+def generation_slot(scope, kind: str):
+    """One paid generation per scope+kind at a time — a duplicate request
+    (double-click, impatient retry) is rejected instead of silently billed
+    twice. `scope` is a character id for per-character ops, or a workspace id
+    for the shared studio/scene/audio/video pipelines."""
+    _acquire_slot(scope, kind)
     try:
         yield
     finally:
-        _release_slot(character_id, kind)
+        _release_slot(scope, kind)
 
 
 @asynccontextmanager
@@ -204,16 +218,33 @@ def voices():
     return available_voices()
 
 
+class WorkspaceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+
+@app.post("/workspaces")
+def create_workspace(body: WorkspaceCreate):
+    """Create a new tenant. The returned id is the token the client stores and
+    sends as X-Workspace-Id on every request."""
+    return db.create_workspace(body.name)
+
+
+@app.get("/workspaces/current")
+def current_workspace(workspace: str = Depends(require_workspace)):
+    """Validate a stored workspace token and return its name (used on load)."""
+    return db.get_workspace(workspace)
+
+
 @app.post("/characters")
-def create_character(body: CharacterCreate):
+def create_character(body: CharacterCreate, workspace: str = Depends(require_workspace)):
     return db.create_character(
-        body.name, body.description, body.personality, body.purpose, body.seed
+        workspace, body.name, body.description, body.personality, body.purpose, body.seed
     )
 
 
 @app.patch("/characters/{character_id}")
-def update_character(character_id: int, body: CharacterUpdate):
-    character = db.update_character(character_id, body.model_dump(exclude_unset=True))
+def update_character(character_id: int, body: CharacterUpdate, workspace: str = Depends(require_workspace)):
+    character = db.update_character(workspace, character_id, body.model_dump(exclude_unset=True))
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     character["assets"] = [with_signed_url(a) for a in character["assets"]]
@@ -221,8 +252,8 @@ def update_character(character_id: int, body: CharacterUpdate):
 
 
 @app.get("/characters")
-def list_characters():
-    characters = db.list_characters()
+def list_characters(workspace: str = Depends(require_workspace)):
+    characters = db.list_characters(workspace)
     for character in characters:
         source = character.pop("thumbnail_source_url", None)
         character["thumbnail_url"] = presign_asset_url(source) if source else None
@@ -230,8 +261,8 @@ def list_characters():
 
 
 @app.get("/characters/{character_id}")
-def get_character(character_id: int):
-    character = db.get_character(character_id)
+def get_character(character_id: int, workspace: str = Depends(require_workspace)):
+    character = db.get_character(workspace, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     character["assets"] = [with_signed_url(a) for a in character["assets"]]
@@ -243,8 +274,9 @@ ALLOWED_UPLOAD_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 @app.post("/characters/{character_id}/reference", dependencies=[Depends(require_api_key)])
-async def upload_reference(character_id: int, file: UploadFile = File(...)):
-    character = db.get_character(character_id)
+async def upload_reference(character_id: int, file: UploadFile = File(...),
+                           workspace: str = Depends(require_workspace)):
+    character = db.get_character(workspace, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     if file.content_type not in ALLOWED_UPLOAD_TYPES:
@@ -267,39 +299,40 @@ async def upload_reference(character_id: int, file: UploadFile = File(...)):
 
 
 @app.put("/characters/{character_id}/voice")
-def set_character_voice(character_id: int, body: VoiceAssign):
+def set_character_voice(character_id: int, body: VoiceAssign, workspace: str = Depends(require_workspace)):
     valid_ids = {v["id"] for v in available_voices().get(body.voice_provider, [])}
     if body.voice_id not in valid_ids:
         raise HTTPException(
             status_code=400,
             detail=f"Voice '{body.voice_id}' is not available for provider '{body.voice_provider}'.",
         )
-    character = db.set_character_voice(character_id, body.voice_provider, body.voice_id)
+    character = db.set_character_voice(workspace, character_id, body.voice_provider, body.voice_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     return character
 
 
 @app.delete("/characters/{character_id}", status_code=204)
-def delete_character(character_id: int):
-    if not db.delete_character(character_id):
+def delete_character(character_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_character(workspace, character_id):
         raise HTTPException(status_code=404, detail="Character not found")
 
 
 @app.get("/assets")
-def list_assets(kind: str | None = Query(default=None, pattern="^(image|voice)$")):
-    return [with_signed_url(a) for a in db.list_assets(kind)]
+def list_assets(kind: str | None = Query(default=None, pattern="^(image|voice)$"),
+                workspace: str = Depends(require_workspace)):
+    return [with_signed_url(a) for a in db.list_assets(workspace, kind)]
 
 
 @app.delete("/assets/{asset_id}", status_code=204)
-def delete_asset(asset_id: int):
-    if not db.delete_asset(asset_id):
+def delete_asset(asset_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_asset(workspace, asset_id):
         raise HTTPException(status_code=404, detail="Asset not found")
 
 
 @app.post("/characters/{character_id}/generate/image", dependencies=[Depends(require_api_key)])
-def generate_image(character_id: int, body: PortraitRequest):
-    character = db.get_character(character_id)
+def generate_image(character_id: int, body: PortraitRequest, workspace: str = Depends(require_workspace)):
+    character = db.get_character(workspace, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     if body.model not in {m["slug"] for m in available_image_models()}:
@@ -373,8 +406,8 @@ def _run_batch(job_id: int, character_id: int, prompts: list[str], references: l
 
 
 @app.post("/characters/{character_id}/generate/batch", dependencies=[Depends(require_api_key)])
-def generate_batch(character_id: int, body: BatchRequest):
-    character = db.get_character(character_id)
+def generate_batch(character_id: int, body: BatchRequest, workspace: str = Depends(require_workspace)):
+    character = db.get_character(workspace, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     if body.model not in {m["slug"] for m in available_image_models()}:
@@ -395,7 +428,7 @@ def generate_batch(character_id: int, body: BatchRequest):
     _acquire_slot(character_id, "image")
     try:
         job = db.create_batch(
-            character_id=character_id, mode=body.mode, prompt=body.prompt,
+            workspace_id=workspace, character_id=character_id, mode=body.mode, prompt=body.prompt,
             requested=len(prompts), quality=body.quality, model=body.model,
             disclosure=body.disclosure, cost_estimate=estimate,
         )
@@ -412,27 +445,29 @@ def generate_batch(character_id: int, body: BatchRequest):
     return job
 
 
-@app.get("/batches/{batch_id}")
-def get_batch(batch_id: int):
+def _owned_batch(batch_id: int, workspace: str) -> dict:
     job = db.get_batch(batch_id)
-    if job is None:
+    if job is None or job.get("workspace_id") != workspace:
         raise HTTPException(status_code=404, detail="Batch not found")
     return job
 
 
+@app.get("/batches/{batch_id}")
+def get_batch(batch_id: int, workspace: str = Depends(require_workspace)):
+    return _owned_batch(batch_id, workspace)
+
+
 @app.post("/batches/{batch_id}/cancel")
-def cancel_batch(batch_id: int):
-    job = db.get_batch(batch_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Batch not found")
+def cancel_batch(batch_id: int, workspace: str = Depends(require_workspace)):
+    job = _owned_batch(batch_id, workspace)
     if job["status"] == "running":
         db.finish_batch(batch_id, "cancelled")
     return db.get_batch(batch_id)
 
 
 @app.post("/characters/{character_id}/generate/voice", dependencies=[Depends(require_api_key)])
-def generate_voice(character_id: int, body: VoiceLineRequest):
-    character = db.get_character(character_id)
+def generate_voice(character_id: int, body: VoiceLineRequest, workspace: str = Depends(require_workspace)):
+    character = db.get_character(workspace, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     with generation_slot(character_id, "voice"):
@@ -468,15 +503,15 @@ def _scene_with_signed_url(scene: dict) -> dict:
 
 
 @app.get("/scenes")
-def list_scenes():
-    return [_scene_with_signed_url(s) for s in db.list_scenes()]
+def list_scenes(workspace: str = Depends(require_workspace)):
+    return [_scene_with_signed_url(s) for s in db.list_scenes(workspace)]
 
 
 @app.post("/scenes", dependencies=[Depends(require_api_key)])
-def create_scene(body: SceneRequest):
+def create_scene(body: SceneRequest, workspace: str = Depends(require_workspace)):
     references, descriptors, names, ids = [], [], [], []
     for cid in body.character_ids:
-        character = db.get_character(cid)
+        character = db.get_character(workspace, cid)
         if character is None:
             raise HTTPException(status_code=404, detail=f"Character {cid} not found")
         result = scene_reference(character)
@@ -498,7 +533,7 @@ def create_scene(body: SceneRequest):
             detail="Multi-character scenes need the Nano Banana model (GMI_API_KEY not configured).",
         )
 
-    with generation_slot(0, "scene"):
+    with generation_slot(workspace, "scene"):
         try:
             result = generate_scene(body.prompt, references, descriptors, body.disclosure)
         except HTTPException:
@@ -508,6 +543,7 @@ def create_scene(body: SceneRequest):
             raise HTTPException(status_code=502, detail="Scene generation failed. Please try again.")
 
     return _scene_with_signed_url(db.create_scene(
+        workspace_id=workspace,
         prompt=body.prompt,
         url=result["url"],
         original_url=result.get("original_url"),
@@ -522,8 +558,8 @@ def create_scene(body: SceneRequest):
 
 
 @app.delete("/scenes/{scene_id}", status_code=204)
-def delete_scene(scene_id: int):
-    if not db.delete_scene(scene_id):
+def delete_scene(scene_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_scene(workspace, scene_id):
         raise HTTPException(status_code=404, detail="Scene not found")
 
 
@@ -536,18 +572,19 @@ class StudioRequest(BaseModel):
 
 
 @app.get("/studio")
-def list_studio(kind: str | None = Query(default=None, pattern="^(background|photo-art)$")):
-    return [_scene_with_signed_url(s) for s in db.list_studio_images(kind)]
+def list_studio(kind: str | None = Query(default=None, pattern="^(background|photo-art)$"),
+                workspace: str = Depends(require_workspace)):
+    return [_scene_with_signed_url(s) for s in db.list_studio_images(workspace, kind)]
 
 
 @app.post("/studio", dependencies=[Depends(require_api_key)])
-def create_studio(body: StudioRequest):
+def create_studio(body: StudioRequest, workspace: str = Depends(require_workspace)):
     if body.model not in {m["slug"] for m in available_image_models()}:
         raise HTTPException(
             status_code=400,
             detail=f"Model '{body.model}' is not available. Configure its API key first.",
         )
-    with generation_slot(0, "studio"):
+    with generation_slot(workspace, "studio"):
         try:
             result = generate_studio_image(
                 body.prompt, body.kind, body.disclosure, body.quality, body.model,
@@ -558,6 +595,7 @@ def create_studio(body: StudioRequest):
             logger.exception("Studio generation failed (%s)", body.kind)
             raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
     return _scene_with_signed_url(db.create_studio_image(
+        workspace_id=workspace,
         kind=body.kind,
         prompt=body.prompt,
         url=result["url"],
@@ -572,8 +610,8 @@ def create_studio(body: StudioRequest):
 
 
 @app.delete("/studio/{image_id}", status_code=204)
-def delete_studio(image_id: int):
-    if not db.delete_studio_image(image_id):
+def delete_studio(image_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_studio_image(workspace, image_id):
         raise HTTPException(status_code=404, detail="Studio image not found")
 
 
@@ -584,19 +622,19 @@ class AudioRequest(BaseModel):
 
 
 @app.get("/audio")
-def list_audio():
-    return [_scene_with_signed_url(c) for c in db.list_audio_clips()]
+def list_audio(workspace: str = Depends(require_workspace)):
+    return [_scene_with_signed_url(c) for c in db.list_audio_clips(workspace)]
 
 
 @app.post("/audio", dependencies=[Depends(require_api_key)])
-def create_audio(body: AudioRequest):
+def create_audio(body: AudioRequest, workspace: str = Depends(require_workspace)):
     # OpenAI voices must be one of the fixed set; ElevenLabs accepts ANY id so
     # users can import their own cloned voice by its Voice ID.
     if body.voice_provider == "openai":
         valid = {v["id"] for v in available_voices().get("openai", [])}
         if body.voice_id not in valid:
             raise HTTPException(status_code=400, detail=f"Unknown OpenAI voice '{body.voice_id}'.")
-    with generation_slot(0, "audio"):
+    with generation_slot(workspace, "audio"):
         try:
             result = generate_audio(body.text, body.voice_provider, body.voice_id)
         except HTTPException:
@@ -605,6 +643,7 @@ def create_audio(body: AudioRequest):
             logger.exception("Audio generation failed")
             raise HTTPException(status_code=502, detail="Audio generation failed. Please try again.")
     return _scene_with_signed_url(db.create_audio_clip(
+        workspace_id=workspace,
         text=body.text,
         voice=result.get("voice"),
         url=result["url"],
@@ -617,8 +656,8 @@ def create_audio(body: AudioRequest):
 
 
 @app.delete("/audio/{clip_id}", status_code=204)
-def delete_audio(clip_id: int):
-    if not db.delete_audio_clip(clip_id):
+def delete_audio(clip_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_audio_clip(workspace, clip_id):
         raise HTTPException(status_code=404, detail="Audio clip not found")
 
 
@@ -630,7 +669,7 @@ class VideoRequest(BaseModel):
     aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
 
 
-def _run_video(video_id: int, prompt: str, model: str, reference: dict | None,
+def _run_video(scope, video_id: int, prompt: str, model: str, reference: dict | None,
                duration: int, aspect_ratio: str) -> None:
     """Background worker — video generation takes minutes, so it runs off the
     request thread and the row's status is polled by the client."""
@@ -646,7 +685,7 @@ def _run_video(video_id: int, prompt: str, model: str, reference: dict | None,
         logger.exception("Video %s failed", video_id)
         db.finish_video(video_id, status="error", error="Video generation failed. Please try again.")
     finally:
-        _release_slot(0, "video")
+        _release_slot(scope, "video")
 
 
 def _video_with_signed_url(video: dict) -> dict:
@@ -658,20 +697,20 @@ def _video_with_signed_url(video: dict) -> dict:
 
 
 @app.get("/videos")
-def list_videos():
-    return [_video_with_signed_url(v) for v in db.list_videos()]
+def list_videos(workspace: str = Depends(require_workspace)):
+    return [_video_with_signed_url(v) for v in db.list_videos(workspace)]
 
 
 @app.get("/videos/{video_id}")
-def get_video(video_id: int):
-    video = db.get_video(video_id)
+def get_video(video_id: int, workspace: str = Depends(require_workspace)):
+    video = db.get_video(workspace, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
     return _video_with_signed_url(video)
 
 
 @app.post("/videos", dependencies=[Depends(require_api_key)])
-def create_video(body: VideoRequest):
+def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)):
     if body.model not in {m["slug"] for m in available_video_models()}:
         raise HTTPException(
             status_code=400,
@@ -682,7 +721,7 @@ def create_video(body: VideoRequest):
     if meta["needs_image"]:
         if body.character_id is None:
             raise HTTPException(status_code=400, detail="This model animates a character — pick one.")
-        character = db.get_character(body.character_id)
+        character = db.get_character(workspace, body.character_id)
         if character is None:
             raise HTTPException(status_code=404, detail="Character not found")
         refs = identity_references(character)
@@ -694,19 +733,19 @@ def create_video(body: VideoRequest):
         reference = refs[0]
         character_id, character_name, kind = character["id"], character["name"], "character"
 
-    _acquire_slot(0, "video")
+    _acquire_slot(workspace, "video")
     try:
         video = db.create_video(
-            character_id=character_id, character_name=character_name, kind=kind,
-            prompt=body.prompt, model=body.model, duration=body.duration,
+            workspace_id=workspace, character_id=character_id, character_name=character_name,
+            kind=kind, prompt=body.prompt, model=body.model, duration=body.duration,
             aspect_ratio=body.aspect_ratio,
         )
     except Exception:
-        _release_slot(0, "video")
+        _release_slot(workspace, "video")
         raise
     thread = threading.Thread(
         target=_run_video,
-        args=(video["id"], body.prompt, body.model, reference, body.duration, body.aspect_ratio),
+        args=(workspace, video["id"], body.prompt, body.model, reference, body.duration, body.aspect_ratio),
         daemon=True,
     )
     thread.start()
@@ -714,6 +753,6 @@ def create_video(body: VideoRequest):
 
 
 @app.delete("/videos/{video_id}", status_code=204)
-def delete_video(video_id: int):
-    if not db.delete_video(video_id):
+def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_video(workspace, video_id):
         raise HTTPException(status_code=404, detail="Video not found")

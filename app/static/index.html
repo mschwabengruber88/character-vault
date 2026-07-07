@@ -16,6 +16,7 @@
     </div>
     <div class="topbar-right">
       <span class="provenance-note" data-i18n="provenanceNote">Every asset stored on Backblaze B2 with a verified provenance manifest</span>
+      <button id="workspace-chip" class="workspace-chip" hidden title="Workspace"></button>
       <button id="lang-toggle" class="lang-toggle" title="Sprache / Language">DE</button>
       <button id="key-button" class="key-button" title="Set generation API key" data-i18n="apiKey">API key</button>
     </div>
@@ -449,6 +450,43 @@
       <div class="form-row">
         <button value="save" class="button primary small">Save</button>
         <button value="cancel" class="button small">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="workspace-gate" class="key-dialog workspace-gate">
+    <h3 data-i18n="wsGateTitle">Your workspace</h3>
+    <p data-i18n="wsGateIntro">Character Vault is multi-tenant: your characters, images, audio and videos live in your own private workspace. Create one, or open an existing workspace with its token.</p>
+    <div class="ws-gate-block">
+      <label class="ws-field">
+        <span data-i18n="wsNameLabel">New workspace name</span>
+        <input id="ws-name" type="text" maxlength="60" placeholder="e.g. Studio Aurora">
+      </label>
+      <button id="ws-create" class="button primary small" data-i18n="wsCreate">Create workspace</button>
+    </div>
+    <div class="ws-gate-divider"><span data-i18n="wsOr">or</span></div>
+    <div class="ws-gate-block">
+      <label class="ws-field">
+        <span data-i18n="wsTokenLabel">Open with a workspace token</span>
+        <input id="ws-token" type="text" placeholder="Workspace token" autocomplete="off">
+      </label>
+      <button id="ws-open" class="button small" data-i18n="wsOpen">Open workspace</button>
+    </div>
+    <p id="ws-gate-error" class="ws-gate-error" hidden></p>
+  </dialog>
+
+  <dialog id="workspace-info" class="key-dialog">
+    <form method="dialog">
+      <h3 data-i18n="wsInfoTitle">Workspace</h3>
+      <p id="ws-info-name" class="ws-info-name"></p>
+      <p data-i18n="wsTokenNote">Share this token to give someone access to this exact workspace, or use it to open it on another device. Keep it private otherwise.</p>
+      <div class="ws-token-row">
+        <input id="ws-info-token" type="text" readonly>
+        <button type="button" id="ws-copy" class="button small" data-i18n="wsCopy">Copy</button>
+      </div>
+      <div class="form-row">
+        <button type="button" id="ws-switch" class="button small" data-i18n="wsSwitch">Switch workspace</button>
+        <button value="close" class="button primary small" data-i18n="wsClose">Close</button>
       </div>
     </form>
   </dialog>
