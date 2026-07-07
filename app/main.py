@@ -19,6 +19,7 @@ from app.pipelines import (
     available_voices,
     generate_character_portrait,
     generate_character_voice_line,
+    generate_scene,
 )
 from app.storage import presign_asset_url, with_signed_url
 
@@ -118,6 +119,21 @@ class VoiceLineRequest(BaseModel):
 class VoiceAssign(BaseModel):
     voice_provider: Literal["openai", "elevenlabs"]
     voice_id: str = Field(min_length=1, max_length=100)
+
+
+class SceneRequest(BaseModel):
+    character_ids: list[int] = Field(min_length=2, max_length=4)
+    prompt: str = Field(min_length=1, max_length=500)
+    disclosure: Literal["visible", "invisible"] = "invisible"
+
+
+def scene_reference(character: dict) -> dict | None:
+    """One identity anchor (first portrait, untouched original) per character."""
+    images = [a for a in character["assets"] if a["kind"] == "image"]
+    if not images:
+        return None
+    anchor = images[0]
+    return {"url": anchor.get("original_url") or anchor["url"], "sha256": anchor.get("sha256")}
 
 
 @app.get("/health")
@@ -253,3 +269,69 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
         cost_usd=result.get("cost_usd"),
         model=result.get("voice"),
     ))
+
+
+def _scene_with_signed_url(scene: dict) -> dict:
+    try:
+        scene["signed_url"] = presign_asset_url(scene["url"])
+    except Exception:
+        scene["signed_url"] = None
+    return scene
+
+
+@app.get("/scenes")
+def list_scenes():
+    return [_scene_with_signed_url(s) for s in db.list_scenes()]
+
+
+@app.post("/scenes", dependencies=[Depends(require_api_key)])
+def create_scene(body: SceneRequest):
+    references, names, ids = [], [], []
+    for cid in body.character_ids:
+        character = db.get_character(cid)
+        if character is None:
+            raise HTTPException(status_code=404, detail=f"Character {cid} not found")
+        ref = scene_reference(character)
+        if ref is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Character '{character['name']}' has no portrait to use as reference.",
+            )
+        references.append(ref)
+        names.append(character["name"])
+        ids.append(cid)
+
+    if not IMAGE_MODELS["gemini-2.5-flash-image"]["provider"] == "gmi" or \
+            "gemini-2.5-flash-image" not in {m["slug"] for m in available_image_models()}:
+        raise HTTPException(
+            status_code=400,
+            detail="Multi-character scenes need the Nano Banana model (GMI_API_KEY not configured).",
+        )
+
+    with generation_slot(0, "scene"):
+        try:
+            result = generate_scene(body.prompt, references, body.disclosure)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Scene generation failed for %s", ids)
+            raise HTTPException(status_code=502, detail="Scene generation failed. Please try again.")
+
+    return _scene_with_signed_url(db.create_scene(
+        prompt=body.prompt,
+        url=result["url"],
+        original_url=result.get("original_url"),
+        sha256=result["sha256"],
+        model=result.get("model"),
+        disclosure=result.get("disclosure"),
+        cost_usd=result.get("cost_usd"),
+        manifest_verified=result["manifest_verified"],
+        participant_ids=ids,
+        participant_names=names,
+    ))
+
+
+@app.delete("/scenes/{scene_id}", status_code=204)
+def delete_scene(scene_id: int):
+    if not db.delete_scene(scene_id):
+        raise HTTPException(status_code=404, detail="Scene not found")

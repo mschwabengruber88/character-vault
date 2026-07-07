@@ -30,6 +30,21 @@ CREATE TABLE IF NOT EXISTS assets (
     cost_usd REAL,
     model TEXT
 );
+
+CREATE TABLE IF NOT EXISTS scenes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt TEXT NOT NULL,
+    url TEXT NOT NULL,
+    original_url TEXT,
+    sha256 TEXT,
+    model TEXT,
+    disclosure TEXT,
+    cost_usd REAL,
+    manifest_verified INTEGER NOT NULL DEFAULT 0,
+    participant_ids TEXT NOT NULL,
+    participant_names TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 MIGRATIONS = (
@@ -189,3 +204,61 @@ def add_asset(
             "SELECT * FROM assets WHERE id = ?", (cur.lastrowid,)
         ).fetchone()
         return dict(row)
+
+
+def create_scene(
+    prompt: str,
+    url: str,
+    original_url: str | None,
+    sha256: str | None,
+    model: str | None,
+    disclosure: str | None,
+    cost_usd: float | None,
+    manifest_verified: bool,
+    participant_ids: list[int],
+    participant_names: list[str],
+) -> dict:
+    import json
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO scenes
+               (prompt, url, original_url, sha256, model, disclosure, cost_usd,
+                manifest_verified, participant_ids, participant_names, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                prompt, url, original_url, sha256, model, disclosure, cost_usd,
+                int(manifest_verified), json.dumps(participant_ids),
+                json.dumps(participant_names), now(),
+            ),
+        )
+        return _scene_row(conn, cur.lastrowid)
+
+
+def _scene_row(conn, scene_id: int) -> dict:
+    import json
+
+    row = dict(conn.execute("SELECT * FROM scenes WHERE id = ?", (scene_id,)).fetchone())
+    row["participant_ids"] = json.loads(row["participant_ids"])
+    row["participant_names"] = json.loads(row["participant_names"])
+    return row
+
+
+def list_scenes() -> list[dict]:
+    import json
+
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM scenes ORDER BY id DESC").fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["participant_ids"] = json.loads(d["participant_ids"])
+            d["participant_names"] = json.loads(d["participant_names"])
+            out.append(d)
+        return out
+
+
+def delete_scene(scene_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM scenes WHERE id = ?", (scene_id,))
+        return cur.rowcount > 0

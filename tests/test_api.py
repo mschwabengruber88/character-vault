@@ -372,6 +372,58 @@ def test_assign_and_use_character_voice(client):
     mock_voice.assert_called_once_with(char_id, "hello there", "openai", "nova")
 
 
+def test_scene_requires_two_characters_with_portraits(client):
+    c1 = client.post("/characters", json={"name": "Solo"}).json()["id"]
+    # only one participant → 422 (min_length=2)
+    resp = client.post(
+        "/scenes",
+        json={"character_ids": [c1], "prompt": "together"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 422
+
+
+def test_scene_generation_stores_participants(client):
+    a = client.post("/characters", json={"name": "Aoi"}).json()["id"]
+    b = client.post("/characters", json={"name": "Ren"}).json()["id"]
+
+    # give each a portrait so scene_reference finds an anchor
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        for cid in (a, b):
+            mock_gen.return_value = {
+                "url": f"https://s3.eu-central-003.backblazeb2.com/{__import__('app.config', fromlist=['B2_BUCKET_NAME']).B2_BUCKET_NAME}/x{cid}.png",
+                "original_url": f"https://s3.eu-central-003.backblazeb2.com/{__import__('app.config', fromlist=['B2_BUCKET_NAME']).B2_BUCKET_NAME}/x{cid}.png",
+                "sha256": f"sha{cid}", "mime_type": "image/png",
+                "manifest_verified": True, "disclosure": "invisible",
+                "quality": "draft", "cost_usd": 0.011, "model": "gpt-image-1",
+            }
+            client.post(f"/characters/{cid}/generate/image",
+                        json={"prompt": "p"}, headers={"X-API-Key": API_KEY})
+
+    with patch("app.main.generate_scene") as mock_scene, \
+         patch("app.main.available_image_models", return_value=[{"slug": "gemini-2.5-flash-image"}]):
+        mock_scene.return_value = {
+            "url": "https://example.com/scene.png",
+            "original_url": "https://example.com/scene-orig.png",
+            "sha256": "scenesha", "manifest_verified": True,
+            "disclosure": "invisible", "cost_usd": 0.039, "model": "gemini-2.5-flash-image",
+        }
+        resp = client.post(
+            "/scenes",
+            json={"character_ids": [a, b], "prompt": "the two of them in a classroom"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    scene = resp.json()
+    assert scene["participant_ids"] == [a, b]
+    assert scene["participant_names"] == ["Aoi", "Ren"]
+    # references passed = one anchor per character
+    passed_refs = mock_scene.call_args.args[1]
+    assert len(passed_refs) == 2
+
+    assert any(s["id"] == scene["id"] for s in client.get("/scenes").json())
+
+
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
     resp = client.put(

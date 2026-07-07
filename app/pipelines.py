@@ -45,6 +45,12 @@ def _asset_result(result) -> dict:
     }
 
 
+SCENE_INSTRUCTION = (
+    "Compose a single new image that includes ALL of the characters shown in "
+    "the reference images together in one scene. Keep each character's identity "
+    "consistent with their reference — same face, hair, and outfit style. Scene: "
+)
+
 IDENTITY_INSTRUCTION = (
     "Use the person from the reference image(s) and keep their identity exactly: "
     "same face, facial features, hair color and style, age, and build. "
@@ -99,12 +105,12 @@ def available_image_models() -> list[dict]:
     return out
 
 
-def _gmi_references(references: list[dict]) -> list[Asset]:
+def _gmi_references(references: list[dict], limit: int = 3) -> list[Asset]:
     """GMI Cloud requires HTTPS reference URLs — use presigned B2 links."""
     from app.storage import presign_asset_url
 
     assets = []
-    for ref in references[:3]:
+    for ref in references[:limit]:
         signed = presign_asset_url(ref["url"])
         if signed:
             assets.append(Asset(url=signed, media_type="image/png", sha256=ref.get("sha256")))
@@ -200,6 +206,38 @@ def generate_character_portrait(
     else:
         asset["quality"] = None
         asset["cost_usd"] = meta.get("cost_usd")
+    return asset
+
+
+def generate_scene(prompt: str, references: list[dict], disclosure: str = "invisible") -> dict:
+    """Compose one scene containing MULTIPLE characters, each kept consistent
+    with their reference. Only Nano Banana (multi-image composition) is used —
+    it's the model that actually holds several identities in one frame."""
+    from app.disclosure import apply_image_disclosure
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    inputs = _gmi_references(references, limit=4)
+    if len(inputs) < 2:
+        raise ValueError("A scene needs at least two character references.")
+
+    result = (
+        Pipeline("multi-character-scene")
+        .step(
+            GMICloudImageProvider(),
+            model="gemini-2.5-flash-image",
+            prompt=SCENE_INSTRUCTION + prompt,
+            modality=Modality.IMAGE,
+            external_inputs=inputs,
+        )
+        .run(sink=get_storage_sink(), timeout=180)
+    )
+    asset = _asset_result(result)
+    asset["original_url"] = asset["url"]
+    asset["url"] = apply_image_disclosure(asset["url"], result.manifest, disclosure)
+    asset["disclosure"] = disclosure
+    asset["model"] = "gemini-2.5-flash-image"
+    asset["quality"] = None
+    asset["cost_usd"] = IMAGE_MODELS["gemini-2.5-flash-image"]["cost_usd"]
     return asset
 
 
