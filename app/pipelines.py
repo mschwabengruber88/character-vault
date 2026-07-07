@@ -298,22 +298,32 @@ VIDEO_MODELS = {
     "Kling-Image2Video-V2.1-Master": {
         "label": "Kling 2.1 — image→video (keeps character)",
         "needs_image": True, "audio": False,
+        "best_for": "Photoreal character animation",
+        "description": "Animates a stored portrait with lifelike, expressive motion and strong identity retention. The best pick for bringing a photoreal character convincingly to life.",
     },
     "pixverse-v5.6-i2v": {
         "label": "Pixverse 5.6 — image→video (keeps character)",
         "needs_image": True, "audio": False,
+        "best_for": "Fast, stylised character motion",
+        "description": "Fast portrait animation with punchy, dynamic movement. Great for stylised or anime characters and quick iterations where speed matters more than photoreal polish.",
     },
     "Kling-Text2Video-V2.1-Master": {
         "label": "Kling 2.1 — text→video",
         "needs_image": False, "audio": False,
+        "best_for": "Cinematic shots from a prompt",
+        "description": "High-fidelity text-to-video with smooth camera work and strong prompt adherence. No character needed — describe the whole shot and it directs it.",
     },
     "pixverse-v5.6-t2v": {
         "label": "Pixverse 5.6 — text→video",
         "needs_image": False, "audio": False,
+        "best_for": "Quick, creative social clips",
+        "description": "Quick, creative text-to-video for stylised clips and social-ready shots, with shorter render times. Good for iterating on ideas.",
     },
     "Veo3-Fast": {
         "label": "Google Veo 3 Fast — text→video + audio",
         "needs_image": False, "audio": True,
+        "best_for": "Video with built-in sound",
+        "description": "Google Veo 3 — produces video with a synced audio track (ambient sound and speech) in a single pass. Best when you want sound baked in, not added later.",
     },
 }
 DEFAULT_VIDEO_MODEL = "Kling-Image2Video-V2.1-Master"
@@ -323,7 +333,10 @@ def available_video_models() -> list[dict]:
     if not GMI_API_KEY:
         return []
     return [
-        {"slug": slug, "label": m["label"], "needs_image": m["needs_image"], "audio": m["audio"]}
+        {
+            "slug": slug, "label": m["label"], "needs_image": m["needs_image"],
+            "audio": m["audio"], "best_for": m["best_for"], "description": m["description"],
+        }
         for slug, m in VIDEO_MODELS.items()
     ]
 

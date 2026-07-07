@@ -1503,11 +1503,21 @@ function applyVideoModelUI() {
   const model = selectedVideoModel();
   const needsImage = model ? model.needs_image : false;
   el("video-character-row").hidden = !needsImage;
+
+  const desc = el("video-model-desc");
+  if (!model || !model.description) {
+    desc.hidden = true;
+  } else {
+    el("video-model-tag").textContent = model.best_for || (needsImage ? "Character animation" : "Text-to-video");
+    el("video-model-text").textContent = model.description;
+    desc.hidden = false;
+  }
+
   const hint = el("video-model-hint");
   if (!model) { hint.hidden = true; return; }
   hint.textContent = needsImage
     ? "Animates the chosen character's portrait as the first frame — their identity carries into the clip."
-    : (model.audio ? "Text-to-video with a generated audio track." : "Text-to-video from your prompt — no character.");
+    : (model.audio ? "Includes a generated audio track." : "No character needed — describe the whole shot.");
   hint.hidden = false;
 }
 

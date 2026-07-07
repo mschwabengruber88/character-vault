@@ -754,6 +754,18 @@ def test_video_requires_api_key(client):
     assert resp.status_code == 401
 
 
+def test_video_models_carry_descriptions(client):
+    from app.pipelines import VIDEO_MODELS, available_video_models
+    # every model has a short strength blurb + a "best for" tag
+    for slug, meta in VIDEO_MODELS.items():
+        assert meta.get("description"), f"{slug} missing description"
+        assert meta.get("best_for"), f"{slug} missing best_for"
+    # available_video_models surfaces them when GMI is configured
+    with patch("app.pipelines.GMI_API_KEY", "fake-key"):
+        models = available_video_models()
+    assert models and all(m["description"] and m["best_for"] for m in models)
+
+
 def test_video_rejects_unavailable_model(client):
     # GMI not configured in tests → no video models → 400
     resp = client.post(
