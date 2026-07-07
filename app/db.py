@@ -103,6 +103,12 @@ def delete_character(character_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def delete_asset(asset_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+        return cur.rowcount > 0
+
+
 def list_assets(kind: str | None = None) -> list[dict]:
     with get_conn() as conn:
         if kind is None:

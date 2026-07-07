@@ -99,6 +99,12 @@ def list_assets(kind: str | None = Query(default=None, pattern="^(image|voice)$"
     return [with_signed_url(a) for a in db.list_assets(kind)]
 
 
+@app.delete("/assets/{asset_id}", status_code=204)
+def delete_asset(asset_id: int):
+    if not db.delete_asset(asset_id):
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+
 @app.post("/characters/{character_id}/generate/image", dependencies=[Depends(require_api_key)])
 def generate_image(character_id: int, body: PortraitRequest):
     character = db.get_character(character_id)

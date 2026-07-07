@@ -420,6 +420,24 @@ h1, h2, h3 {
 
 .asset-meta a:hover { text-decoration: underline; }
 
+.asset-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.asset-delete {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.asset-delete:hover { color: var(--red); }
+
 /* ---------- Lightbox ---------- */
 
 .lightbox {

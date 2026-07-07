@@ -162,6 +162,33 @@ def test_generate_image_provider_failure_returns_clean_502(client):
     assert "secret header dump" not in resp.text
 
 
+def test_delete_asset(client):
+    resp = client.post("/characters", json={"name": "AssetDeleteChar"})
+    char_id = resp.json()["id"]
+
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/c.png",
+            "original_url": "https://example.com/c-orig.png",
+            "sha256": "ghi789",
+            "mime_type": "image/png",
+            "manifest_verified": True,
+            "disclosure": "invisible",
+        }
+        asset = client.post(
+            f"/characters/{char_id}/generate/image",
+            json={"prompt": "a robot"},
+            headers={"X-API-Key": API_KEY},
+        ).json()
+
+    del_resp = client.delete(f"/assets/{asset['id']}")
+    assert del_resp.status_code == 204
+    character = client.get(f"/characters/{char_id}").json()
+    assert character["assets"] == []
+
+    assert client.delete(f"/assets/{asset['id']}").status_code == 404
+
+
 def test_list_assets_by_kind(client):
     resp = client.post("/characters", json={"name": "AssetChar"})
     char_id = resp.json()["id"]

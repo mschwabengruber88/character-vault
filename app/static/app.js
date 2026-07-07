@@ -200,14 +200,33 @@ function renderAssetCard(asset) {
   const time = document.createElement("span");
   time.textContent = formatTimestamp(asset.created_at);
   meta.appendChild(time);
+  const actions = document.createElement("span");
+  actions.className = "asset-actions";
   if (asset.signed_url) {
     const open = document.createElement("a");
     open.href = asset.signed_url;
     open.target = "_blank";
     open.rel = "noopener";
     open.textContent = "Open ↗";
-    meta.appendChild(open);
+    actions.appendChild(open);
   }
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "asset-delete";
+  remove.textContent = "Delete";
+  remove.addEventListener("click", async () => {
+    if (!confirm("Delete this asset record?")) return;
+    try {
+      await api(`/assets/${asset.id}`, { method: "DELETE" });
+      await selectCharacter(state.selectedId);
+      await loadCharacters();
+      toast("Asset deleted.");
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+  actions.appendChild(remove);
+  meta.appendChild(actions);
   body.appendChild(meta);
 
   card.appendChild(body);
