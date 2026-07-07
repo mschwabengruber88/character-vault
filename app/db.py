@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS assets (
     disclosure TEXT,
     original_url TEXT,
     quality TEXT,
-    cost_usd REAL
+    cost_usd REAL,
+    model TEXT
 );
 """
 
@@ -34,6 +35,7 @@ MIGRATIONS = (
     "ALTER TABLE assets ADD COLUMN original_url TEXT",
     "ALTER TABLE assets ADD COLUMN quality TEXT",
     "ALTER TABLE assets ADD COLUMN cost_usd REAL",
+    "ALTER TABLE assets ADD COLUMN model TEXT",
 )
 
 
@@ -144,13 +146,14 @@ def add_asset(
     original_url: str | None = None,
     quality: str | None = None,
     cost_usd: float | None = None,
+    model: str | None = None,
 ) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO assets
                (character_id, kind, url, sha256, mime_type, prompt, manifest_verified,
-                created_at, disclosure, original_url, quality, cost_usd)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, disclosure, original_url, quality, cost_usd, model)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 character_id,
                 kind,
@@ -164,6 +167,7 @@ def add_asset(
                 original_url,
                 quality,
                 cost_usd,
+                model,
             ),
         )
         row = conn.execute(

@@ -8,7 +8,7 @@ from genblaze_elevenlabs import ElevenLabsTTSProvider
 from genblaze_openai import DalleProvider, OpenAITTSProvider
 from genblaze_s3 import S3StorageBackend
 
-from app.config import B2_BUCKET_NAME, B2_REGION, ELEVENLABS_VOICE_ID
+from app.config import B2_BUCKET_NAME, B2_REGION, ELEVENLABS_VOICE_ID, GMI_API_KEY
 
 _sink: ObjectStorageSink | None = None
 
@@ -48,6 +48,63 @@ IDENTITY_INSTRUCTION = (
 QUALITY_TIERS = {"draft": "low", "final": "high"}
 IMAGE_COST_USD = {"draft": 0.011, "final": 0.167}
 
+# Image-model registry. gpt-image-1 (OpenAI) is the general-purpose model
+# with only loose "family resemblance" from references. flux-kontext-pro and
+# gemini-2.5-flash-image ("Nano Banana") run on GMI Cloud and do real
+# identity conditioning from reference images — purpose-built for keeping the
+# same character across scenes. GMI models take references as HTTPS URLs;
+# OpenAI takes them as local files (different SDK requirements).
+IMAGE_MODELS = {
+    "gpt-image-1": {
+        "label": "OpenAI gpt-image-1",
+        "provider": "openai",
+        "identity": False,
+        "quality_tiers": True,
+    },
+    "flux-kontext-pro": {
+        "label": "FLUX.1 Kontext (identity)",
+        "provider": "gmi",
+        "identity": True,
+        "quality_tiers": False,
+        "cost_usd": 0.04,  # GMI list price estimate
+    },
+    "gemini-2.5-flash-image": {
+        "label": "Nano Banana / Gemini 2.5 Flash Image (identity)",
+        "provider": "gmi",
+        "identity": True,
+        "quality_tiers": False,
+        "cost_usd": 0.039,  # GMI list price estimate
+    },
+}
+DEFAULT_IMAGE_MODEL = "gpt-image-1"
+
+
+def available_image_models() -> list[dict]:
+    """Models the server can actually call, given configured keys."""
+    out = []
+    for slug, meta in IMAGE_MODELS.items():
+        if meta["provider"] == "gmi" and not GMI_API_KEY:
+            continue
+        out.append({
+            "slug": slug,
+            "label": meta["label"],
+            "identity": meta["identity"],
+            "quality_tiers": meta["quality_tiers"],
+        })
+    return out
+
+
+def _gmi_references(references: list[dict]) -> list[Asset]:
+    """GMI Cloud requires HTTPS reference URLs — use presigned B2 links."""
+    from app.storage import presign_asset_url
+
+    assets = []
+    for ref in references[:3]:
+        signed = presign_asset_url(ref["url"])
+        if signed:
+            assets.append(Asset(url=signed, media_type="image/png", sha256=ref.get("sha256")))
+    return assets
+
 # gpt-4o-mini-tts: ~$12 per 1M input characters. ElevenLabs cost depends
 # on the account's plan, so we don't guess it (cost stays None).
 OPENAI_TTS_USD_PER_CHAR = 12 / 1_000_000
@@ -84,28 +141,41 @@ def generate_character_portrait(
     disclosure: str = "invisible",
     references: list[dict] | None = None,
     quality: str = "draft",
+    model: str = DEFAULT_IMAGE_MODEL,
 ) -> dict:
     from app.disclosure import apply_image_disclosure
 
+    meta = IMAGE_MODELS[model]
     step_kwargs: dict = {}
     final_prompt = prompt
     temps: list[Path] = []
+
     if references:
-        inputs, temps = _fetch_references_to_temp(references)
+        if meta["provider"] == "gmi":
+            inputs = _gmi_references(references)
+        else:
+            inputs, temps = _fetch_references_to_temp(references)
         if inputs:
             step_kwargs["external_inputs"] = inputs
             final_prompt = IDENTITY_INSTRUCTION + prompt
+
+    if meta["provider"] == "gmi":
+        from genblaze_gmicloud import GMICloudImageProvider
+
+        provider = GMICloudImageProvider()
+    else:
+        provider = DalleProvider()
+        step_kwargs["size"] = "1024x1024"
+        step_kwargs["quality"] = QUALITY_TIERS[quality]
 
     try:
         result = (
             Pipeline(f"character-{character_id}-portrait")
             .step(
-                DalleProvider(),
-                model="gpt-image-1",
+                provider,
+                model=model,
                 prompt=final_prompt,
                 modality=Modality.IMAGE,
-                size="1024x1024",
-                quality=QUALITY_TIERS[quality],
                 **step_kwargs,
             )
             .run(sink=get_storage_sink(), timeout=180)
@@ -118,8 +188,13 @@ def generate_character_portrait(
     asset["original_url"] = asset["url"]
     asset["url"] = apply_image_disclosure(asset["url"], result.manifest, disclosure)
     asset["disclosure"] = disclosure
-    asset["quality"] = quality
-    asset["cost_usd"] = IMAGE_COST_USD[quality]
+    asset["model"] = model
+    if meta["quality_tiers"]:
+        asset["quality"] = quality
+        asset["cost_usd"] = IMAGE_COST_USD[quality]
+    else:
+        asset["quality"] = None
+        asset["cost_usd"] = meta.get("cost_usd")
     return asset
 
 

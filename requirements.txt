@@ -4,6 +4,7 @@ genblaze-core
 genblaze-s3
 genblaze-openai
 genblaze-elevenlabs
+genblaze-gmicloud
 python-dotenv==1.0.1
 pydantic==2.10.4
 pillow==12.3.0

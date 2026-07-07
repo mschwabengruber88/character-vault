@@ -60,13 +60,17 @@
         <div class="generate-panel">
           <div class="generate-card">
             <h3>Portrait</h3>
-            <p class="generate-hint">OpenAI gpt-image-1 → Backblaze B2</p>
+            <p class="generate-hint">Genblaze → Backblaze B2</p>
             <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="500" rows="2"></textarea>
+            <label class="model-row">
+              <span class="model-label">Model</span>
+              <select id="image-model"></select>
+            </label>
             <label id="identity-row" class="identity-row" hidden>
               <input type="checkbox" id="use-identity" checked>
-              <span><b>Keep character identity</b> — <span id="identity-count"></span> stored portrait(s) are used as reference automatically</span>
+              <span><b>Keep character identity</b> — <span id="identity-count"></span> stored portrait(s) used as reference · <span id="identity-hint"></span></span>
             </label>
-            <fieldset class="disclosure-choice">
+            <fieldset id="quality-choice" class="disclosure-choice">
               <legend>Quality</legend>
               <label>
                 <input type="radio" name="quality" value="draft" checked>

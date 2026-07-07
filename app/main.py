@@ -12,7 +12,13 @@ from pydantic import BaseModel, Field
 
 from app import db
 from app.config import CORS_ORIGINS, GENERATE_API_KEY
-from app.pipelines import generate_character_portrait, generate_character_voice_line
+from app.pipelines import (
+    DEFAULT_IMAGE_MODEL,
+    IMAGE_MODELS,
+    available_image_models,
+    generate_character_portrait,
+    generate_character_voice_line,
+)
 from app.storage import presign_asset_url, with_signed_url
 
 logger = logging.getLogger("character_vault")
@@ -81,6 +87,7 @@ class PortraitRequest(BaseModel):
     disclosure: Literal["visible", "invisible"] = "invisible"
     use_identity: bool = True
     quality: Literal["draft", "final"] = "draft"
+    model: str = DEFAULT_IMAGE_MODEL
 
 
 def identity_references(character: dict) -> list[dict]:
@@ -110,6 +117,11 @@ class VoiceLineRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/capabilities")
+def capabilities():
+    return {"image_models": available_image_models()}
 
 
 @app.post("/characters")
@@ -157,11 +169,16 @@ def generate_image(character_id: int, body: PortraitRequest):
     character = db.get_character(character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
+    if body.model not in {m["slug"] for m in available_image_models()}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{body.model}' is not available. Configure its API key first.",
+        )
     references = identity_references(character) if body.use_identity else []
     with generation_slot(character_id, "image"):
         try:
             result = generate_character_portrait(
-                character_id, body.prompt, body.disclosure, references, body.quality
+                character_id, body.prompt, body.disclosure, references, body.quality, body.model
             )
         except HTTPException:
             raise
@@ -180,6 +197,7 @@ def generate_image(character_id: int, body: PortraitRequest):
         original_url=result.get("original_url"),
         quality=result.get("quality"),
         cost_usd=result.get("cost_usd"),
+        model=result.get("model"),
     ))
 
 

@@ -8,6 +8,7 @@ const state = {
   characters: [],
   selectedId: null,
   generating: false,
+  imageModels: [],
 };
 
 /* ---------- API helpers ---------- */
@@ -31,6 +32,36 @@ async function api(path, options = {}) {
 
 function apiKey() {
   return localStorage.getItem(KEY_STORAGE) || "";
+}
+
+/* ---------- Image models ---------- */
+
+function selectedModel() {
+  return state.imageModels.find((m) => m.slug === el("image-model").value);
+}
+
+function applyModelUI() {
+  const model = selectedModel();
+  if (!model) return;
+  el("quality-choice").hidden = !model.quality_tiers;
+  el("identity-hint").textContent = model.identity
+    ? "this model locks facial identity"
+    : "loose likeness only — for locked identity pick an identity model";
+}
+
+async function loadImageModels() {
+  const caps = await api("/capabilities").catch(() => ({ image_models: [] }));
+  state.imageModels = caps.image_models || [];
+  const select = el("image-model");
+  select.innerHTML = "";
+  for (const model of state.imageModels) {
+    const option = document.createElement("option");
+    option.value = model.slug;
+    option.textContent = model.label;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", applyModelUI);
+  applyModelUI();
 }
 
 /* ---------- Toast ---------- */
@@ -207,6 +238,7 @@ function renderAssetCard(asset) {
   meta.className = "asset-meta";
   const time = document.createElement("span");
   const parts = [formatTimestamp(asset.created_at)];
+  if (asset.model) parts.push(asset.model.replace("gemini-2.5-flash-image", "nano-banana"));
   if (asset.quality) parts.push(asset.quality);
   if (typeof asset.cost_usd === "number") parts.push(`$${asset.cost_usd.toFixed(3)}`);
   time.textContent = parts.join(" · ");
@@ -329,6 +361,7 @@ async function generate(kind) {
     const payload = kind === "image"
       ? {
           prompt: value,
+          model: el("image-model").value,
           disclosure: document.querySelector('input[name="disclosure"]:checked').value,
           use_identity: !el("identity-row").hidden && el("use-identity").checked,
           quality: document.querySelector('input[name="quality"]:checked').value,
@@ -399,6 +432,7 @@ function init() {
   refreshKeyButton();
   el("generate-image-button").addEventListener("click", () => generate("image"));
   el("generate-voice-button").addEventListener("click", () => generate("voice"));
+  loadImageModels().catch((err) => toast(err.message, true));
   loadCharacters().catch((err) => toast(err.message, true));
 }
 

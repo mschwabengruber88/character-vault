@@ -95,7 +95,7 @@ def test_generate_image_success(client):
     assert data["url"] == "https://example.com/a.visible.png"
     assert data["disclosure"] == "visible"
     assert data["original_url"] == "https://example.com/a.png"
-    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft")
+    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft", "gpt-image-1")
 
     character = client.get(f"/characters/{char_id}").json()
     assert len(character["assets"]) == 1
@@ -120,7 +120,7 @@ def test_generate_image_disclosure_defaults_to_invisible(client):
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
-    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft")
+    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft", "gpt-image-1")
 
 
 def test_generate_image_rejects_unknown_disclosure(client):
@@ -187,6 +187,26 @@ def test_generate_image_quality_and_cost_persisted(client):
     assert data["quality"] == "final"
     assert data["cost_usd"] == 0.167
     assert mock_gen.call_args.args[4] == "final"
+
+
+def test_capabilities_lists_available_models(client):
+    resp = client.get("/capabilities")
+    assert resp.status_code == 200
+    slugs = {m["slug"] for m in resp.json()["image_models"]}
+    # gpt-image-1 is always available; GMI models only if GMI_API_KEY is set
+    assert "gpt-image-1" in slugs
+
+
+def test_generate_image_rejects_unavailable_model(client):
+    resp = client.post("/characters", json={"name": "ModelChar"})
+    char_id = resp.json()["id"]
+    resp = client.post(
+        f"/characters/{char_id}/generate/image",
+        json={"prompt": "a robot", "model": "flux-kontext-pro"},
+        headers={"X-API-Key": API_KEY},
+    )
+    # GMI_API_KEY not set in tests → model unavailable → 400
+    assert resp.status_code == 400
 
 
 def test_generate_image_rejects_unknown_quality(client):
