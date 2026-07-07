@@ -15,8 +15,9 @@
       <h1>Character Vault</h1>
     </div>
     <div class="topbar-right">
-      <span class="provenance-note">Every asset stored on Backblaze B2 with a verified provenance manifest</span>
-      <button id="key-button" class="key-button" title="Set generation API key">API key</button>
+      <span class="provenance-note" data-i18n="provenanceNote">Every asset stored on Backblaze B2 with a verified provenance manifest</span>
+      <button id="lang-toggle" class="lang-toggle" title="Sprache / Language">DE</button>
+      <button id="key-button" class="key-button" title="Set generation API key" data-i18n="apiKey">API key</button>
     </div>
   </header>
 
@@ -24,8 +25,8 @@
 
     <aside class="sidebar">
       <div class="sidebar-head">
-        <h2>Characters</h2>
-        <button id="new-character-button" class="button primary small">New</button>
+        <h2 data-i18n="charactersHeading">Characters</h2>
+        <button id="new-character-button" class="button primary small" data-i18n="new">New</button>
       </div>
 
       <form id="create-form" class="create-form" hidden>
@@ -45,18 +46,60 @@
       </form>
 
       <ul id="character-list" class="character-list"></ul>
-      <p id="character-empty" class="empty-note" hidden>No characters yet. Create your first one.</p>
+      <p id="character-empty" class="empty-note" hidden data-i18n="noCharacters">No characters yet. Create your first one.</p>
 
-      <button id="open-scenes" class="scenes-nav">▦ Scenes / Story</button>
-      <button id="open-studio" class="scenes-nav">◈ Studio — backgrounds &amp; photo art</button>
-      <button id="open-audio" class="scenes-nav">♪ Audio — narration &amp; voiceover</button>
-      <button id="open-video" class="scenes-nav">▷ Video — animate characters</button>
+      <button id="open-scenes" class="scenes-nav"><span class="nav-glyph">▦</span><span data-i18n="navScenes">Scenes / Story</span></button>
+      <button id="open-studio" class="scenes-nav"><span class="nav-glyph">◈</span><span data-i18n="navStudio">Studio — backgrounds &amp; photo art</span></button>
+      <button id="open-audio" class="scenes-nav"><span class="nav-glyph">♪</span><span data-i18n="navAudio">Audio — narration &amp; voiceover</span></button>
+      <button id="open-video" class="scenes-nav"><span class="nav-glyph">▷</span><span data-i18n="navVideo">Video — animate characters</span></button>
     </aside>
 
     <section class="detail" id="detail">
-      <div id="detail-placeholder" class="placeholder">
-        <p class="placeholder-glyph">▣</p>
-        <p>Select a character — or create one — to start generating portraits and voice lines.</p>
+      <div id="detail-placeholder" class="landing">
+        <div class="landing-hero">
+          <p class="landing-eyebrow" data-i18n="landingEyebrow">Backblaze Generative AI Media Hackathon</p>
+          <h2 class="landing-title" data-i18n="landingTitle">One character. Every medium. Always consistent.</h2>
+          <p class="landing-sub" data-i18n="landingSub">Character Vault turns a single character profile into a full library of images, scenes, voiceover and video — keeping the same face, style and identity across all of them. No model training, no LoRA.</p>
+          <div class="landing-cta">
+            <button id="landing-create" class="button primary" data-i18n="landingCreate">Create your first character</button>
+            <span class="landing-cta-note" data-i18n="landingCtaNote">Every asset is stored on your Backblaze B2 with a verifiable provenance manifest.</span>
+          </div>
+        </div>
+
+        <div class="landing-section">
+          <h3 class="landing-h3" data-i18n="landingWhy">Why it stands out</h3>
+          <div class="landing-cards">
+            <div class="landing-card">
+              <span class="landing-card-icon">◈</span>
+              <h4 data-i18n="feat1Title">Consistent identity — without LoRA</h4>
+              <p data-i18n="feat1Body">The vault's own portraits become the reference. A character keeps the same face across every image, multi-character scene and video — no training, no fine-tuning, in seconds.</p>
+            </div>
+            <div class="landing-card">
+              <span class="landing-card-icon">▤</span>
+              <h4 data-i18n="feat2Title">One pipeline, end to end</h4>
+              <p data-i18n="feat2Body">Profile → image modes (single, variation set, photoshoot, story) → studio backgrounds & photo art → voiceover → video. The whole creative chain in one place.</p>
+            </div>
+            <div class="landing-card">
+              <span class="landing-card-icon">✦</span>
+              <h4 data-i18n="feat3Title">Provenance &amp; AI disclosure built in</h4>
+              <p data-i18n="feat3Body">Every asset carries a verifiable manifest. Choose a visible “AI” watermark or invisible embedded metadata — transparency by design, not an afterthought.</p>
+            </div>
+            <div class="landing-card">
+              <span class="landing-card-icon">◷</span>
+              <h4 data-i18n="feat4Title">Waste-aware by design</h4>
+              <p data-i18n="feat4Body">Draft and final quality tiers, live cost estimates before every run, batch generation with a stop button, and a duplicate-request guard. Spend credits on keepers, not misfires.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="landing-section">
+          <h3 class="landing-h3" data-i18n="landingHow">How it works</h3>
+          <ol class="landing-steps">
+            <li><span class="landing-step-n">1</span><div><b data-i18n="step1Title">Build a character</b><span data-i18n="step1Body">Give them a reference image (generated or your own photo), personality, a fixed voice, a seed and a purpose — an extended CV.</span></div></li>
+            <li><span class="landing-step-n">2</span><div><b data-i18n="step2Title">Generate in any mode</b><span data-i18n="step2Body">One portrait, a 10-shot variation set, a 100-frame photoshoot, or a full story series — the prompt builder assembles a strong prompt from optional fields.</span></div></li>
+            <li><span class="landing-step-n">3</span><div><b data-i18n="step3Title">Bring them to life</b><span data-i18n="step3Body">Add voiceover, compose multi-character scenes, or animate a portrait into a short video — identity held throughout.</span></div></li>
+          </ol>
+        </div>
       </div>
 
       <div id="detail-content" hidden>
@@ -196,8 +239,8 @@
       <div id="scenes-view" hidden>
         <div class="detail-head">
           <div>
-            <h2>Scenes &amp; Storytelling</h2>
-            <p class="detail-description">Bring two or more of your characters together in one image — manga panels, picture-book pages. Each keeps their own look via Nano Banana multi-character composition.</p>
+            <h2 data-i18n="scenesTitle">Scenes &amp; Storytelling</h2>
+            <p class="detail-description" data-i18n="scenesDesc">Bring two or more of your characters together in one image — manga panels, picture-book pages. Each keeps their own look via Nano Banana multi-character composition.</p>
           </div>
         </div>
 
@@ -220,8 +263,8 @@
       <div id="studio-view" hidden>
         <div class="detail-head">
           <div>
-            <h2>Studio</h2>
-            <p class="detail-description">Generate images without a character — free artistic photo art like Midjourney, or empty background/scene plates. Same prompt builder, no identity lock.</p>
+            <h2 data-i18n="studioTitle">Studio</h2>
+            <p class="detail-description" data-i18n="studioDesc">Generate images without a character — free artistic photo art like Midjourney, or empty background/scene plates. Same prompt builder, no identity lock.</p>
           </div>
         </div>
 
@@ -280,8 +323,8 @@
       <div id="audio-view" hidden>
         <div class="detail-head">
           <div>
-            <h2>Audio</h2>
-            <p class="detail-description">Turn a script into spoken audio — narration, voiceover, dialogue. Pick a catalog voice, or bring your own ElevenLabs voice by its Voice ID.</p>
+            <h2 data-i18n="audioTitle">Audio</h2>
+            <p class="detail-description" data-i18n="audioDesc">Turn a script into spoken audio — narration, voiceover, dialogue. Pick a catalog voice, or bring your own ElevenLabs voice by its Voice ID.</p>
           </div>
         </div>
 
@@ -334,8 +377,8 @@
       <div id="video-view" hidden>
         <div class="detail-head">
           <div>
-            <h2>Video</h2>
-            <p class="detail-description">Bring a character to life — animate one of their portraits into a short clip (identity held via image-to-video), or generate video straight from a prompt.</p>
+            <h2 data-i18n="videoTitle">Video</h2>
+            <p class="detail-description" data-i18n="videoDesc">Bring a character to life — animate one of their portraits into a short clip (identity held via image-to-video), or generate video straight from a prompt.</p>
           </div>
         </div>
 

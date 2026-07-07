@@ -4,6 +4,123 @@ const KEY_STORAGE = "cv_generate_api_key";
 
 const el = (id) => document.getElementById(id);
 
+/* ---------- i18n (English / German) ---------- */
+
+const LANG_STORAGE = "cv_lang";
+
+const TRANSLATIONS = {
+  en: {
+    provenanceNote: "Every asset stored on Backblaze B2 with a verified provenance manifest",
+    apiKey: "API key",
+    landingEyebrow: "Backblaze Generative AI Media Hackathon",
+    landingTitle: "One character. Every medium. Always consistent.",
+    landingSub: "Character Vault turns a single character profile into a full library of images, scenes, voiceover and video — keeping the same face, style and identity across all of them. No model training, no LoRA.",
+    landingCreate: "Create your first character",
+    landingCtaNote: "Every asset is stored on your Backblaze B2 with a verifiable provenance manifest.",
+    landingWhy: "Why it stands out",
+    feat1Title: "Consistent identity — without LoRA",
+    feat1Body: "The vault's own portraits become the reference. A character keeps the same face across every image, multi-character scene and video — no training, no fine-tuning, in seconds.",
+    feat2Title: "One pipeline, end to end",
+    feat2Body: "Profile → image modes (single, variation set, photoshoot, story) → studio backgrounds & photo art → voiceover → video. The whole creative chain in one place.",
+    feat3Title: "Provenance & AI disclosure built in",
+    feat3Body: "Every asset carries a verifiable manifest. Choose a visible “AI” watermark or invisible embedded metadata — transparency by design, not an afterthought.",
+    feat4Title: "Waste-aware by design",
+    feat4Body: "Draft and final quality tiers, live cost estimates before every run, batch generation with a stop button, and a duplicate-request guard. Spend credits on keepers, not misfires.",
+    landingHow: "How it works",
+    step1Title: "Build a character",
+    step1Body: "Give them a reference image (generated or your own photo), personality, a fixed voice, a seed and a purpose — an extended CV.",
+    step2Title: "Generate in any mode",
+    step2Body: "One portrait, a 10-shot variation set, a 100-frame photoshoot, or a full story series — the prompt builder assembles a strong prompt from optional fields.",
+    step3Title: "Bring them to life",
+    step3Body: "Add voiceover, compose multi-character scenes, or animate a portrait into a short video — identity held throughout.",
+    charactersHeading: "Characters",
+    new: "New",
+    noCharacters: "No characters yet. Create your first one.",
+    navScenes: "Scenes / Story",
+    navStudio: "Studio — backgrounds & photo art",
+    navAudio: "Audio — narration & voiceover",
+    navVideo: "Video — animate characters",
+    scenesTitle: "Scenes & Storytelling",
+    scenesDesc: "Bring two or more of your characters together in one image — manga panels, picture-book pages. Each keeps their own look via Nano Banana multi-character composition.",
+    studioTitle: "Studio",
+    studioDesc: "Generate images without a character — free artistic photo art like Midjourney, or empty background/scene plates. Same prompt builder, no identity lock.",
+    audioTitle: "Audio",
+    audioDesc: "Turn a script into spoken audio — narration, voiceover, dialogue. Pick a catalog voice, or bring your own ElevenLabs voice by its Voice ID.",
+    videoTitle: "Video",
+    videoDesc: "Bring a character to life — animate one of their portraits into a short clip (identity held via image-to-video), or generate video straight from a prompt.",
+  },
+  de: {
+    provenanceNote: "Jedes Asset auf Backblaze B2 gespeichert – mit verifiziertem Herkunftsnachweis",
+    apiKey: "API-Schlüssel",
+    landingEyebrow: "Backblaze Generative AI Media Hackathon",
+    landingTitle: "Ein Charakter. Jedes Medium. Immer konsistent.",
+    landingSub: "Character Vault macht aus einem einzigen Charakter-Profil eine ganze Bibliothek aus Bildern, Szenen, Sprachausgabe und Video – mit demselben Gesicht, Stil und derselben Identität über alles hinweg. Kein Modell-Training, kein LoRA.",
+    landingCreate: "Ersten Charakter erstellen",
+    landingCtaNote: "Jedes Asset landet auf deinem Backblaze B2 – mit verifizierbarem Herkunftsnachweis.",
+    landingWhy: "Was es auszeichnet",
+    feat1Title: "Konsistente Identität – ohne LoRA",
+    feat1Body: "Die Porträts im Vault werden selbst zur Referenz. Ein Charakter behält dasselbe Gesicht über jedes Bild, jede Multi-Charakter-Szene und jedes Video – ohne Training, ohne Fine-Tuning, in Sekunden.",
+    feat2Title: "Eine Pipeline, von Anfang bis Ende",
+    feat2Body: "Profil → Bild-Modi (Einzeln, Variationsset, Fotoshooting, Story) → Studio-Hintergründe & Foto-Art → Sprachausgabe → Video. Die ganze Kreativkette an einem Ort.",
+    feat3Title: "Herkunft & KI-Kennzeichnung eingebaut",
+    feat3Body: "Jedes Asset trägt einen verifizierbaren Manifest-Nachweis. Wähle ein sichtbares „KI“-Wasserzeichen oder unsichtbare eingebettete Metadaten – Transparenz von Grund auf, nicht nachträglich.",
+    feat4Title: "Von Grund auf sparsam",
+    feat4Body: "Entwurfs- und Final-Qualitätsstufen, Live-Kostenschätzung vor jedem Lauf, Batch-Generierung mit Stopp-Knopf und Schutz vor Doppel-Anfragen. Credits für Treffer, nicht für Fehlversuche.",
+    landingHow: "So funktioniert's",
+    step1Title: "Charakter aufbauen",
+    step1Body: "Gib ihm ein Referenzbild (generiert oder dein eigenes Foto), Persönlichkeit, eine feste Stimme, einen Seed und einen Verwendungszweck – ein erweiterter Lebenslauf.",
+    step2Title: "In jedem Modus generieren",
+    step2Body: "Ein Porträt, ein 10er-Variationsset, ein 100-Bilder-Fotoshooting oder eine ganze Bildergeschichte – der Prompt-Baukasten setzt aus optionalen Feldern einen starken Prompt zusammen.",
+    step3Title: "Zum Leben erwecken",
+    step3Body: "Sprachausgabe hinzufügen, Multi-Charakter-Szenen komponieren oder ein Porträt zu einem kurzen Video animieren – Identität bleibt durchgängig erhalten.",
+    charactersHeading: "Charaktere",
+    new: "Neu",
+    noCharacters: "Noch keine Charaktere. Erstelle deinen ersten.",
+    navScenes: "Szenen / Story",
+    navStudio: "Studio – Hintergründe & Foto-Art",
+    navAudio: "Audio – Erzählung & Voiceover",
+    navVideo: "Video – Charaktere animieren",
+    scenesTitle: "Szenen & Storytelling",
+    scenesDesc: "Bring zwei oder mehr Charaktere in einem Bild zusammen – Manga-Panels, Bilderbuchseiten. Jeder behält sein Aussehen dank Nano-Banana-Multi-Charakter-Komposition.",
+    studioTitle: "Studio",
+    studioDesc: "Bilder ohne Charakter generieren – freie künstlerische Foto-Art wie bei Midjourney oder leere Hintergrund-/Szenen-Plates. Derselbe Prompt-Baukasten, ohne Identitäts-Lock.",
+    audioTitle: "Audio",
+    audioDesc: "Mach aus einem Skript gesprochenes Audio – Erzählung, Voiceover, Dialog. Wähle eine Katalog-Stimme oder bring deine eigene ElevenLabs-Stimme per Voice-ID mit.",
+    videoTitle: "Video",
+    videoDesc: "Erwecke einen Charakter zum Leben – animiere eines seiner Porträts zu einem kurzen Clip (Identität via Image-to-Video gehalten) oder generiere Video direkt aus einem Prompt.",
+  },
+};
+
+function initialLang() {
+  const saved = localStorage.getItem(LANG_STORAGE);
+  if (saved === "en" || saved === "de") return saved;
+  return (navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en";
+}
+
+let lang = initialLang();
+
+function t(key) {
+  return (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || TRANSLATIONS.en[key] || key;
+}
+
+function applyI18n() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach((node) => {
+    node.setAttribute("placeholder", t(node.getAttribute("data-i18n-ph")));
+  });
+  const toggle = el("lang-toggle");
+  if (toggle) toggle.textContent = lang === "de" ? "EN" : "DE";
+}
+
+function setLang(next) {
+  lang = next;
+  localStorage.setItem(LANG_STORAGE, next);
+  applyI18n();
+}
+
 const state = {
   characters: [],
   selectedId: null,
@@ -1711,6 +1828,14 @@ function init() {
   setupStudio();
   setupAudio();
   setupVideo();
+  applyI18n();
+  el("lang-toggle").addEventListener("click", () => setLang(lang === "de" ? "en" : "de"));
+  el("landing-create").addEventListener("click", () => {
+    const form = el("create-form");
+    form.hidden = false;
+    el("create-name").focus();
+    form.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
   Promise.all([
     loadImageModels(),
     loadVoices(),
