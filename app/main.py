@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app import db
 from app.config import CORS_ORIGINS, GENERATE_API_KEY
 from app.pipelines import generate_character_portrait, generate_character_voice_line
-from app.storage import with_signed_url
+from app.storage import presign_asset_url, with_signed_url
 
 logger = logging.getLogger("character_vault")
 
@@ -70,7 +70,11 @@ def create_character(body: CharacterCreate):
 
 @app.get("/characters")
 def list_characters():
-    return db.list_characters()
+    characters = db.list_characters()
+    for character in characters:
+        source = character.pop("thumbnail_source_url", None)
+        character["thumbnail_url"] = presign_asset_url(source) if source else None
+    return characters
 
 
 @app.get("/characters/{character_id}")

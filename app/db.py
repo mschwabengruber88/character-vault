@@ -59,7 +59,13 @@ def create_character(name: str, description: str) -> dict:
 
 def list_characters() -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM characters ORDER BY id").fetchall()
+        rows = conn.execute(
+            """SELECT characters.*,
+                      (SELECT url FROM assets
+                       WHERE assets.character_id = characters.id AND assets.kind = 'image'
+                       ORDER BY assets.id DESC LIMIT 1) AS thumbnail_source_url
+               FROM characters ORDER BY characters.id"""
+        ).fetchall()
         return [dict(row) for row in rows]
 
 

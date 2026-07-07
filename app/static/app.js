@@ -68,7 +68,24 @@ function renderCharacterList() {
     const li = document.createElement("li");
     li.classList.toggle("active", character.id === state.selectedId);
     const button = document.createElement("button");
-    button.textContent = character.name;
+
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    if (character.thumbnail_url) {
+      const img = document.createElement("img");
+      img.src = character.thumbnail_url;
+      img.alt = "";
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = character.name.trim().charAt(0).toUpperCase() || "?";
+    }
+    button.appendChild(avatar);
+
+    const label = document.createElement("span");
+    label.className = "character-name";
+    label.textContent = character.name;
+    button.appendChild(label);
+
     button.addEventListener("click", () => selectCharacter(character.id));
     li.appendChild(button);
     list.appendChild(li);
@@ -103,6 +120,20 @@ function renderDetail(character) {
   }
 }
 
+function formatTimestamp(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function openLightbox(src, caption) {
+  el("lightbox-image").src = src;
+  el("lightbox-caption").textContent = caption;
+  el("lightbox").showModal();
+}
+
 function renderAssetCard(asset) {
   const card = document.createElement("div");
   card.className = "asset-card";
@@ -115,6 +146,11 @@ function renderAssetCard(asset) {
     img.src = asset.signed_url;
     img.alt = asset.prompt;
     img.loading = "lazy";
+    img.tabIndex = 0;
+    img.addEventListener("click", () => openLightbox(asset.signed_url, asset.prompt));
+    img.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") openLightbox(asset.signed_url, asset.prompt);
+    });
     card.appendChild(img);
   } else if (asset.kind === "voice" && asset.signed_url) {
     const audio = document.createElement("audio");
@@ -149,6 +185,21 @@ function renderAssetCard(asset) {
     provenance.appendChild(sha);
   }
   body.appendChild(provenance);
+
+  const meta = document.createElement("div");
+  meta.className = "asset-meta";
+  const time = document.createElement("span");
+  time.textContent = formatTimestamp(asset.created_at);
+  meta.appendChild(time);
+  if (asset.signed_url) {
+    const open = document.createElement("a");
+    open.href = asset.signed_url;
+    open.target = "_blank";
+    open.rel = "noopener";
+    open.textContent = "Open ↗";
+    meta.appendChild(open);
+  }
+  body.appendChild(meta);
 
   card.appendChild(body);
   return card;
@@ -284,10 +335,20 @@ function setupKeyDialog() {
 
 /* ---------- Init ---------- */
 
+function setupLightbox() {
+  const lightbox = el("lightbox");
+  el("lightbox-close").addEventListener("click", () => lightbox.close());
+  lightbox.addEventListener("click", (event) => {
+    if (event.target === lightbox) lightbox.close();
+  });
+  lightbox.addEventListener("close", () => { el("lightbox-image").src = ""; });
+}
+
 function init() {
   setupCreateForm();
   setupDelete();
   setupKeyDialog();
+  setupLightbox();
   refreshKeyButton();
   el("generate-image-button").addEventListener("click", () => generate("image"));
   el("generate-voice-button").addEventListener("click", () => generate("voice"));
