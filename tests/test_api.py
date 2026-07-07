@@ -330,3 +330,52 @@ def test_list_assets_by_kind(client):
 
     resp = client.get("/assets?kind=voice")
     assert all(a["kind"] == "voice" for a in resp.json())
+
+
+def test_voices_lists_openai(client):
+    resp = client.get("/voices")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "openai" in body
+    ids = {v["id"] for v in body["openai"]}
+    assert {"onyx", "nova", "shimmer"} <= ids
+
+
+def test_assign_and_use_character_voice(client):
+    char_id = client.post("/characters", json={"name": "VoiceChar"}).json()["id"]
+
+    assign = client.put(
+        f"/characters/{char_id}/voice",
+        json={"voice_provider": "openai", "voice_id": "nova"},
+    )
+    assert assign.status_code == 200
+    assert assign.json()["voice_provider"] == "openai"
+    assert assign.json()["voice_id"] == "nova"
+
+    with patch("app.main.generate_character_voice_line") as mock_voice:
+        mock_voice.return_value = {
+            "url": "https://example.com/v.mp3",
+            "sha256": "voice1",
+            "mime_type": "audio/mpeg",
+            "manifest_verified": True,
+            "cost_usd": 0.0006,
+            "voice": "openai:nova",
+        }
+        resp = client.post(
+            f"/characters/{char_id}/generate/voice",
+            json={"text": "hello there"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "openai:nova"
+    # the character's assigned voice is passed through to the pipeline
+    mock_voice.assert_called_once_with(char_id, "hello there", "openai", "nova")
+
+
+def test_assign_voice_rejects_unknown_id(client):
+    char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
+    resp = client.put(
+        f"/characters/{char_id}/voice",
+        json={"voice_provider": "openai", "voice_id": "not-a-voice"},
+    )
+    assert resp.status_code == 400

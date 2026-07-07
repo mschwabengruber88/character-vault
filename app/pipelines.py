@@ -8,7 +8,12 @@ from genblaze_elevenlabs import ElevenLabsTTSProvider
 from genblaze_openai import DalleProvider, OpenAITTSProvider
 from genblaze_s3 import S3StorageBackend
 
-from app.config import B2_BUCKET_NAME, B2_REGION, ELEVENLABS_VOICE_ID, GMI_API_KEY
+from app.config import (
+    B2_BUCKET_NAME,
+    B2_REGION,
+    ELEVENLABS_API_KEY,
+    GMI_API_KEY,
+)
 
 _sink: ObjectStorageSink | None = None
 
@@ -195,8 +200,73 @@ def generate_character_portrait(
     return asset
 
 
-def generate_character_voice_line(character_id: int, text: str) -> dict:
-    if ELEVENLABS_VOICE_ID:
+# Each character can be assigned a voice from either provider, switchable
+# anytime. OpenAI voices work everywhere (incl. Railway). ElevenLabs is
+# richer but its free tier blocks datacenter IPs, so from the cloud it may
+# be unreachable — those requests fall back to a deterministic OpenAI voice,
+# and the asset records which voice actually spoke.
+OPENAI_VOICES = [
+    {"id": "alloy", "name": "Alloy — neutral"},
+    {"id": "ash", "name": "Ash — warm male"},
+    {"id": "ballad", "name": "Ballad — soft male"},
+    {"id": "coral", "name": "Coral — bright female"},
+    {"id": "echo", "name": "Echo — calm male"},
+    {"id": "fable", "name": "Fable — expressive"},
+    {"id": "nova", "name": "Nova — friendly female"},
+    {"id": "onyx", "name": "Onyx — deep male"},
+    {"id": "sage", "name": "Sage — measured"},
+    {"id": "shimmer", "name": "Shimmer — light female"},
+]
+_OPENAI_VOICE_IDS = {v["id"] for v in OPENAI_VOICES}
+
+# Curated ElevenLabs premade voices (stable public IDs) so the picker works
+# without a server-side ElevenLabs call (which is blocked in the cloud).
+ELEVENLABS_VOICES = [
+    {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "George — warm storyteller"},
+    {"id": "nPczCjzI2devNBz1zQrb", "name": "Brian — deep, resonant"},
+    {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel — calm female"},
+    {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah — soft news"},
+    {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily — warm female"},
+    {"id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Liam — youthful male"},
+]
+
+
+def available_voices() -> dict:
+    voices = {"openai": OPENAI_VOICES}
+    if ELEVENLABS_API_KEY:
+        voices["elevenlabs"] = ELEVENLABS_VOICES
+    return voices
+
+
+def _default_openai_voice(character_id: int) -> str:
+    return OPENAI_VOICES[character_id % len(OPENAI_VOICES)]["id"]
+
+
+def _openai_voice_line(character_id: int, text: str, voice: str) -> dict:
+    result = (
+        Pipeline(f"character-{character_id}-voice-line-openai")
+        .step(
+            OpenAITTSProvider(),
+            model="gpt-4o-mini-tts",
+            prompt=text,
+            modality=Modality.AUDIO,
+            voice=voice,
+        )
+        .run(sink=get_storage_sink(), timeout=120)
+    )
+    asset = _asset_result(result)
+    asset["cost_usd"] = round(len(text) * OPENAI_TTS_USD_PER_CHAR, 6)
+    asset["voice"] = f"openai:{voice}"
+    return asset
+
+
+def generate_character_voice_line(
+    character_id: int,
+    text: str,
+    voice_provider: str | None = None,
+    voice_id: str | None = None,
+) -> dict:
+    if voice_provider == "elevenlabs" and voice_id and ELEVENLABS_API_KEY:
         try:
             result = (
                 Pipeline(f"character-{character_id}-voice-line")
@@ -205,27 +275,19 @@ def generate_character_voice_line(character_id: int, text: str) -> dict:
                     model="eleven_v3",
                     prompt=text,
                     modality=Modality.AUDIO,
-                    voice_id=ELEVENLABS_VOICE_ID,
+                    voice_id=voice_id,
                 )
                 .run(sink=get_storage_sink(), timeout=120)
             )
             asset = _asset_result(result)
             asset["cost_usd"] = None  # ElevenLabs pricing is plan-dependent
+            asset["voice"] = f"elevenlabs:{voice_id}"
             return asset
         except Exception:
-            pass  # fall through to OpenAI TTS below
+            pass  # ElevenLabs unreachable (e.g. cloud IP block) → OpenAI fallback
 
-    result = (
-        Pipeline(f"character-{character_id}-voice-line-openai")
-        .step(
-            OpenAITTSProvider(),
-            model="gpt-4o-mini-tts",
-            prompt=text,
-            modality=Modality.AUDIO,
-            voice="onyx",
-        )
-        .run(sink=get_storage_sink(), timeout=120)
-    )
-    asset = _asset_result(result)
-    asset["cost_usd"] = round(len(text) * OPENAI_TTS_USD_PER_CHAR, 6)
-    return asset
+    if voice_provider == "openai" and voice_id in _OPENAI_VOICE_IDS:
+        voice = voice_id
+    else:
+        voice = _default_openai_voice(character_id)
+    return _openai_voice_line(character_id, text, voice)

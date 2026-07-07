@@ -96,8 +96,13 @@
           </div>
           <div class="generate-card">
             <h3>Voice line</h3>
-            <p class="generate-hint">ElevenLabs eleven_v3 (OpenAI TTS fallback) → Backblaze B2</p>
+            <p class="generate-hint">Genblaze TTS → Backblaze B2</p>
             <textarea id="voice-text" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
+            <label class="model-row">
+              <span class="model-label">Voice</span>
+              <select id="voice-select"></select>
+            </label>
+            <p id="voice-note" class="generate-hint" hidden></p>
             <button id="generate-voice-button" class="button primary">Generate voice line</button>
           </div>
         </div>

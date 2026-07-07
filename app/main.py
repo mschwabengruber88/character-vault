@@ -16,6 +16,7 @@ from app.pipelines import (
     DEFAULT_IMAGE_MODEL,
     IMAGE_MODELS,
     available_image_models,
+    available_voices,
     generate_character_portrait,
     generate_character_voice_line,
 )
@@ -114,6 +115,11 @@ class VoiceLineRequest(BaseModel):
     text: str = Field(min_length=1, max_length=500)
 
 
+class VoiceAssign(BaseModel):
+    voice_provider: Literal["openai", "elevenlabs"]
+    voice_id: str = Field(min_length=1, max_length=100)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -122,6 +128,11 @@ def health():
 @app.get("/capabilities")
 def capabilities():
     return {"image_models": available_image_models()}
+
+
+@app.get("/voices")
+def voices():
+    return available_voices()
 
 
 @app.post("/characters")
@@ -144,6 +155,20 @@ def get_character(character_id: int):
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     character["assets"] = [with_signed_url(a) for a in character["assets"]]
+    return character
+
+
+@app.put("/characters/{character_id}/voice")
+def set_character_voice(character_id: int, body: VoiceAssign):
+    valid_ids = {v["id"] for v in available_voices().get(body.voice_provider, [])}
+    if body.voice_id not in valid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Voice '{body.voice_id}' is not available for provider '{body.voice_provider}'.",
+        )
+    character = db.set_character_voice(character_id, body.voice_provider, body.voice_id)
+    if character is None:
+        raise HTTPException(status_code=404, detail="Character not found")
     return character
 
 
@@ -208,7 +233,10 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
         raise HTTPException(status_code=404, detail="Character not found")
     with generation_slot(character_id, "voice"):
         try:
-            result = generate_character_voice_line(character_id, body.text)
+            result = generate_character_voice_line(
+                character_id, body.text,
+                character.get("voice_provider"), character.get("voice_id"),
+            )
         except HTTPException:
             raise
         except Exception:
@@ -223,4 +251,5 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
         prompt=body.text,
         manifest_verified=result["manifest_verified"],
         cost_usd=result.get("cost_usd"),
+        model=result.get("voice"),
     ))

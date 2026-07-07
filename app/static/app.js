@@ -9,6 +9,7 @@ const state = {
   selectedId: null,
   generating: false,
   imageModels: [],
+  voices: {},
 };
 
 /* ---------- API helpers ---------- */
@@ -47,6 +48,63 @@ function applyModelUI() {
   el("identity-hint").textContent = model.identity
     ? "this model locks facial identity"
     : "loose likeness only — for locked identity pick an identity model";
+}
+
+/* ---------- Voices ---------- */
+
+const PROVIDER_LABEL = { openai: "OpenAI TTS", elevenlabs: "ElevenLabs" };
+
+async function loadVoices() {
+  state.voices = await api("/voices").catch(() => ({}));
+}
+
+function populateVoiceSelect(character) {
+  const select = el("voice-select");
+  select.innerHTML = "";
+  const assigned = character.voice_id || "";
+  for (const [provider, voices] of Object.entries(state.voices)) {
+    const group = document.createElement("optgroup");
+    group.label = PROVIDER_LABEL[provider] || provider;
+    for (const voice of voices) {
+      const option = document.createElement("option");
+      option.value = `${provider}:${voice.id}`;
+      option.textContent = voice.name;
+      if (provider === character.voice_provider && voice.id === assigned) {
+        option.selected = true;
+      }
+      group.appendChild(option);
+    }
+    select.appendChild(group);
+  }
+  updateVoiceNote();
+}
+
+function updateVoiceNote() {
+  const note = el("voice-note");
+  const provider = (el("voice-select").value || "").split(":")[0];
+  if (provider === "elevenlabs") {
+    note.textContent = "ElevenLabs may be unreachable from the cloud — it then falls back to an OpenAI voice.";
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+  }
+}
+
+async function saveVoice() {
+  const [provider, ...rest] = el("voice-select").value.split(":");
+  const voiceId = rest.join(":");
+  updateVoiceNote();
+  try {
+    await api(`/characters/${state.selectedId}/voice`, {
+      method: "PUT",
+      body: JSON.stringify({ voice_provider: provider, voice_id: voiceId }),
+    });
+    const character = state.characters.find((c) => c.id === state.selectedId);
+    if (character) { character.voice_provider = provider; character.voice_id = voiceId; }
+    toast("Voice assigned.");
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 async function loadImageModels() {
@@ -149,6 +207,8 @@ function renderDetail(character) {
   const spend = character.assets.reduce((sum, a) => sum + (a.cost_usd || 0), 0);
   el("detail-spend").hidden = spend === 0;
   el("detail-spend").textContent = `Generation spend so far: $${spend.toFixed(2)}`;
+
+  populateVoiceSelect(character);
 
   const grid = el("asset-grid");
   grid.innerHTML = "";
@@ -432,8 +492,12 @@ function init() {
   refreshKeyButton();
   el("generate-image-button").addEventListener("click", () => generate("image"));
   el("generate-voice-button").addEventListener("click", () => generate("voice"));
-  loadImageModels().catch((err) => toast(err.message, true));
-  loadCharacters().catch((err) => toast(err.message, true));
+  el("voice-select").addEventListener("change", saveVoice);
+  Promise.all([
+    loadImageModels(),
+    loadVoices(),
+  ]).catch((err) => toast(err.message, true))
+    .finally(() => loadCharacters().catch((err) => toast(err.message, true)));
 }
 
 init();

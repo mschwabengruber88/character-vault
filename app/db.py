@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS characters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    voice_provider TEXT,
+    voice_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS assets (
@@ -36,6 +38,8 @@ MIGRATIONS = (
     "ALTER TABLE assets ADD COLUMN quality TEXT",
     "ALTER TABLE assets ADD COLUMN cost_usd REAL",
     "ALTER TABLE assets ADD COLUMN model TEXT",
+    "ALTER TABLE characters ADD COLUMN voice_provider TEXT",
+    "ALTER TABLE characters ADD COLUMN voice_id TEXT",
 )
 
 
@@ -72,6 +76,17 @@ def create_character(name: str, description: str) -> dict:
             (name, description, now()),
         )
         character_id = cur.lastrowid
+    return get_character(character_id)
+
+
+def set_character_voice(character_id: int, voice_provider: str, voice_id: str) -> dict | None:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE characters SET voice_provider = ?, voice_id = ? WHERE id = ?",
+            (voice_provider, voice_id, character_id),
+        )
+        if cur.rowcount == 0:
+            return None
     return get_character(character_id)
 
 
