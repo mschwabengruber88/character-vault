@@ -347,7 +347,8 @@ h1, h2, h3 {
 .provenance {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 11px;
   color: var(--ink-faint);
@@ -366,6 +367,37 @@ h1, h2, h3 {
 
 .badge.verified { color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, transparent); }
 .badge.unverified { color: var(--ink-faint); border-color: var(--line-strong); }
+.badge.ai { color: var(--brass); border-color: color-mix(in srgb, var(--brass) 50%, transparent); }
+
+.disclosure-choice {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.disclosure-choice legend {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 0 6px;
+}
+
+.disclosure-choice label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.disclosure-choice label b { color: var(--ink); font-weight: 600; }
+.disclosure-choice input { accent-color: var(--brass); }
 
 .sha { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

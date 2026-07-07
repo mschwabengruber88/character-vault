@@ -34,7 +34,9 @@ def _asset_result(result) -> dict:
     }
 
 
-def generate_character_portrait(character_id: int, prompt: str) -> dict:
+def generate_character_portrait(character_id: int, prompt: str, disclosure: str = "invisible") -> dict:
+    from app.disclosure import apply_image_disclosure
+
     result = (
         Pipeline(f"character-{character_id}-portrait")
         .step(
@@ -46,7 +48,11 @@ def generate_character_portrait(character_id: int, prompt: str) -> dict:
         )
         .run(sink=get_storage_sink(), timeout=120)
     )
-    return _asset_result(result)
+    asset = _asset_result(result)
+    asset["original_url"] = asset["url"]
+    asset["url"] = apply_image_disclosure(asset["url"], result.manifest, disclosure)
+    asset["disclosure"] = disclosure
+    return asset
 
 
 def generate_character_voice_line(character_id: int, text: str) -> dict:

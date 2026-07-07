@@ -77,23 +77,62 @@ def test_generate_image_success(client):
 
     with patch("app.main.generate_character_portrait") as mock_gen:
         mock_gen.return_value = {
-            "url": "https://example.com/a.png",
+            "url": "https://example.com/a.visible.png",
+            "original_url": "https://example.com/a.png",
             "sha256": "abc123",
             "mime_type": "image/png",
             "manifest_verified": True,
+            "disclosure": "visible",
         }
         resp = client.post(
             f"/characters/{char_id}/generate/image",
-            json={"prompt": "a friendly robot"},
+            json={"prompt": "a friendly robot", "disclosure": "visible"},
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
     data = resp.json()
     assert data["kind"] == "image"
-    assert data["url"] == "https://example.com/a.png"
+    assert data["url"] == "https://example.com/a.visible.png"
+    assert data["disclosure"] == "visible"
+    assert data["original_url"] == "https://example.com/a.png"
+    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible")
 
     character = client.get(f"/characters/{char_id}").json()
     assert len(character["assets"]) == 1
+
+
+def test_generate_image_disclosure_defaults_to_invisible(client):
+    resp = client.post("/characters", json={"name": "DefaultDisclosure"})
+    char_id = resp.json()["id"]
+
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/b.invisible.png",
+            "original_url": "https://example.com/b.png",
+            "sha256": "def456",
+            "mime_type": "image/png",
+            "manifest_verified": True,
+            "disclosure": "invisible",
+        }
+        resp = client.post(
+            f"/characters/{char_id}/generate/image",
+            json={"prompt": "a quiet librarian"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible")
+
+
+def test_generate_image_rejects_unknown_disclosure(client):
+    resp = client.post("/characters", json={"name": "BadDisclosure"})
+    char_id = resp.json()["id"]
+
+    resp = client.post(
+        f"/characters/{char_id}/generate/image",
+        json={"prompt": "a robot", "disclosure": "sneaky"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 422
 
 
 def test_generate_image_prompt_validation(client):

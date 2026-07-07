@@ -61,6 +61,17 @@
             <h3>Portrait</h3>
             <p class="generate-hint">OpenAI gpt-image-1 → Backblaze B2</p>
             <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="500" rows="2"></textarea>
+            <fieldset class="disclosure-choice">
+              <legend>AI disclosure</legend>
+              <label>
+                <input type="radio" name="disclosure" value="invisible" checked>
+                <span><b>Invisible</b> — provenance manifest embedded in the file</span>
+              </label>
+              <label>
+                <input type="radio" name="disclosure" value="visible">
+                <span><b>Visible</b> — “✦ AI” watermark badge on the image</span>
+              </label>
+            </fieldset>
             <button id="generate-image-button" class="button primary">Generate portrait</button>
           </div>
           <div class="generate-card">

@@ -177,6 +177,15 @@ function renderAssetCard(asset) {
   badge.className = `badge ${asset.manifest_verified ? "verified" : "unverified"}`;
   badge.textContent = asset.manifest_verified ? "✓ manifest verified" : "manifest unverified";
   provenance.appendChild(badge);
+  if (asset.disclosure) {
+    const ai = document.createElement("span");
+    ai.className = "badge ai";
+    ai.textContent = asset.disclosure === "visible" ? "✦ AI · watermark" : "✦ AI · metadata";
+    ai.title = asset.disclosure === "visible"
+      ? "Visible AI watermark burned into the image"
+      : "Provenance manifest embedded invisibly in the file";
+    provenance.appendChild(ai);
+  }
   if (asset.sha256) {
     const sha = document.createElement("span");
     sha.className = "sha";
@@ -287,10 +296,13 @@ async function generate(kind) {
   setGenerating(true, `${label}… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.`);
 
   try {
+    const payload = kind === "image"
+      ? { prompt: value, disclosure: document.querySelector('input[name="disclosure"]:checked').value }
+      : { text: value };
     await api(`/characters/${state.selectedId}/generate/${kind}`, {
       method: "POST",
       headers: { "X-API-Key": apiKey() },
-      body: JSON.stringify(kind === "image" ? { prompt: value } : { text: value }),
+      body: JSON.stringify(payload),
     });
     input.value = "";
     setGenerating(false);

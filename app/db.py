@@ -21,9 +21,16 @@ CREATE TABLE IF NOT EXISTS assets (
     mime_type TEXT,
     prompt TEXT NOT NULL,
     manifest_verified INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    disclosure TEXT,
+    original_url TEXT
 );
 """
+
+MIGRATIONS = (
+    "ALTER TABLE assets ADD COLUMN disclosure TEXT",
+    "ALTER TABLE assets ADD COLUMN original_url TEXT",
+)
 
 
 def now() -> str:
@@ -45,6 +52,11 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        for migration in MIGRATIONS:
+            try:
+                conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 def create_character(name: str, description: str) -> dict:
@@ -118,12 +130,15 @@ def add_asset(
     mime_type: str | None,
     prompt: str,
     manifest_verified: bool,
+    disclosure: str | None = None,
+    original_url: str | None = None,
 ) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO assets
-               (character_id, kind, url, sha256, mime_type, prompt, manifest_verified, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (character_id, kind, url, sha256, mime_type, prompt, manifest_verified,
+                created_at, disclosure, original_url)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 character_id,
                 kind,
@@ -133,6 +148,8 @@ def add_asset(
                 prompt,
                 int(manifest_verified),
                 now(),
+                disclosure,
+                original_url,
             ),
         )
         row = conn.execute(

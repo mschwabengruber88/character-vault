@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +53,7 @@ class CharacterCreate(BaseModel):
 
 class PortraitRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
+    disclosure: Literal["visible", "invisible"] = "invisible"
 
 
 class VoiceLineRequest(BaseModel):
@@ -103,7 +105,7 @@ def generate_image(character_id: int, body: PortraitRequest):
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     try:
-        result = generate_character_portrait(character_id, body.prompt)
+        result = generate_character_portrait(character_id, body.prompt, body.disclosure)
     except Exception:
         logger.exception("Image generation failed for character %s", character_id)
         raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
@@ -115,6 +117,8 @@ def generate_image(character_id: int, body: PortraitRequest):
         mime_type=result["mime_type"],
         prompt=body.prompt,
         manifest_verified=result["manifest_verified"],
+        disclosure=result.get("disclosure"),
+        original_url=result.get("original_url"),
     ))
 
 
