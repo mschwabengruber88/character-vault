@@ -469,15 +469,14 @@ def generate_lipsync(video_url: str, audio_url: str) -> dict:
     headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
 
     with httpx.Client(timeout=60) as client:
-        # Step 1 — detect the face(s) and open a session.
+        # Step 1 — detect the face(s) and open a session. Result lives at
+        # outcome.data.{session_id, face_data[].face_id}.
         ident = _gmi_submit_poll(client, IDENTIFY_FACE_MODEL, {"video_url": v}, headers, timeout=300)
-        outcome = _dig(ident, "outcome") or ident
-        session_id = (_dig(outcome, "session_id", "sessionId")
-                      or _dig(ident, "session_id", "sessionId"))
-        faces = (_dig(outcome, "face_id", "face_ids", "faces")
-                 or _dig(ident, "face_id", "face_ids", "faces"))
+        idata = _dig(_dig(ident, "outcome") or ident, "data") or _dig(ident, "outcome") or ident
+        session_id = _dig(idata, "session_id", "sessionId")
+        faces = _dig(idata, "face_data", "face_ids", "faces", "face_id")
         if not session_id:
-            raise RuntimeError(f"identify-face returned no session_id: {str(ident)[:400]}")
+            raise RuntimeError(f"identify-face returned no session_id: {str(ident)[:600]}")
         face0 = faces[0] if isinstance(faces, list) and faces else "0"
         if isinstance(face0, dict):
             face0 = _dig(face0, "face_id", "id") or "0"
@@ -496,11 +495,13 @@ def generate_lipsync(video_url: str, audio_url: str) -> dict:
             }],
         }
         st = _gmi_submit_poll(client, LIPSYNC_MODEL, payload, headers, timeout=600)
-        out = _dig(st, "outcome") or st
-        urls = _dig(out, "media_urls", "mediaUrls", "outputs", "output")
+        sdata = _dig(_dig(st, "outcome") or st, "data") or _dig(st, "outcome") or st
+        urls = _dig(sdata, "media_urls", "mediaUrls", "video_url", "videoUrl", "url", "outputs", "output", "works")
+        if isinstance(urls, list) and urls and isinstance(urls[0], dict):
+            urls = _dig(urls[0], "url", "resource", "video_url", "media_url")
         out_url = urls[0] if isinstance(urls, list) and urls else (urls if isinstance(urls, str) else None)
         if not out_url:
-            raise RuntimeError(f"lip-sync finished without a media url: {str(st)[:400]}")
+            raise RuntimeError(f"lip-sync finished without a media url: {str(st)[:600]}")
 
     data = httpx.get(out_url, timeout=180).content
     url, sha = upload_bytes(f"videos/lipsync/{_uuid.uuid4().hex}.mp4", data, "video/mp4")
