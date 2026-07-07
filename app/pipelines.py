@@ -1,6 +1,7 @@
 import tempfile
 
 from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline, StepStatus
+from genblaze_core.models.asset import Asset
 from genblaze_elevenlabs import ElevenLabsTTSProvider
 from genblaze_openai import DalleProvider, OpenAITTSProvider
 from genblaze_s3 import S3StorageBackend
@@ -34,19 +35,43 @@ def _asset_result(result) -> dict:
     }
 
 
-def generate_character_portrait(character_id: int, prompt: str, disclosure: str = "invisible") -> dict:
+IDENTITY_INSTRUCTION = (
+    "Use the person from the reference image(s) and keep their identity exactly: "
+    "same face, facial features, hair color and style, age, and build. "
+    "Render that same person in a new scene: "
+)
+
+
+def generate_character_portrait(
+    character_id: int,
+    prompt: str,
+    disclosure: str = "invisible",
+    references: list[str] | None = None,
+) -> dict:
     from app.disclosure import apply_image_disclosure
+    from app.storage import presign_asset_url
+
+    step_kwargs: dict = {}
+    final_prompt = prompt
+    if references:
+        signed = [presign_asset_url(url) for url in references[:3]]
+        step_kwargs["external_inputs"] = [
+            Asset(url=u, media_type="image/png") for u in signed if u
+        ]
+        if step_kwargs["external_inputs"]:
+            final_prompt = IDENTITY_INSTRUCTION + prompt
 
     result = (
         Pipeline(f"character-{character_id}-portrait")
         .step(
             DalleProvider(),
             model="gpt-image-1",
-            prompt=prompt,
+            prompt=final_prompt,
             modality=Modality.IMAGE,
             size="1024x1024",
+            **step_kwargs,
         )
-        .run(sink=get_storage_sink(), timeout=120)
+        .run(sink=get_storage_sink(), timeout=180)
     )
     asset = _asset_result(result)
     asset["original_url"] = asset["url"]

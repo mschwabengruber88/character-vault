@@ -61,6 +61,10 @@
             <h3>Portrait</h3>
             <p class="generate-hint">OpenAI gpt-image-1 → Backblaze B2</p>
             <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="500" rows="2"></textarea>
+            <label id="identity-row" class="identity-row" hidden>
+              <input type="checkbox" id="use-identity" checked>
+              <span><b>Keep character identity</b> — <span id="identity-count"></span> stored portrait(s) are used as reference automatically</span>
+            </label>
             <fieldset class="disclosure-choice">
               <legend>AI disclosure</legend>
               <label>

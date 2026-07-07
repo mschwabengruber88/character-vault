@@ -369,6 +369,22 @@ h1, h2, h3 {
 .badge.unverified { color: var(--ink-faint); border-color: var(--line-strong); }
 .badge.ai { color: var(--brass); border-color: color-mix(in srgb, var(--brass) 50%, transparent); }
 
+.identity-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--brass) 35%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--brass) 5%, transparent);
+}
+
+.identity-row b { color: var(--brass); font-weight: 600; }
+.identity-row input { accent-color: var(--brass); }
+
 .disclosure-choice {
   border: 1px solid var(--line);
   border-radius: var(--radius);

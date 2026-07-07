@@ -95,7 +95,7 @@ def test_generate_image_success(client):
     assert data["url"] == "https://example.com/a.visible.png"
     assert data["disclosure"] == "visible"
     assert data["original_url"] == "https://example.com/a.png"
-    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible")
+    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [])
 
     character = client.get(f"/characters/{char_id}").json()
     assert len(character["assets"]) == 1
@@ -120,7 +120,7 @@ def test_generate_image_disclosure_defaults_to_invisible(client):
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
-    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible")
+    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [])
 
 
 def test_generate_image_rejects_unknown_disclosure(client):
@@ -160,6 +160,45 @@ def test_generate_image_provider_failure_returns_clean_502(client):
         )
     assert resp.status_code == 502
     assert "secret header dump" not in resp.text
+
+
+def test_generate_image_uses_identity_references(client):
+    resp = client.post("/characters", json={"name": "IdentityChar"})
+    char_id = resp.json()["id"]
+
+    mock_result = {
+        "url": "https://example.com/ref.invisible.png",
+        "original_url": "https://example.com/ref.png",
+        "sha256": "ref111",
+        "mime_type": "image/png",
+        "manifest_verified": True,
+        "disclosure": "invisible",
+    }
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.return_value = mock_result
+        # first portrait: no references exist yet
+        client.post(
+            f"/characters/{char_id}/generate/image",
+            json={"prompt": "first portrait"},
+            headers={"X-API-Key": API_KEY},
+        )
+        assert mock_gen.call_args.args[3] == []
+
+        # second portrait: the first one is passed as identity reference (original url)
+        client.post(
+            f"/characters/{char_id}/generate/image",
+            json={"prompt": "second portrait"},
+            headers={"X-API-Key": API_KEY},
+        )
+        assert mock_gen.call_args.args[3] == ["https://example.com/ref.png"]
+
+        # use_identity=false skips references entirely
+        client.post(
+            f"/characters/{char_id}/generate/image",
+            json={"prompt": "free portrait", "use_identity": False},
+            headers={"X-API-Key": API_KEY},
+        )
+        assert mock_gen.call_args.args[3] == []
 
 
 def test_delete_asset(client):

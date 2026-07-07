@@ -111,6 +111,10 @@ function renderDetail(character) {
   el("detail-name").textContent = character.name;
   el("detail-description").textContent = character.description || "";
 
+  const imageCount = character.assets.filter((a) => a.kind === "image").length;
+  el("identity-row").hidden = imageCount === 0;
+  el("identity-count").textContent = String(Math.min(imageCount, 3));
+
   const grid = el("asset-grid");
   grid.innerHTML = "";
   el("asset-empty").hidden = character.assets.length > 0;
@@ -316,7 +320,11 @@ async function generate(kind) {
 
   try {
     const payload = kind === "image"
-      ? { prompt: value, disclosure: document.querySelector('input[name="disclosure"]:checked').value }
+      ? {
+          prompt: value,
+          disclosure: document.querySelector('input[name="disclosure"]:checked').value,
+          use_identity: !el("identity-row").hidden && el("use-identity").checked,
+        }
       : { text: value };
     await api(`/characters/${state.selectedId}/generate/${kind}`, {
       method: "POST",

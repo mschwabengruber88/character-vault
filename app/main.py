@@ -54,6 +54,24 @@ class CharacterCreate(BaseModel):
 class PortraitRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
     disclosure: Literal["visible", "invisible"] = "invisible"
+    use_identity: bool = True
+
+
+def identity_references(character: dict) -> list[str]:
+    """Pick reference images for consistent identity: the character's first
+    portrait anchors the identity, plus up to two of the newest portraits.
+    Uses the untouched originals, never watermarked copies."""
+    images = [a for a in character["assets"] if a["kind"] == "image"]
+    if not images:
+        return []
+    picked = [images[0]] + images[1:][-2:]
+    seen: set[int] = set()
+    refs = []
+    for asset in picked:
+        if asset["id"] not in seen:
+            seen.add(asset["id"])
+            refs.append(asset.get("original_url") or asset["url"])
+    return refs
 
 
 class VoiceLineRequest(BaseModel):
@@ -110,8 +128,9 @@ def generate_image(character_id: int, body: PortraitRequest):
     character = db.get_character(character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
+    references = identity_references(character) if body.use_identity else []
     try:
-        result = generate_character_portrait(character_id, body.prompt, body.disclosure)
+        result = generate_character_portrait(character_id, body.prompt, body.disclosure, references)
     except Exception:
         logger.exception("Image generation failed for character %s", character_id)
         raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
