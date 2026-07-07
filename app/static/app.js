@@ -207,6 +207,12 @@ const TRANSLATIONS = {
     generatingImage: "Generating portrait… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.",
     generatingVoice: "Generating voice line… this usually takes 15–60 seconds.",
     generatingAudio: "Generating audio… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.",
+    voicePickLabel: "Voice (fixed on the character)",
+    voiceNone: "No voice yet — pick one",
+    voiceFixedNote: "Set at creation · change only in the profile",
+    videoSpeechLabel: "✦ Let them speak (optional) — uses the character’s fixed voice",
+    videoSpeechPh: "e.g. 'Hi. Nice to meet you.'",
+    toastPickVoiceFirst: "Give this character a voice in its profile first.",
   },
   de: {
     provenanceNote: "Jedes Asset auf Backblaze B2 gespeichert – mit verifiziertem Herkunftsnachweis",
@@ -406,6 +412,12 @@ const TRANSLATIONS = {
     generatingImage: "Porträt wird generiert … dauert meist 15–60 Sekunden. Das Asset wird mit Herkunftsnachweis auf Backblaze B2 hochgeladen.",
     generatingVoice: "Sprachzeile wird generiert … dauert meist 15–60 Sekunden.",
     generatingAudio: "Audio wird generiert … 15–60 Sekunden. Auf Backblaze B2 mit Herkunftsnachweis gespeichert.",
+    voicePickLabel: "Stimme (fest am Charakter)",
+    voiceNone: "Noch keine Stimme – wähle eine",
+    voiceFixedNote: "Bei Erstellung gesetzt · nur im Profil änderbar",
+    videoSpeechLabel: "✦ Lass sie sprechen (optional) – nutzt die feste Stimme des Charakters",
+    videoSpeechPh: "z. B. 'Hi. Nice to meet you.'",
+    toastPickVoiceFirst: "Gib diesem Charakter zuerst im Profil eine Stimme.",
   },
 };
 
@@ -606,59 +618,70 @@ const PROVIDER_LABEL = { openai: "OpenAI TTS", elevenlabs: "ElevenLabs" };
 
 async function loadVoices() {
   state.voices = await api("/voices").catch(() => ({}));
+  buildVoicePicker(el("create-voice"), "");
 }
 
 function voiceOptionLabel(voice) {
   return voice.style ? `${voice.name} — ${voice.style}` : voice.name;
 }
 
-function populateVoiceSelect(character) {
-  state.currentCharacter = character;
-  renderVoiceOptions();
+// Human label for a stored provider:id voice (falls back to the raw id).
+function voiceLabelFor(provider, voiceId) {
+  const list = (state.voices && state.voices[provider]) || [];
+  const v = list.find((x) => x.id === voiceId);
+  return v ? voiceOptionLabel(v) : voiceId;
 }
 
-function renderVoiceOptions() {
-  const character = state.currentCharacter;
-  if (!character) return;
-  const select = el("voice-select");
-  const gender = el("filter-gender").value;
-  const age = el("filter-age").value;
-  const assigned = character.voice_id || "";
-  const assignedProvider = character.voice_provider || "";
+// Fill a <select> with all voices (grouped) plus a "none" option — used by the
+// create and profile forms, the only places a voice can be chosen/changed.
+function buildVoicePicker(select, currentValue) {
+  if (!select) return;
   select.innerHTML = "";
-  let shown = 0;
-  for (const [provider, voices] of Object.entries(state.voices)) {
-    const filtered = voices.filter((v) => {
-      const isAssigned = provider === assignedProvider && v.id === assigned;
-      const matches = (!gender || v.gender === gender) && (!age || v.age === age);
-      return matches || isAssigned;
-    });
-    if (!filtered.length) continue;
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = t("voiceNone");
+  select.appendChild(none);
+  for (const [provider, voices] of Object.entries(state.voices || {})) {
+    if (!voices.length) continue;
     const group = document.createElement("optgroup");
     group.label = PROVIDER_LABEL[provider] || provider;
-    for (const voice of filtered) {
-      const option = document.createElement("option");
-      option.value = `${provider}:${voice.id}`;
-      option.textContent = voiceOptionLabel(voice);
-      if (provider === assignedProvider && voice.id === assigned) option.selected = true;
-      group.appendChild(option);
-      shown += 1;
+    for (const voice of voices) {
+      const o = document.createElement("option");
+      o.value = `${provider}:${voice.id}`;
+      o.textContent = voiceOptionLabel(voice);
+      group.appendChild(o);
     }
     select.appendChild(group);
   }
-  if (shown === 0) {
-    const opt = document.createElement("option");
-    opt.textContent = "No voices match these filters";
-    opt.disabled = true;
-    select.appendChild(opt);
+  select.value = currentValue || "";
+}
+
+function splitVoiceValue(value) {
+  if (!value) return { voice_provider: null, voice_id: null };
+  const [provider, ...rest] = value.split(":");
+  return { voice_provider: provider, voice_id: rest.join(":") };
+}
+
+// The voice-line card shows the character's FIXED voice read-only.
+function populateVoiceSelect(character) {
+  state.currentCharacter = character;
+  const fixed = el("voice-fixed");
+  const note = el("voice-note");
+  if (character.voice_id) {
+    fixed.textContent = voiceLabelFor(character.voice_provider, character.voice_id);
+    fixed.dataset.value = `${character.voice_provider}:${character.voice_id}`;
+    note.textContent = t("voiceFixedNote");
+  } else {
+    fixed.textContent = t("voiceNone");
+    fixed.dataset.value = "";
+    note.textContent = t("toastPickVoiceFirst");
   }
-  updateVoiceNote();
+  note.hidden = false;
 }
 
 let previewAudio = null;
 
-function previewVoice(selectId, buttonId) {
-  const value = el(selectId).value;
+function previewVoiceValue(value, buttonId) {
   if (!value) return;
   const [provider, ...rest] = value.split(":");
   const voiceId = rest.join(":");
@@ -674,36 +697,14 @@ function previewVoice(selectId, buttonId) {
   previewAudio.play().catch(() => button.classList.remove("playing"));
 }
 
+function previewVoice(selectId, buttonId) {
+  previewVoiceValue(el(selectId).value, buttonId);
+}
+
 function previewSelectedVoice() {
-  previewVoice("voice-select", "voice-preview");
-}
-
-function updateVoiceNote() {
-  const note = el("voice-note");
-  const provider = (el("voice-select").value || "").split(":")[0];
-  if (provider === "elevenlabs") {
-    note.textContent = "ElevenLabs may be unreachable from the cloud — it then falls back to an OpenAI voice.";
-    note.hidden = false;
-  } else {
-    note.hidden = true;
-  }
-}
-
-async function saveVoice() {
-  const [provider, ...rest] = el("voice-select").value.split(":");
-  const voiceId = rest.join(":");
-  updateVoiceNote();
-  try {
-    await api(`/characters/${state.selectedId}/voice`, {
-      method: "PUT",
-      body: JSON.stringify({ voice_provider: provider, voice_id: voiceId }),
-    });
-    const character = state.characters.find((c) => c.id === state.selectedId);
-    if (character) { character.voice_provider = provider; character.voice_id = voiceId; }
-    toast("Voice assigned.");
-  } catch (err) {
-    toast(err.message, true);
-  }
+  const value = el("voice-fixed").dataset.value || "";
+  if (!value) { toast(t("toastPickVoiceFirst"), true); return; }
+  previewVoiceValue(value, "voice-preview");
 }
 
 async function loadImageModels() {
@@ -972,6 +973,7 @@ function setupCreateForm() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const seedVal = el("create-seed").value.trim();
+    const voice = splitVoiceValue(el("create-voice").value);
     try {
       const created = await api("/characters", {
         method: "POST",
@@ -981,6 +983,8 @@ function setupCreateForm() {
           personality: el("create-personality").value.trim() || null,
           purpose: el("create-purpose").value.trim() || null,
           seed: seedVal ? Number(seedVal) : null,
+          voice_provider: voice.voice_provider,
+          voice_id: voice.voice_id,
         }),
       });
       const fileInput = el("create-image");
@@ -1019,12 +1023,14 @@ function setupProfileEditing() {
     el("edit-personality").value = c.personality || "";
     el("edit-purpose").value = c.purpose || "";
     el("edit-seed").value = c.seed ?? "";
+    buildVoicePicker(el("edit-voice"), c.voice_id ? `${c.voice_provider}:${c.voice_id}` : "");
     el("edit-form").hidden = false;
   });
   el("edit-cancel").addEventListener("click", () => { el("edit-form").hidden = true; });
   el("edit-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const seedVal = el("edit-seed").value.trim();
+    const voice = splitVoiceValue(el("edit-voice").value);
     try {
       await api(`/characters/${state.selectedId}`, {
         method: "PATCH",
@@ -1034,6 +1040,8 @@ function setupProfileEditing() {
           personality: el("edit-personality").value.trim(),
           purpose: el("edit-purpose").value.trim(),
           seed: seedVal ? Number(seedVal) : null,
+          voice_provider: voice.voice_provider,
+          voice_id: voice.voice_id,
         }),
       });
       el("edit-form").hidden = true;
@@ -2028,6 +2036,7 @@ function applyVideoModelUI() {
   const model = selectedVideoModel();
   const needsImage = model ? model.needs_image : false;
   el("video-character-row").hidden = !needsImage;
+  el("video-speech-field").hidden = !needsImage;
 
   const desc = el("video-model-desc");
   if (!model || !model.description) {
@@ -2088,6 +2097,8 @@ async function generateVideo() {
     const cid = el("video-character").value;
     if (!cid) { toast("Pick a character with a portrait first.", true); return; }
     payload.character_id = Number(cid);
+    const speech = el("video-speech").value.trim();
+    if (speech) payload.speech = speech;
   }
 
   videoGenerating = true;
@@ -2383,10 +2394,7 @@ function init() {
   el("batch-cancel").addEventListener("click", cancelBatch);
   document.querySelectorAll('input[name="quality"]').forEach((r) => r.addEventListener("change", updateCostEstimate));
   updateModeUI();
-  el("voice-select").addEventListener("change", saveVoice);
   el("voice-preview").addEventListener("click", previewSelectedVoice);
-  el("filter-gender").addEventListener("change", renderVoiceOptions);
-  el("filter-age").addEventListener("change", renderVoiceOptions);
   el("open-scenes").addEventListener("click", showScenesView);
   el("generate-scene-button").addEventListener("click", generateScene);
   setupStudio();

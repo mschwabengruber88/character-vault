@@ -36,6 +36,10 @@
         <textarea id="create-personality" data-i18n-ph="phPersonality" placeholder="Personality &amp; traits — e.g. 'shy, doesn't speak directly to women' or 'strong, confident, charismatic'" maxlength="1000" rows="2"></textarea>
         <input id="create-purpose" type="text" data-i18n-ph="phPurpose" placeholder="Purpose / use-case (optional)" maxlength="500">
         <input id="create-seed" type="number" min="0" data-i18n-ph="phSeed" placeholder="Seed (optional, for reproducibility)">
+        <label class="voice-field">
+          <span data-i18n="voicePickLabel">Voice (fixed on the character)</span>
+          <select id="create-voice"></select>
+        </label>
         <label class="upload-field">
           <span data-i18n="refPhotoLabel">Reference photo (optional — create from your own image)</span>
           <input id="create-image" type="file" accept="image/png,image/jpeg,image/webp">
@@ -128,6 +132,10 @@
           <textarea id="edit-personality" data-i18n-ph="phPersonalityShort" placeholder="Personality &amp; traits" maxlength="1000" rows="2"></textarea>
           <input id="edit-purpose" type="text" data-i18n-ph="phPurposeShort" placeholder="Purpose / use-case" maxlength="500">
           <input id="edit-seed" type="number" min="0" data-i18n-ph="phSeedShort" placeholder="Seed">
+          <label class="voice-field">
+            <span data-i18n="voicePickLabel">Voice (fixed on the character)</span>
+            <select id="edit-voice"></select>
+          </label>
           <div class="form-row">
             <button type="submit" class="button primary small" data-i18n="save">Save</button>
             <button type="button" id="edit-cancel" class="button small" data-i18n="cancel">Cancel</button>
@@ -207,23 +215,9 @@
             <h3 data-i18n="voiceTitle">Voice line</h3>
             <p class="generate-hint" data-i18n="ttsHint">Genblaze TTS → Backblaze B2</p>
             <textarea id="voice-text" data-i18n-ph="phVoiceText" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
-            <div class="voice-filters">
-              <select id="filter-gender" class="filter-select" aria-label="Filter by gender">
-                <option value="" data-i18n="filterAnyGender">Any gender</option>
-                <option value="female" data-i18n="filterFemale">Female</option>
-                <option value="male" data-i18n="filterMale">Male</option>
-                <option value="neutral" data-i18n="filterNeutral">Neutral</option>
-              </select>
-              <select id="filter-age" class="filter-select" aria-label="Filter by age">
-                <option value="" data-i18n="filterAnyAge">Any age</option>
-                <option value="young" data-i18n="filterYoung">Young / teen</option>
-                <option value="adult" data-i18n="filterAdult">Adult</option>
-                <option value="mature" data-i18n="filterMature">Mature</option>
-              </select>
-            </div>
             <label class="model-row">
               <span class="model-label" data-i18n="voiceLabel">Voice</span>
-              <select id="voice-select"></select>
+              <span id="voice-fixed" class="voice-fixed"></span>
               <button type="button" id="voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
             </label>
             <p id="voice-note" class="generate-hint" hidden></p>
@@ -399,6 +393,10 @@
           </label>
           <p id="video-model-hint" class="generate-hint"></p>
           <textarea id="video-prompt" data-i18n-ph="phVideoPrompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
+          <label id="video-speech-field" class="voice-field" hidden>
+            <span data-i18n="videoSpeechLabel">✦ Let them speak (optional) — uses the character's fixed voice</span>
+            <textarea id="video-speech" data-i18n-ph="videoSpeechPh" placeholder="e.g. 'Hi. Nice to meet you.'" maxlength="400" rows="2"></textarea>
+          </label>
           <div class="mode-grid">
             <label class="model-row">
               <span class="model-label" data-i18n="durationLabel">Duration</span>
