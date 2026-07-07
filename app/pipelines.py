@@ -289,6 +289,41 @@ def build_batch_prompts(mode: str, prompt: str, count: int) -> list[str]:
     return [prompt for _ in range(count)]
 
 
+# ── Studio: character-less text-to-image ─────────────────────────────────
+# Two modes. "background" makes an empty environment/scene plate (no people)
+# you can later drop a character into; "photo-art" is a free artistic image
+# generator à la Midjourney. Both reuse the portrait pipeline with no identity
+# reference — the structured prompt builder does the heavy lifting client-side.
+STUDIO_MODES = {
+    "background": (
+        "A background environment / scene plate with no people and no characters present. "
+    ),
+    "photo-art": "",
+}
+
+
+def generate_studio_image(
+    prompt: str,
+    kind: str = "photo-art",
+    disclosure: str = "invisible",
+    quality: str = "draft",
+    model: str = DEFAULT_IMAGE_MODEL,
+) -> dict:
+    if kind not in STUDIO_MODES:
+        raise ValueError(f"Unknown studio mode '{kind}'.")
+    full_prompt = f"{STUDIO_MODES[kind]}{prompt}"
+    asset = generate_character_portrait(
+        character_id=0,
+        prompt=full_prompt,
+        disclosure=disclosure,
+        references=None,
+        quality=quality,
+        model=model,
+    )
+    asset["kind"] = kind
+    return asset
+
+
 def generate_scene(
     prompt: str,
     references: list[dict],

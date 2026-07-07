@@ -23,6 +23,7 @@ from app.pipelines import (
     generate_character_portrait,
     generate_character_voice_line,
     generate_scene,
+    generate_studio_image,
 )
 from app.storage import presign_asset_url, upload_reference_image, with_signed_url
 
@@ -516,3 +517,53 @@ def create_scene(body: SceneRequest):
 def delete_scene(scene_id: int):
     if not db.delete_scene(scene_id):
         raise HTTPException(status_code=404, detail="Scene not found")
+
+
+class StudioRequest(BaseModel):
+    kind: Literal["background", "photo-art"]
+    prompt: str = Field(min_length=1, max_length=4000)
+    disclosure: Literal["visible", "invisible"] = "invisible"
+    quality: Literal["draft", "final"] = "draft"
+    model: str = DEFAULT_IMAGE_MODEL
+
+
+@app.get("/studio")
+def list_studio(kind: str | None = Query(default=None, pattern="^(background|photo-art)$")):
+    return [_scene_with_signed_url(s) for s in db.list_studio_images(kind)]
+
+
+@app.post("/studio", dependencies=[Depends(require_api_key)])
+def create_studio(body: StudioRequest):
+    if body.model not in {m["slug"] for m in available_image_models()}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{body.model}' is not available. Configure its API key first.",
+        )
+    with generation_slot(0, "studio"):
+        try:
+            result = generate_studio_image(
+                body.prompt, body.kind, body.disclosure, body.quality, body.model,
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Studio generation failed (%s)", body.kind)
+            raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
+    return _scene_with_signed_url(db.create_studio_image(
+        kind=body.kind,
+        prompt=body.prompt,
+        url=result["url"],
+        original_url=result.get("original_url"),
+        sha256=result["sha256"],
+        model=result.get("model"),
+        quality=result.get("quality"),
+        disclosure=result.get("disclosure"),
+        cost_usd=result.get("cost_usd"),
+        manifest_verified=result["manifest_verified"],
+    ))
+
+
+@app.delete("/studio/{image_id}", status_code=204)
+def delete_studio(image_id: int):
+    if not db.delete_studio_image(image_id):
+        raise HTTPException(status_code=404, detail="Studio image not found")

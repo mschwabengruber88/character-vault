@@ -585,6 +585,55 @@ def test_batch_records_partial_failure(client):
     assert job["failed"] == 1
 
 
+def test_studio_generation_and_listing(client):
+    with patch("app.main.generate_studio_image") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/art.png",
+            "original_url": "https://example.com/art.png",
+            "sha256": "artsha", "mime_type": "image/png", "manifest_verified": True,
+            "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
+            "model": "gpt-image-1", "kind": "photo-art",
+        }
+        resp = client.post(
+            "/studio",
+            json={"kind": "photo-art", "prompt": "a surreal floating island"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    img = resp.json()
+    assert img["kind"] == "photo-art"
+    assert img["prompt"] == "a surreal floating island"
+    # mode + prompt reach the pipeline
+    assert mock_gen.call_args.args[0] == "a surreal floating island"
+    assert mock_gen.call_args.args[1] == "photo-art"
+
+    listed = client.get("/studio?kind=photo-art").json()
+    assert any(s["id"] == img["id"] for s in listed)
+
+    assert client.delete(f"/studio/{img['id']}").status_code == 204
+    assert client.delete(f"/studio/{img['id']}").status_code == 404
+
+
+def test_studio_requires_api_key(client):
+    resp = client.post("/studio", json={"kind": "background", "prompt": "a forest"})
+    assert resp.status_code == 401
+
+
+def test_studio_rejects_unknown_kind(client):
+    resp = client.post(
+        "/studio",
+        json={"kind": "hologram", "prompt": "a forest"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 422
+
+
+def test_studio_background_mode_prepends_no_people(client):
+    from app.pipelines import STUDIO_MODES
+    assert "no people" in STUDIO_MODES["background"]
+    assert STUDIO_MODES["photo-art"] == ""
+
+
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
     resp = client.put(

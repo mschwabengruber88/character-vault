@@ -554,6 +554,92 @@ input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* Prompt builder */
+.composer {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+}
+.composer > summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.composer > summary::-webkit-details-marker { display: none; }
+.composer > summary::before {
+  content: "▸";
+  color: var(--brass);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.composer[open] > summary::before { transform: rotate(90deg); }
+.composer-sub { font-weight: 400; color: var(--ink-faint); font-size: 12px; }
+
+.composer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px 10px;
+  padding: 4px 12px 10px;
+}
+.composer-field { display: flex; flex-direction: column; gap: 3px; }
+.composer-field > span {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.composer-field select {
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+.composer-field select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+.composer-foot { padding: 0 12px 10px; }
+
+.prompt-preview {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border-left: 2px solid var(--brass);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Studio mode toggle */
+.studio-modes { display: flex; gap: 8px; }
+.studio-mode {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.studio-mode:hover { color: var(--ink); border-color: var(--brass-deep); }
+.studio-mode.active {
+  color: var(--brass-ink);
+  background: var(--brass);
+  border-color: var(--brass);
+}
+.studio-mode:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
 .preview-button {
   flex: none;
   width: 36px;

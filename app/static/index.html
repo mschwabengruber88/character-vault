@@ -48,6 +48,7 @@
       <p id="character-empty" class="empty-note" hidden>No characters yet. Create your first one.</p>
 
       <button id="open-scenes" class="scenes-nav">▦ Scenes / Story</button>
+      <button id="open-studio" class="scenes-nav">◈ Studio — backgrounds &amp; photo art</button>
     </aside>
 
     <section class="detail" id="detail">
@@ -107,6 +108,14 @@
             </div>
             <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="4000" rows="2"></textarea>
             <p id="mode-hint" class="generate-hint" hidden></p>
+            <details class="composer">
+              <summary>Prompt builder <span class="composer-sub">optional — style, light, angle…</span></summary>
+              <div id="prompt-composer" class="composer-grid"></div>
+              <div class="composer-foot">
+                <button type="button" id="composer-reset" class="button small">Clear fields</button>
+              </div>
+            </details>
+            <p id="prompt-preview" class="prompt-preview" hidden></p>
             <label class="model-row">
               <span class="model-label">Model</span>
               <select id="image-model"></select>
@@ -204,6 +213,66 @@
         <h3 class="assets-heading">Your scenes</h3>
         <div id="scene-grid" class="asset-grid"></div>
         <p id="scene-empty" class="empty-note" hidden>No scenes yet — pick characters and describe a scene above.</p>
+      </div>
+
+      <div id="studio-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2>Studio</h2>
+            <p class="detail-description">Generate images without a character — free artistic photo art like Midjourney, or empty background/scene plates. Same prompt builder, no identity lock.</p>
+          </div>
+        </div>
+
+        <div class="generate-card">
+          <div class="studio-modes">
+            <button type="button" class="studio-mode active" data-mode="photo-art">✦ Photo Art</button>
+            <button type="button" class="studio-mode" data-mode="background">▤ Background / Scene</button>
+          </div>
+          <p id="studio-mode-hint" class="generate-hint"></p>
+          <textarea id="studio-prompt" placeholder="Describe the image, e.g. 'a lone lighthouse on a stormy cliff'" maxlength="4000" rows="3"></textarea>
+          <details class="composer">
+            <summary>Prompt builder <span class="composer-sub">optional — style, light, angle…</span></summary>
+            <div id="studio-composer" class="composer-grid"></div>
+            <div class="composer-foot">
+              <button type="button" id="studio-composer-reset" class="button small">Clear fields</button>
+            </div>
+          </details>
+          <p id="studio-preview" class="prompt-preview" hidden></p>
+          <label class="model-row">
+            <span class="model-label">Model</span>
+            <select id="studio-model"></select>
+          </label>
+          <fieldset id="studio-quality-choice" class="disclosure-choice">
+            <legend>Quality</legend>
+            <label>
+              <input type="radio" name="studio-quality" value="draft" checked>
+              <span><b>Draft</b> — ~$0.01 per image</span>
+            </label>
+            <label>
+              <input type="radio" name="studio-quality" value="final">
+              <span><b>Final</b> — ~$0.17 per image</span>
+            </label>
+          </fieldset>
+          <fieldset class="disclosure-choice">
+            <legend>AI disclosure</legend>
+            <label>
+              <input type="radio" name="studio-disclosure" value="invisible" checked>
+              <span><b>Invisible</b> — provenance manifest embedded in the file</span>
+            </label>
+            <label>
+              <input type="radio" name="studio-disclosure" value="visible">
+              <span><b>Visible</b> — “✦ AI” watermark badge on the image</span>
+            </label>
+          </fieldset>
+          <p id="studio-cost" class="cost-estimate" hidden></p>
+          <button id="generate-studio-button" class="button primary">Generate image</button>
+        </div>
+
+        <div id="studio-status" class="generation-status" hidden></div>
+
+        <h3 class="assets-heading">Your studio images</h3>
+        <div id="studio-grid" class="asset-grid"></div>
+        <p id="studio-empty" class="empty-note" hidden>Nothing here yet — pick a mode and generate.</p>
       </div>
     </section>
 

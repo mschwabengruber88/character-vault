@@ -166,6 +166,7 @@ async function loadImageModels() {
   }
   select.addEventListener("change", applyModelUI);
   applyModelUI();
+  populateStudioModel();
 }
 
 /* ---------- Toast ---------- */
@@ -240,6 +241,7 @@ async function selectCharacter(id) {
 
 function renderDetail(character) {
   hideScenesView();
+  hideStudioView();
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
   if (!character) return;
@@ -516,6 +518,143 @@ function setupDelete() {
   });
 }
 
+/* ---------- Prompt builder ---------- */
+// Optional structured fields → well-formed prompt fragments. Each field's
+// display label is human-friendly; the value is the phrase appended to the
+// prompt (models respond best to concrete photographic/cinematic terms).
+// Shared by the character image card and the standalone Studio.
+const PROMPT_FIELDS = [
+  { label: "Style", options: [
+    ["", "—"],
+    ["photorealistic, highly detailed", "Photorealistic"],
+    ["cinematic film still, dramatic composition", "Cinematic"],
+    ["oil painting, visible brushstrokes", "Oil painting"],
+    ["watercolor painting, soft edges", "Watercolor"],
+    ["anime / manga art style", "Anime / Manga"],
+    ["3D render, octane, physically based", "3D render"],
+    ["comic book art, bold ink", "Comic"],
+    ["pencil sketch, graphite", "Pencil sketch"],
+    ["film noir, high-contrast black and white", "Film noir"],
+    ["vintage analog photograph, film grain", "Vintage photo"],
+    ["epic fantasy concept art", "Fantasy art"],
+  ]},
+  { label: "Lighting", options: [
+    ["", "—"],
+    ["golden hour lighting, warm sun", "Golden hour"],
+    ["soft diffused studio lighting", "Soft studio"],
+    ["hard direct flash", "Hard flash"],
+    ["backlit, rim light, glowing edges", "Backlight"],
+    ["neon lighting, colorful glow", "Neon"],
+    ["candlelight, warm intimate glow", "Candlelight"],
+    ["overcast diffused daylight", "Overcast"],
+    ["dramatic side lighting, chiaroscuro", "Dramatic side light"],
+    ["blue hour twilight", "Blue hour"],
+  ]},
+  { label: "Camera angle", options: [
+    ["", "—"],
+    ["eye-level shot", "Eye level"],
+    ["low-angle shot, looking up", "Low angle"],
+    ["high-angle shot, looking down", "High angle"],
+    ["bird's-eye view, top-down", "Bird's eye"],
+    ["dutch angle, tilted frame", "Dutch angle"],
+    ["over-the-shoulder shot", "Over the shoulder"],
+  ]},
+  { label: "Framing", options: [
+    ["", "—"],
+    ["extreme close-up", "Extreme close-up"],
+    ["close-up shot", "Close-up"],
+    ["medium shot, waist up", "Medium shot"],
+    ["full-body shot", "Full body"],
+    ["wide establishing shot", "Wide shot"],
+  ]},
+  { label: "Lens", options: [
+    ["", "—"],
+    ["shot on 35mm lens", "35mm"],
+    ["shot on 50mm lens", "50mm"],
+    ["85mm portrait lens, shallow depth of field", "85mm portrait"],
+    ["macro lens, extreme detail", "Macro"],
+    ["wide-angle lens", "Wide-angle"],
+    ["telephoto lens, compressed background", "Telephoto"],
+    ["fisheye lens", "Fisheye"],
+  ]},
+  { label: "Mood", options: [
+    ["", "—"],
+    ["serene, calm mood", "Serene"],
+    ["dramatic, intense mood", "Dramatic"],
+    ["melancholic, wistful mood", "Melancholic"],
+    ["energetic, dynamic mood", "Energetic"],
+    ["mysterious, enigmatic mood", "Mysterious"],
+    ["joyful, bright mood", "Joyful"],
+    ["epic, grand scale", "Epic"],
+  ]},
+  { label: "Color", options: [
+    ["", "—"],
+    ["warm color palette", "Warm"],
+    ["cool color palette", "Cool"],
+    ["black and white, monochrome", "Black & white"],
+    ["pastel color palette", "Pastel"],
+    ["vibrant saturated colors", "Vibrant"],
+    ["muted, desaturated colors", "Muted"],
+    ["sepia tone", "Sepia"],
+  ]},
+];
+
+function composePrompt(base, modifiers) {
+  const extra = modifiers.trim();
+  if (!extra) return base;
+  if (!base.trim()) return extra;
+  return `${base.trim()}. ${extra}`;
+}
+
+// Build the field selects into `container`; return an object exposing the
+// current modifier string, the selects, and a reset. `onChange` fires on any
+// field change so callers can refresh a live preview.
+function createComposer(container, onChange) {
+  container.innerHTML = "";
+  const selects = [];
+  for (const field of PROMPT_FIELDS) {
+    const wrap = document.createElement("label");
+    wrap.className = "composer-field";
+    const span = document.createElement("span");
+    span.textContent = field.label;
+    const select = document.createElement("select");
+    for (const [value, label] of field.options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    if (onChange) select.addEventListener("change", onChange);
+    wrap.append(span, select);
+    container.appendChild(wrap);
+    selects.push(select);
+  }
+  return {
+    modifiers: () => selects.map((s) => s.value).filter(Boolean).join(", "),
+    reset: () => { selects.forEach((s) => { s.value = ""; }); if (onChange) onChange(); },
+    selects,
+  };
+}
+
+let imageComposer = null;
+
+function refreshPromptPreview() {
+  if (!imageComposer) return;
+  updateCostEstimate();
+  const preview = el("prompt-preview");
+  const mods = imageComposer.modifiers();
+  const base = el("image-prompt").value.trim();
+  if (!mods) { preview.hidden = true; return; }
+  preview.textContent = `Prompt: ${composePrompt(base || "…", mods)}`;
+  preview.hidden = false;
+}
+
+function setupImageComposer() {
+  imageComposer = createComposer(el("prompt-composer"), refreshPromptPreview);
+  el("composer-reset").addEventListener("click", () => imageComposer.reset());
+  el("image-prompt").addEventListener("input", refreshPromptPreview);
+}
+
 /* ---------- Generation ---------- */
 
 const MODE_META = {
@@ -618,8 +757,14 @@ async function generateImage() {
   if (!apiKey()) { openKeyDialog(); return; }
 
   const mode = currentMode();
+  const mods = imageComposer ? imageComposer.modifiers() : "";
+  // Story splits per line server-side, so the builder fields must ride on
+  // every line — not just the tail — to style each panel equally.
+  const prompt = mode === "story" && mods
+    ? value.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => composePrompt(l, mods)).join("\n")
+    : composePrompt(value, mods);
   const payload = {
-    prompt: value,
+    prompt,
     model: el("image-model").value,
     disclosure: document.querySelector('input[name="disclosure"]:checked').value,
     use_identity: !el("identity-row").hidden && el("use-identity").checked,
@@ -763,6 +908,7 @@ function setupKeyDialog() {
 function showScenesView() {
   state.selectedId = null;
   renderCharacterList();
+  hideStudioView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -906,6 +1052,216 @@ async function generateScene() {
   }
 }
 
+/* ---------- Studio: backgrounds & photo art ---------- */
+
+const STUDIO_MODE_HINT = {
+  "photo-art": "Free artistic image generation — like Midjourney or Grok. No character, no identity lock.",
+  "background": "An empty environment/scene plate with no people — a backdrop you can reuse or drop a character into later.",
+};
+
+let studioComposer = null;
+let studioMode = "photo-art";
+
+function showStudioView() {
+  state.selectedId = null;
+  renderCharacterList();
+  hideScenesView();
+  el("detail-placeholder").hidden = true;
+  el("detail-content").hidden = true;
+  el("studio-view").hidden = false;
+  el("open-studio").classList.add("active");
+  applyStudioModelUI();
+  updateStudioCost();
+  loadStudio();
+}
+
+function hideStudioView() {
+  el("studio-view").hidden = true;
+  el("open-studio").classList.remove("active");
+}
+
+function populateStudioModel() {
+  const select = el("studio-model");
+  select.innerHTML = "";
+  for (const model of state.imageModels) {
+    const option = document.createElement("option");
+    option.value = model.slug;
+    option.textContent = model.label;
+    select.appendChild(option);
+  }
+}
+
+function selectedStudioModel() {
+  return state.imageModels.find((m) => m.slug === el("studio-model").value);
+}
+
+function applyStudioModelUI() {
+  const model = selectedStudioModel();
+  if (!model) return;
+  el("studio-quality-choice").hidden = !model.quality_tiers;
+  updateStudioCost();
+}
+
+function updateStudioCost() {
+  const box = el("studio-cost");
+  const model = selectedStudioModel();
+  if (!model) { box.hidden = true; return; }
+  let unit;
+  if (model.quality_tiers) {
+    const q = document.querySelector('input[name="studio-quality"]:checked').value;
+    unit = q === "final" ? model.cost_final : model.cost_draft;
+  } else {
+    unit = model.cost;
+  }
+  if (unit == null) { box.hidden = true; return; }
+  box.textContent = `Estimated cost: ~$${unit.toFixed(3)} per image`;
+  box.hidden = false;
+}
+
+function refreshStudioPreview() {
+  if (!studioComposer) return;
+  const preview = el("studio-preview");
+  const mods = studioComposer.modifiers();
+  const base = el("studio-prompt").value.trim();
+  if (!mods) { preview.hidden = true; return; }
+  preview.textContent = `Prompt: ${composePrompt(base || "…", mods)}`;
+  preview.hidden = false;
+}
+
+function setStudioMode(mode) {
+  studioMode = mode;
+  document.querySelectorAll(".studio-mode").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  el("studio-mode-hint").textContent = STUDIO_MODE_HINT[mode];
+}
+
+function setupStudio() {
+  studioComposer = createComposer(el("studio-composer"), refreshStudioPreview);
+  el("studio-composer-reset").addEventListener("click", () => studioComposer.reset());
+  el("studio-prompt").addEventListener("input", refreshStudioPreview);
+  el("studio-model").addEventListener("change", applyStudioModelUI);
+  el("open-studio").addEventListener("click", showStudioView);
+  el("generate-studio-button").addEventListener("click", generateStudioImage);
+  document.querySelectorAll(".studio-mode").forEach((b) => {
+    b.addEventListener("click", () => setStudioMode(b.dataset.mode));
+  });
+  document.querySelectorAll('input[name="studio-quality"]').forEach((r) =>
+    r.addEventListener("change", updateStudioCost));
+  setStudioMode("photo-art");
+}
+
+let studioGenerating = false;
+
+async function generateStudioImage() {
+  if (studioGenerating) return;
+  const base = el("studio-prompt").value.trim();
+  if (!base) { toast("Describe the image first.", true); el("studio-prompt").focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  const prompt = composePrompt(base, studioComposer ? studioComposer.modifiers() : "");
+  studioGenerating = true;
+  el("generate-studio-button").disabled = true;
+  const status = el("studio-status");
+  status.classList.remove("error");
+  status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Generating… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.';
+  status.hidden = false;
+  try {
+    await api("/studio", {
+      method: "POST",
+      headers: { "X-API-Key": apiKey() },
+      body: JSON.stringify({
+        kind: studioMode,
+        prompt,
+        model: el("studio-model").value,
+        quality: document.querySelector('input[name="studio-quality"]:checked').value,
+        disclosure: document.querySelector('input[name="studio-disclosure"]:checked').value,
+      }),
+    });
+    el("studio-prompt").value = "";
+    status.hidden = true;
+    await loadStudio();
+    toast("Image stored in the vault.");
+  } catch (err) {
+    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Generation needs a valid API key.", true); }
+    else { status.classList.add("error"); status.textContent = err.message; }
+  } finally {
+    studioGenerating = false;
+    el("generate-studio-button").disabled = false;
+  }
+}
+
+async function loadStudio() {
+  try {
+    renderStudio(await api("/studio"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderStudio(images) {
+  const grid = el("studio-grid");
+  grid.innerHTML = "";
+  el("studio-empty").hidden = images.length > 0;
+  for (const image of images) {
+    const card = document.createElement("div");
+    card.className = "asset-card";
+    if (image.signed_url) {
+      const img = document.createElement("img");
+      img.src = image.signed_url;
+      img.alt = image.prompt;
+      img.loading = "lazy";
+      img.tabIndex = 0;
+      img.addEventListener("click", () => openLightbox(image.signed_url, image.prompt));
+      card.appendChild(img);
+    }
+    const body = document.createElement("div");
+    body.className = "asset-body";
+    const tag = document.createElement("p");
+    tag.className = "scene-who";
+    tag.textContent = image.kind === "background" ? "Background / Scene" : "Photo Art";
+    body.appendChild(tag);
+    const prompt = document.createElement("p");
+    prompt.className = "asset-prompt";
+    prompt.textContent = image.prompt;
+    prompt.title = image.prompt;
+    body.appendChild(prompt);
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    const parts = [formatTimestamp(image.created_at)];
+    if (image.model) parts.push(image.model.replace("gemini-2.5-flash-image", "nano-banana"));
+    if (image.quality) parts.push(image.quality);
+    if (typeof image.cost_usd === "number") parts.push(`$${image.cost_usd.toFixed(3)}`);
+    time.textContent = parts.join(" · ");
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    if (image.signed_url) {
+      const open = document.createElement("a");
+      open.href = image.signed_url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.textContent = "Open ↗";
+      actions.appendChild(open);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this image?")) return;
+      try { await api(`/studio/${image.id}`, { method: "DELETE" }); loadStudio(); toast("Image deleted."); }
+      catch (err) { toast(err.message, true); }
+    });
+    actions.appendChild(remove);
+    meta.appendChild(actions);
+    body.appendChild(meta);
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
 function setupLightbox() {
   const lightbox = el("lightbox");
   el("lightbox-close").addEventListener("click", () => lightbox.close());
@@ -924,6 +1280,7 @@ function init() {
   refreshKeyButton();
   el("generate-image-button").addEventListener("click", generateImage);
   el("generate-voice-button").addEventListener("click", generateVoice);
+  setupImageComposer();
   el("gen-mode").addEventListener("change", updateModeUI);
   el("gen-count").addEventListener("input", updateCostEstimate);
   el("image-prompt").addEventListener("input", () => { if (currentMode() === "story") updateCostEstimate(); });
@@ -936,6 +1293,7 @@ function init() {
   el("filter-age").addEventListener("change", renderVoiceOptions);
   el("open-scenes").addEventListener("click", showScenesView);
   el("generate-scene-button").addEventListener("click", generateScene);
+  setupStudio();
   Promise.all([
     loadImageModels(),
     loadVoices(),

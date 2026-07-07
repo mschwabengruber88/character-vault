@@ -49,6 +49,21 @@ CREATE TABLE IF NOT EXISTS scenes (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS studio_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    url TEXT NOT NULL,
+    original_url TEXT,
+    sha256 TEXT,
+    model TEXT,
+    quality TEXT,
+    disclosure TEXT,
+    cost_usd REAL,
+    manifest_verified INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS batch_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     character_id INTEGER NOT NULL REFERENCES characters(id),
@@ -310,6 +325,49 @@ def list_scenes() -> list[dict]:
 def delete_scene(scene_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM scenes WHERE id = ?", (scene_id,))
+        return cur.rowcount > 0
+
+
+def create_studio_image(
+    kind: str,
+    prompt: str,
+    url: str,
+    original_url: str | None,
+    sha256: str | None,
+    model: str | None,
+    quality: str | None,
+    disclosure: str | None,
+    cost_usd: float | None,
+    manifest_verified: bool,
+) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO studio_images
+               (kind, prompt, url, original_url, sha256, model, quality, disclosure,
+                cost_usd, manifest_verified, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (kind, prompt, url, original_url, sha256, model, quality, disclosure,
+             cost_usd, int(manifest_verified), now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM studio_images WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def list_studio_images(kind: str | None = None) -> list[dict]:
+    with get_conn() as conn:
+        if kind:
+            rows = conn.execute(
+                "SELECT * FROM studio_images WHERE kind = ? ORDER BY id DESC", (kind,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM studio_images ORDER BY id DESC").fetchall()
+        return [dict(row) for row in rows]
+
+
+def delete_studio_image(image_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM studio_images WHERE id = ?", (image_id,))
         return cur.rowcount > 0
 
 
