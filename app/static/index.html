@@ -52,6 +52,7 @@
           <div>
             <h2 id="detail-name"></h2>
             <p id="detail-description" class="detail-description"></p>
+            <p id="detail-spend" class="detail-spend" hidden></p>
           </div>
           <button id="delete-button" class="button danger small">Delete</button>
         </div>
@@ -65,6 +66,17 @@
               <input type="checkbox" id="use-identity" checked>
               <span><b>Keep character identity</b> — <span id="identity-count"></span> stored portrait(s) are used as reference automatically</span>
             </label>
+            <fieldset class="disclosure-choice">
+              <legend>Quality</legend>
+              <label>
+                <input type="radio" name="quality" value="draft" checked>
+                <span><b>Draft</b> — ~$0.01 per image, for finding the right motif</span>
+              </label>
+              <label>
+                <input type="radio" name="quality" value="final">
+                <span><b>Final</b> — ~$0.17 per image, full quality for the keeper</span>
+              </label>
+            </fieldset>
             <fieldset class="disclosure-choice">
               <legend>AI disclosure</legend>
               <label>

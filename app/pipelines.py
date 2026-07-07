@@ -41,12 +41,22 @@ IDENTITY_INSTRUCTION = (
     "Render that same person in a new scene: "
 )
 
+# OpenAI API list prices per 1024x1024 image (July 2026); draft iterations
+# cost ~15x less than finals — the main waste-reduction lever.
+QUALITY_TIERS = {"draft": "low", "final": "high"}
+IMAGE_COST_USD = {"draft": 0.011, "final": 0.167}
+
+# gpt-4o-mini-tts: ~$12 per 1M input characters. ElevenLabs cost depends
+# on the account's plan, so we don't guess it (cost stays None).
+OPENAI_TTS_USD_PER_CHAR = 12 / 1_000_000
+
 
 def generate_character_portrait(
     character_id: int,
     prompt: str,
     disclosure: str = "invisible",
     references: list[str] | None = None,
+    quality: str = "draft",
 ) -> dict:
     from app.disclosure import apply_image_disclosure
     from app.storage import presign_asset_url
@@ -69,6 +79,7 @@ def generate_character_portrait(
             prompt=final_prompt,
             modality=Modality.IMAGE,
             size="1024x1024",
+            quality=QUALITY_TIERS[quality],
             **step_kwargs,
         )
         .run(sink=get_storage_sink(), timeout=180)
@@ -77,6 +88,8 @@ def generate_character_portrait(
     asset["original_url"] = asset["url"]
     asset["url"] = apply_image_disclosure(asset["url"], result.manifest, disclosure)
     asset["disclosure"] = disclosure
+    asset["quality"] = quality
+    asset["cost_usd"] = IMAGE_COST_USD[quality]
     return asset
 
 
@@ -94,7 +107,9 @@ def generate_character_voice_line(character_id: int, text: str) -> dict:
                 )
                 .run(sink=get_storage_sink(), timeout=120)
             )
-            return _asset_result(result)
+            asset = _asset_result(result)
+            asset["cost_usd"] = None  # ElevenLabs pricing is plan-dependent
+            return asset
         except Exception:
             pass  # fall through to OpenAI TTS below
 
@@ -109,4 +124,6 @@ def generate_character_voice_line(character_id: int, text: str) -> dict:
         )
         .run(sink=get_storage_sink(), timeout=120)
     )
-    return _asset_result(result)
+    asset = _asset_result(result)
+    asset["cost_usd"] = round(len(text) * OPENAI_TTS_USD_PER_CHAR, 6)
+    return asset

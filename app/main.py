@@ -1,5 +1,6 @@
 import logging
-from contextlib import asynccontextmanager
+import threading
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +21,30 @@ logger = logging.getLogger("character_vault")
 def require_api_key(x_api_key: str = Header(default="")):
     if not GENERATE_API_KEY or x_api_key != GENERATE_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+
+
+_inflight_lock = threading.Lock()
+_inflight: set[tuple[int, str]] = set()
+
+
+@contextmanager
+def generation_slot(character_id: int, kind: str):
+    """One paid generation per character+kind at a time — a duplicate
+    request (double-click, impatient retry) is rejected instead of
+    silently billed twice."""
+    key = (character_id, kind)
+    with _inflight_lock:
+        if key in _inflight:
+            raise HTTPException(
+                status_code=409,
+                detail="A generation for this character is already running. Please wait for it to finish.",
+            )
+        _inflight.add(key)
+    try:
+        yield
+    finally:
+        with _inflight_lock:
+            _inflight.discard(key)
 
 
 @asynccontextmanager
@@ -55,6 +80,7 @@ class PortraitRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
     disclosure: Literal["visible", "invisible"] = "invisible"
     use_identity: bool = True
+    quality: Literal["draft", "final"] = "draft"
 
 
 def identity_references(character: dict) -> list[str]:
@@ -129,11 +155,16 @@ def generate_image(character_id: int, body: PortraitRequest):
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
     references = identity_references(character) if body.use_identity else []
-    try:
-        result = generate_character_portrait(character_id, body.prompt, body.disclosure, references)
-    except Exception:
-        logger.exception("Image generation failed for character %s", character_id)
-        raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
+    with generation_slot(character_id, "image"):
+        try:
+            result = generate_character_portrait(
+                character_id, body.prompt, body.disclosure, references, body.quality
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Image generation failed for character %s", character_id)
+            raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
     return with_signed_url(db.add_asset(
         character_id=character_id,
         kind="image",
@@ -144,6 +175,8 @@ def generate_image(character_id: int, body: PortraitRequest):
         manifest_verified=result["manifest_verified"],
         disclosure=result.get("disclosure"),
         original_url=result.get("original_url"),
+        quality=result.get("quality"),
+        cost_usd=result.get("cost_usd"),
     ))
 
 
@@ -152,11 +185,14 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
     character = db.get_character(character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
-    try:
-        result = generate_character_voice_line(character_id, body.text)
-    except Exception:
-        logger.exception("Voice generation failed for character %s", character_id)
-        raise HTTPException(status_code=502, detail="Voice generation failed. Please try again.")
+    with generation_slot(character_id, "voice"):
+        try:
+            result = generate_character_voice_line(character_id, body.text)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Voice generation failed for character %s", character_id)
+            raise HTTPException(status_code=502, detail="Voice generation failed. Please try again.")
     return with_signed_url(db.add_asset(
         character_id=character_id,
         kind="voice",
@@ -165,4 +201,5 @@ def generate_voice(character_id: int, body: VoiceLineRequest):
         mime_type=result["mime_type"],
         prompt=body.text,
         manifest_verified=result["manifest_verified"],
+        cost_usd=result.get("cost_usd"),
     ))

@@ -115,6 +115,10 @@ function renderDetail(character) {
   el("identity-row").hidden = imageCount === 0;
   el("identity-count").textContent = String(Math.min(imageCount, 3));
 
+  const spend = character.assets.reduce((sum, a) => sum + (a.cost_usd || 0), 0);
+  el("detail-spend").hidden = spend === 0;
+  el("detail-spend").textContent = `Generation spend so far: $${spend.toFixed(2)}`;
+
   const grid = el("asset-grid");
   grid.innerHTML = "";
   el("asset-empty").hidden = character.assets.length > 0;
@@ -202,7 +206,10 @@ function renderAssetCard(asset) {
   const meta = document.createElement("div");
   meta.className = "asset-meta";
   const time = document.createElement("span");
-  time.textContent = formatTimestamp(asset.created_at);
+  const parts = [formatTimestamp(asset.created_at)];
+  if (asset.quality) parts.push(asset.quality);
+  if (typeof asset.cost_usd === "number") parts.push(`$${asset.cost_usd.toFixed(3)}`);
+  time.textContent = parts.join(" · ");
   meta.appendChild(time);
   const actions = document.createElement("span");
   actions.className = "asset-actions";
@@ -324,6 +331,7 @@ async function generate(kind) {
           prompt: value,
           disclosure: document.querySelector('input[name="disclosure"]:checked').value,
           use_identity: !el("identity-row").hidden && el("use-identity").checked,
+          quality: document.querySelector('input[name="quality"]:checked').value,
         }
       : { text: value };
     await api(`/characters/${state.selectedId}/generate/${kind}`, {

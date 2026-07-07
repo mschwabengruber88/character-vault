@@ -95,7 +95,7 @@ def test_generate_image_success(client):
     assert data["url"] == "https://example.com/a.visible.png"
     assert data["disclosure"] == "visible"
     assert data["original_url"] == "https://example.com/a.png"
-    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [])
+    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft")
 
     character = client.get(f"/characters/{char_id}").json()
     assert len(character["assets"]) == 1
@@ -120,7 +120,7 @@ def test_generate_image_disclosure_defaults_to_invisible(client):
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
-    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [])
+    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft")
 
 
 def test_generate_image_rejects_unknown_disclosure(client):
@@ -160,6 +160,63 @@ def test_generate_image_provider_failure_returns_clean_502(client):
         )
     assert resp.status_code == 502
     assert "secret header dump" not in resp.text
+
+
+def test_generate_image_quality_and_cost_persisted(client):
+    resp = client.post("/characters", json={"name": "CostChar"})
+    char_id = resp.json()["id"]
+
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/d.png",
+            "original_url": "https://example.com/d-orig.png",
+            "sha256": "cost1",
+            "mime_type": "image/png",
+            "manifest_verified": True,
+            "disclosure": "invisible",
+            "quality": "final",
+            "cost_usd": 0.167,
+        }
+        resp = client.post(
+            f"/characters/{char_id}/generate/image",
+            json={"prompt": "a portrait", "quality": "final"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["quality"] == "final"
+    assert data["cost_usd"] == 0.167
+    assert mock_gen.call_args.args[4] == "final"
+
+
+def test_generate_image_rejects_unknown_quality(client):
+    resp = client.post("/characters", json={"name": "BadQuality"})
+    char_id = resp.json()["id"]
+
+    resp = client.post(
+        f"/characters/{char_id}/generate/image",
+        json={"prompt": "a robot", "quality": "ultra"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 422
+
+
+def test_generation_slot_rejects_concurrent_duplicate(client):
+    from app.main import generation_slot
+    from fastapi import HTTPException
+    import pytest
+
+    with generation_slot(42, "image"):
+        with pytest.raises(HTTPException) as excinfo:
+            with generation_slot(42, "image"):
+                pass
+        assert excinfo.value.status_code == 409
+        # a different character is unaffected
+        with generation_slot(43, "image"):
+            pass
+    # slot is released afterwards
+    with generation_slot(42, "image"):
+        pass
 
 
 def test_generate_image_uses_identity_references(client):
