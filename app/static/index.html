@@ -31,18 +31,18 @@
       </div>
 
       <form id="create-form" class="create-form" hidden>
-        <input id="create-name" type="text" placeholder="Name" maxlength="100" required>
-        <textarea id="create-description" placeholder="Appearance / short description" maxlength="1000" rows="2"></textarea>
-        <textarea id="create-personality" placeholder="Personality &amp; traits — e.g. 'shy, doesn't speak directly to women' or 'strong, confident, charismatic'" maxlength="1000" rows="2"></textarea>
-        <input id="create-purpose" type="text" placeholder="Purpose / use-case (optional)" maxlength="500">
-        <input id="create-seed" type="number" min="0" placeholder="Seed (optional, for reproducibility)">
+        <input id="create-name" type="text" data-i18n-ph="phName" placeholder="Name" maxlength="100" required>
+        <textarea id="create-description" data-i18n-ph="phDescription" placeholder="Appearance / short description" maxlength="1000" rows="2"></textarea>
+        <textarea id="create-personality" data-i18n-ph="phPersonality" placeholder="Personality &amp; traits — e.g. 'shy, doesn't speak directly to women' or 'strong, confident, charismatic'" maxlength="1000" rows="2"></textarea>
+        <input id="create-purpose" type="text" data-i18n-ph="phPurpose" placeholder="Purpose / use-case (optional)" maxlength="500">
+        <input id="create-seed" type="number" min="0" data-i18n-ph="phSeed" placeholder="Seed (optional, for reproducibility)">
         <label class="upload-field">
-          <span>Reference photo (optional — create from your own image)</span>
+          <span data-i18n="refPhotoLabel">Reference photo (optional — create from your own image)</span>
           <input id="create-image" type="file" accept="image/png,image/jpeg,image/webp">
         </label>
         <div class="form-row">
-          <button type="submit" class="button primary small">Create</button>
-          <button type="button" id="create-cancel" class="button small">Cancel</button>
+          <button type="submit" class="button primary small" data-i18n="create">Create</button>
+          <button type="button" id="create-cancel" class="button small" data-i18n="cancel">Cancel</button>
         </div>
       </form>
 
@@ -114,83 +114,83 @@
           </div>
           <div class="detail-actions">
             <label class="button small upload-button" title="Upload a reference photo">
-              Upload photo
+              <span data-i18n="uploadPhoto">Upload photo</span>
               <input id="upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
             </label>
-            <button id="edit-profile-button" class="button small">Edit profile</button>
-            <button id="delete-button" class="button danger small">Delete</button>
+            <button id="edit-profile-button" class="button small" data-i18n="editProfile">Edit profile</button>
+            <button id="delete-button" class="button danger small" data-i18n="delete">Delete</button>
           </div>
         </div>
 
         <form id="edit-form" class="edit-form" hidden>
-          <input id="edit-name" type="text" placeholder="Name" maxlength="100">
-          <textarea id="edit-description" placeholder="Appearance / short description" maxlength="1000" rows="2"></textarea>
-          <textarea id="edit-personality" placeholder="Personality &amp; traits" maxlength="1000" rows="2"></textarea>
-          <input id="edit-purpose" type="text" placeholder="Purpose / use-case" maxlength="500">
-          <input id="edit-seed" type="number" min="0" placeholder="Seed">
+          <input id="edit-name" type="text" data-i18n-ph="phName" placeholder="Name" maxlength="100">
+          <textarea id="edit-description" data-i18n-ph="phDescription" placeholder="Appearance / short description" maxlength="1000" rows="2"></textarea>
+          <textarea id="edit-personality" data-i18n-ph="phPersonalityShort" placeholder="Personality &amp; traits" maxlength="1000" rows="2"></textarea>
+          <input id="edit-purpose" type="text" data-i18n-ph="phPurposeShort" placeholder="Purpose / use-case" maxlength="500">
+          <input id="edit-seed" type="number" min="0" data-i18n-ph="phSeedShort" placeholder="Seed">
           <div class="form-row">
-            <button type="submit" class="button primary small">Save</button>
-            <button type="button" id="edit-cancel" class="button small">Cancel</button>
+            <button type="submit" class="button primary small" data-i18n="save">Save</button>
+            <button type="button" id="edit-cancel" class="button small" data-i18n="cancel">Cancel</button>
           </div>
         </form>
 
         <div class="generate-panel">
           <div class="generate-card">
-            <h3>Image generation</h3>
-            <p class="generate-hint">Genblaze → Backblaze B2 · identity, personality &amp; seed from the profile carry into every frame</p>
+            <h3 data-i18n="imgGenTitle">Image generation</h3>
+            <p class="generate-hint" data-i18n="imgGenHint">Genblaze → Backblaze B2 · identity, personality &amp; seed from the profile carry into every frame</p>
             <div class="mode-grid">
               <label class="model-row">
-                <span class="model-label">Mode</span>
+                <span class="model-label" data-i18n="modeLabel">Mode</span>
                 <select id="gen-mode">
-                  <option value="single">Single image</option>
-                  <option value="variation">Variation set — different outfits/poses/backgrounds</option>
-                  <option value="photoshoot">Photoshoot — same outfit &amp; setting, many shots</option>
-                  <option value="story">Story series — one panel per script line</option>
+                  <option value="single" data-i18n="optSingle">Single image</option>
+                  <option value="variation" data-i18n="optVariation">Variation set — different outfits/poses/backgrounds</option>
+                  <option value="photoshoot" data-i18n="optPhotoshoot">Photoshoot — same outfit &amp; setting, many shots</option>
+                  <option value="story" data-i18n="optStory">Story series — one panel per script line</option>
                 </select>
               </label>
               <label class="model-row" id="count-row" hidden>
-                <span class="model-label">How many</span>
+                <span class="model-label" data-i18n="howMany">How many</span>
                 <input id="gen-count" type="number" min="1" max="100" value="10">
               </label>
             </div>
             <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="4000" rows="2"></textarea>
             <p id="mode-hint" class="generate-hint" hidden></p>
             <details class="composer">
-              <summary>Prompt builder <span class="composer-sub">optional — style, light, angle…</span></summary>
+              <summary><span data-i18n="composerTitle">Prompt builder</span> <span class="composer-sub" data-i18n="composerSub">optional — style, light, angle…</span></summary>
               <div id="prompt-composer" class="composer-grid"></div>
               <div class="composer-foot">
-                <button type="button" id="composer-reset" class="button small">Clear fields</button>
+                <button type="button" id="composer-reset" class="button small" data-i18n="clearFields">Clear fields</button>
               </div>
             </details>
             <p id="prompt-preview" class="prompt-preview" hidden></p>
             <label class="model-row">
-              <span class="model-label">Model</span>
+              <span class="model-label" data-i18n="modelLabel">Model</span>
               <select id="image-model"></select>
             </label>
             <label id="identity-row" class="identity-row" hidden>
               <input type="checkbox" id="use-identity" checked>
-              <span><b>Keep character identity</b> — <span id="identity-count"></span> stored portrait(s) used as reference · <span id="identity-hint"></span></span>
+              <span><b data-i18n="identityKeep">Keep character identity</b> — <span id="identity-count"></span><span data-i18n="identityRefNote"> stored portrait(s) used as reference · </span><span id="identity-hint"></span></span>
             </label>
             <fieldset id="quality-choice" class="disclosure-choice">
-              <legend>Quality</legend>
+              <legend data-i18n="qualityLegend">Quality</legend>
               <label>
                 <input type="radio" name="quality" value="draft" checked>
-                <span><b>Draft</b> — ~$0.01 per image, for finding the right motif</span>
+                <span data-i18n-html="qualityDraft"><b>Draft</b> — ~$0.01 per image, for finding the right motif</span>
               </label>
               <label>
                 <input type="radio" name="quality" value="final">
-                <span><b>Final</b> — ~$0.17 per image, full quality for the keeper</span>
+                <span data-i18n-html="qualityFinal"><b>Final</b> — ~$0.17 per image, full quality for the keeper</span>
               </label>
             </fieldset>
             <fieldset class="disclosure-choice">
-              <legend>AI disclosure</legend>
+              <legend data-i18n="disclosureLegend">AI disclosure</legend>
               <label>
                 <input type="radio" name="disclosure" value="invisible" checked>
-                <span><b>Invisible</b> — provenance manifest embedded in the file</span>
+                <span data-i18n-html="disclInvisible"><b>Invisible</b> — provenance manifest embedded in the file</span>
               </label>
               <label>
                 <input type="radio" name="disclosure" value="visible">
-                <span><b>Visible</b> — “✦ AI” watermark badge on the image</span>
+                <span data-i18n-html="disclVisible"><b>Visible</b> — “✦ AI” watermark badge on the image</span>
               </label>
             </fieldset>
             <p id="cost-estimate" class="cost-estimate" hidden></p>
@@ -199,43 +199,43 @@
               <div class="batch-bar"><div id="batch-bar-fill" class="batch-bar-fill"></div></div>
               <div class="batch-progress-row">
                 <span id="batch-progress-label"></span>
-                <button type="button" id="batch-cancel" class="button danger small">Stop</button>
+                <button type="button" id="batch-cancel" class="button danger small" data-i18n="stop">Stop</button>
               </div>
             </div>
           </div>
           <div class="generate-card">
-            <h3>Voice line</h3>
-            <p class="generate-hint">Genblaze TTS → Backblaze B2</p>
-            <textarea id="voice-text" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
+            <h3 data-i18n="voiceTitle">Voice line</h3>
+            <p class="generate-hint" data-i18n="ttsHint">Genblaze TTS → Backblaze B2</p>
+            <textarea id="voice-text" data-i18n-ph="phVoiceText" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
             <div class="voice-filters">
               <select id="filter-gender" class="filter-select" aria-label="Filter by gender">
-                <option value="">Any gender</option>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-                <option value="neutral">Neutral</option>
+                <option value="" data-i18n="filterAnyGender">Any gender</option>
+                <option value="female" data-i18n="filterFemale">Female</option>
+                <option value="male" data-i18n="filterMale">Male</option>
+                <option value="neutral" data-i18n="filterNeutral">Neutral</option>
               </select>
               <select id="filter-age" class="filter-select" aria-label="Filter by age">
-                <option value="">Any age</option>
-                <option value="young">Young / teen</option>
-                <option value="adult">Adult</option>
-                <option value="mature">Mature</option>
+                <option value="" data-i18n="filterAnyAge">Any age</option>
+                <option value="young" data-i18n="filterYoung">Young / teen</option>
+                <option value="adult" data-i18n="filterAdult">Adult</option>
+                <option value="mature" data-i18n="filterMature">Mature</option>
               </select>
             </div>
             <label class="model-row">
-              <span class="model-label">Voice</span>
+              <span class="model-label" data-i18n="voiceLabel">Voice</span>
               <select id="voice-select"></select>
               <button type="button" id="voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
             </label>
             <p id="voice-note" class="generate-hint" hidden></p>
-            <button id="generate-voice-button" class="button primary">Generate voice line</button>
+            <button id="generate-voice-button" class="button primary" data-i18n="genVoiceBtn">Generate voice line</button>
           </div>
         </div>
 
         <div id="generation-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading">Assets</h3>
+        <h3 class="assets-heading" data-i18n="assetsHeading">Assets</h3>
         <div id="asset-grid" class="asset-grid"></div>
-        <p id="asset-empty" class="empty-note" hidden>No assets yet — generate a portrait or voice line above.</p>
+        <p id="asset-empty" class="empty-note" hidden data-i18n="assetsEmpty">No assets yet — generate a portrait or voice line above.</p>
       </div>
 
       <div id="scenes-view" hidden>
@@ -247,19 +247,19 @@
         </div>
 
         <div class="generate-card scene-composer">
-          <h3>New scene</h3>
-          <p class="generate-hint">Nano Banana multi-character composition → Backblaze B2</p>
-          <p class="scene-sub">Pick the characters in the scene (2–4):</p>
+          <h3 data-i18n="newScene">New scene</h3>
+          <p class="generate-hint" data-i18n="sceneHint">Nano Banana multi-character composition → Backblaze B2</p>
+          <p class="scene-sub" data-i18n="scenePick">Pick the characters in the scene (2–4):</p>
           <div id="scene-participants" class="scene-participants"></div>
           <textarea id="scene-prompt" placeholder="Describe the scene, e.g. 'the two of them talking by the classroom window, manga panel'" maxlength="500" rows="2"></textarea>
-          <button id="generate-scene-button" class="button primary">Generate scene</button>
+          <button id="generate-scene-button" class="button primary" data-i18n="genSceneBtn">Generate scene</button>
         </div>
 
         <div id="scene-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading">Your scenes</h3>
+        <h3 class="assets-heading" data-i18n="yourScenes">Your scenes</h3>
         <div id="scene-grid" class="asset-grid"></div>
-        <p id="scene-empty" class="empty-note" hidden>No scenes yet — pick characters and describe a scene above.</p>
+        <p id="scene-empty" class="empty-note" hidden data-i18n="scenesEmpty">No scenes yet — pick characters and describe a scene above.</p>
       </div>
 
       <div id="studio-view" hidden>
@@ -272,54 +272,54 @@
 
         <div class="generate-card">
           <div class="studio-modes">
-            <button type="button" class="studio-mode active" data-mode="photo-art">✦ Photo Art</button>
-            <button type="button" class="studio-mode" data-mode="background">▤ Background / Scene</button>
+            <button type="button" class="studio-mode active" data-mode="photo-art" data-i18n="studioPhotoArt">✦ Photo Art</button>
+            <button type="button" class="studio-mode" data-mode="background" data-i18n="studioBackground">▤ Background / Scene</button>
           </div>
           <p id="studio-mode-hint" class="generate-hint"></p>
-          <textarea id="studio-prompt" placeholder="Describe the image, e.g. 'a lone lighthouse on a stormy cliff'" maxlength="4000" rows="3"></textarea>
+          <textarea id="studio-prompt" data-i18n-ph="phStudioPrompt" placeholder="Describe the image, e.g. 'a lone lighthouse on a stormy cliff'" maxlength="4000" rows="3"></textarea>
           <details class="composer">
-            <summary>Prompt builder <span class="composer-sub">optional — style, light, angle…</span></summary>
+            <summary><span data-i18n="composerTitle">Prompt builder</span> <span class="composer-sub" data-i18n="composerSub">optional — style, light, angle…</span></summary>
             <div id="studio-composer" class="composer-grid"></div>
             <div class="composer-foot">
-              <button type="button" id="studio-composer-reset" class="button small">Clear fields</button>
+              <button type="button" id="studio-composer-reset" class="button small" data-i18n="clearFields">Clear fields</button>
             </div>
           </details>
           <p id="studio-preview" class="prompt-preview" hidden></p>
           <label class="model-row">
-            <span class="model-label">Model</span>
+            <span class="model-label" data-i18n="modelLabel">Model</span>
             <select id="studio-model"></select>
           </label>
           <fieldset id="studio-quality-choice" class="disclosure-choice">
-            <legend>Quality</legend>
+            <legend data-i18n="qualityLegend">Quality</legend>
             <label>
               <input type="radio" name="studio-quality" value="draft" checked>
-              <span><b>Draft</b> — ~$0.01 per image</span>
+              <span data-i18n-html="studioQualityDraft"><b>Draft</b> — ~$0.01 per image</span>
             </label>
             <label>
               <input type="radio" name="studio-quality" value="final">
-              <span><b>Final</b> — ~$0.17 per image</span>
+              <span data-i18n-html="studioQualityFinal"><b>Final</b> — ~$0.17 per image</span>
             </label>
           </fieldset>
           <fieldset class="disclosure-choice">
-            <legend>AI disclosure</legend>
+            <legend data-i18n="disclosureLegend">AI disclosure</legend>
             <label>
               <input type="radio" name="studio-disclosure" value="invisible" checked>
-              <span><b>Invisible</b> — provenance manifest embedded in the file</span>
+              <span data-i18n-html="disclInvisible"><b>Invisible</b> — provenance manifest embedded in the file</span>
             </label>
             <label>
               <input type="radio" name="studio-disclosure" value="visible">
-              <span><b>Visible</b> — “✦ AI” watermark badge on the image</span>
+              <span data-i18n-html="disclVisible"><b>Visible</b> — “✦ AI” watermark badge on the image</span>
             </label>
           </fieldset>
           <p id="studio-cost" class="cost-estimate" hidden></p>
-          <button id="generate-studio-button" class="button primary">Generate image</button>
+          <button id="generate-studio-button" class="button primary" data-i18n="genImageBtn">Generate image</button>
         </div>
 
         <div id="studio-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading">Your studio images</h3>
+        <h3 class="assets-heading" data-i18n="yourStudio">Your studio images</h3>
         <div id="studio-grid" class="asset-grid"></div>
-        <p id="studio-empty" class="empty-note" hidden>Nothing here yet — pick a mode and generate.</p>
+        <p id="studio-empty" class="empty-note" hidden data-i18n="studioEmpty">Nothing here yet — pick a mode and generate.</p>
       </div>
 
       <div id="audio-view" hidden>
@@ -331,49 +331,49 @@
         </div>
 
         <div class="generate-card">
-          <p class="generate-hint">Genblaze TTS → Backblaze B2</p>
-          <textarea id="audio-text" placeholder="What should be spoken? e.g. 'In a world long forgotten, one traveller set out at dawn…'" maxlength="4000" rows="4"></textarea>
+          <p class="generate-hint" data-i18n="ttsHint">Genblaze TTS → Backblaze B2</p>
+          <textarea id="audio-text" data-i18n-ph="phAudioText" placeholder="What should be spoken? e.g. 'In a world long forgotten, one traveller set out at dawn…'" maxlength="4000" rows="4"></textarea>
           <div class="studio-modes">
-            <button type="button" class="audio-source-btn active" data-source="catalog">Catalog voice</button>
-            <button type="button" class="audio-source-btn" data-source="custom">Your ElevenLabs voice (by ID)</button>
+            <button type="button" class="audio-source-btn active" data-source="catalog" data-i18n="audioCatalog">Catalog voice</button>
+            <button type="button" class="audio-source-btn" data-source="custom" data-i18n="audioCustom">Your ElevenLabs voice (by ID)</button>
           </div>
           <div id="audio-catalog">
             <div class="voice-filters">
               <select id="audio-filter-gender" class="filter-select" aria-label="Filter by gender">
-                <option value="">Any gender</option>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-                <option value="neutral">Neutral</option>
+                <option value="" data-i18n="filterAnyGender">Any gender</option>
+                <option value="female" data-i18n="filterFemale">Female</option>
+                <option value="male" data-i18n="filterMale">Male</option>
+                <option value="neutral" data-i18n="filterNeutral">Neutral</option>
               </select>
               <select id="audio-filter-age" class="filter-select" aria-label="Filter by age">
-                <option value="">Any age</option>
-                <option value="young">Young / teen</option>
-                <option value="adult">Adult</option>
-                <option value="mature">Mature</option>
+                <option value="" data-i18n="filterAnyAge">Any age</option>
+                <option value="young" data-i18n="filterYoung">Young / teen</option>
+                <option value="adult" data-i18n="filterAdult">Adult</option>
+                <option value="mature" data-i18n="filterMature">Mature</option>
               </select>
             </div>
             <label class="model-row">
-              <span class="model-label">Voice</span>
+              <span class="model-label" data-i18n="voiceLabel">Voice</span>
               <select id="audio-voice-select"></select>
               <button type="button" id="audio-voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
             </label>
           </div>
           <div id="audio-custom" hidden>
             <label class="model-row">
-              <span class="model-label">Voice ID</span>
-              <input id="audio-custom-id" type="text" placeholder="ElevenLabs Voice ID, e.g. 21m00Tcm4TlvDq8ikWAM" maxlength="100">
+              <span class="model-label" data-i18n="voiceIdLabel">Voice ID</span>
+              <input id="audio-custom-id" type="text" data-i18n-ph="phVoiceId" placeholder="ElevenLabs Voice ID, e.g. 21m00Tcm4TlvDq8ikWAM" maxlength="100">
             </label>
-            <p class="generate-hint">Copy the Voice ID from your ElevenLabs voice library. Requires an ElevenLabs plan reachable from the server — otherwise it falls back to an OpenAI voice.</p>
+            <p class="generate-hint" data-i18n="voiceIdHint">Copy the Voice ID from your ElevenLabs voice library. Requires an ElevenLabs plan reachable from the server — otherwise it falls back to an OpenAI voice.</p>
           </div>
           <p id="audio-note" class="generate-hint" hidden></p>
-          <button id="generate-audio-button" class="button primary">Generate audio</button>
+          <button id="generate-audio-button" class="button primary" data-i18n="genAudioBtn">Generate audio</button>
         </div>
 
         <div id="audio-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading">Your audio</h3>
+        <h3 class="assets-heading" data-i18n="yourAudio">Your audio</h3>
         <div id="audio-grid" class="asset-grid"></div>
-        <p id="audio-empty" class="empty-note" hidden>Nothing here yet — write a line and generate.</p>
+        <p id="audio-empty" class="empty-note" hidden data-i18n="audioEmpty">Nothing here yet — write a line and generate.</p>
       </div>
 
       <div id="video-view" hidden>
@@ -386,7 +386,7 @@
 
         <div class="generate-card">
           <label class="model-row">
-            <span class="model-label">Model</span>
+            <span class="model-label" data-i18n="modelLabel">Model</span>
             <select id="video-model"></select>
           </label>
           <div id="video-model-desc" class="model-desc" hidden>
@@ -394,31 +394,31 @@
             <span id="video-model-text"></span>
           </div>
           <label class="model-row" id="video-character-row">
-            <span class="model-label">Character</span>
+            <span class="model-label" data-i18n="characterLabel">Character</span>
             <select id="video-character"></select>
           </label>
           <p id="video-model-hint" class="generate-hint"></p>
-          <textarea id="video-prompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
+          <textarea id="video-prompt" data-i18n-ph="phVideoPrompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
           <div class="mode-grid">
             <label class="model-row">
-              <span class="model-label">Duration</span>
+              <span class="model-label" data-i18n="durationLabel">Duration</span>
               <select id="video-duration">
-                <option value="5" selected>5 seconds</option>
-                <option value="8">8 seconds</option>
-                <option value="10">10 seconds</option>
+                <option value="5" selected data-i18n="dur5">5 seconds</option>
+                <option value="8" data-i18n="dur8">8 seconds</option>
+                <option value="10" data-i18n="dur10">10 seconds</option>
               </select>
             </label>
             <label class="model-row">
-              <span class="model-label">Aspect</span>
+              <span class="model-label" data-i18n="aspectLabel">Aspect</span>
               <select id="video-aspect">
-                <option value="16:9" selected>16:9 — landscape</option>
-                <option value="9:16">9:16 — vertical</option>
-                <option value="1:1">1:1 — square</option>
+                <option value="16:9" selected data-i18n="asp169">16:9 — landscape</option>
+                <option value="9:16" data-i18n="asp916">9:16 — vertical</option>
+                <option value="1:1" data-i18n="asp11">1:1 — square</option>
               </select>
             </label>
           </div>
-          <p class="generate-hint">Video generation runs on GMI Cloud and takes 1–4 minutes. It keeps running if you switch views.</p>
-          <button id="generate-video-button" class="button primary">Generate video</button>
+          <p class="generate-hint" data-i18n="videoRunHint">Video generation runs on GMI Cloud and takes 1–4 minutes. It keeps running if you switch views.</p>
+          <button id="generate-video-button" class="button primary" data-i18n="genVideoBtn">Generate video</button>
           <div id="video-progress" class="batch-progress" hidden>
             <div class="batch-bar"><div id="video-bar-fill" class="batch-bar-fill batch-bar-indeterminate"></div></div>
             <div class="batch-progress-row">
@@ -429,9 +429,9 @@
 
         <div id="video-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading">Your videos</h3>
+        <h3 class="assets-heading" data-i18n="yourVideos">Your videos</h3>
         <div id="video-grid" class="asset-grid"></div>
-        <p id="video-empty" class="empty-note" hidden>No videos yet — pick a model and generate.</p>
+        <p id="video-empty" class="empty-note" hidden data-i18n="videoEmpty">No videos yet — pick a model and generate.</p>
       </div>
 
       <div id="script-view" hidden>
@@ -494,12 +494,12 @@
 
   <dialog id="key-dialog" class="key-dialog">
     <form method="dialog">
-      <h3>Generation API key</h3>
-      <p>Portrait and voice generation call paid provider APIs, so they require the shared key. It is stored only in this browser.</p>
-      <input id="key-input" type="password" placeholder="X-API-Key value" autocomplete="off">
+      <h3 data-i18n="keyDialogTitle">Generation API key</h3>
+      <p data-i18n="keyDialogBody">Portrait and voice generation call paid provider APIs, so they require the shared key. It is stored only in this browser.</p>
+      <input id="key-input" type="password" data-i18n-ph="phKeyInput" placeholder="X-API-Key value" autocomplete="off">
       <div class="form-row">
-        <button value="save" class="button primary small">Save</button>
-        <button value="cancel" class="button small">Cancel</button>
+        <button value="save" class="button primary small" data-i18n="save">Save</button>
+        <button value="cancel" class="button small" data-i18n="cancel">Cancel</button>
       </div>
     </form>
   </dialog>

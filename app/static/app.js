@@ -84,6 +84,129 @@ const TRANSLATIONS = {
     scriptNone: "No scripts yet — describe an idea above.",
     scriptGenerating: "Writing your script…",
     scriptCopied: "Script copied.",
+    phName: "Name",
+    phDescription: "Appearance / short description",
+    phPersonality: "Personality & traits — e.g. 'shy, doesn't speak directly to women' or 'strong, confident, charismatic'",
+    phPurpose: "Purpose / use-case (optional)",
+    phSeed: "Seed (optional, for reproducibility)",
+    phPersonalityShort: "Personality & traits",
+    phPurposeShort: "Purpose / use-case",
+    phSeedShort: "Seed",
+    refPhotoLabel: "Reference photo (optional — create from your own image)",
+    create: "Create",
+    cancel: "Cancel",
+    save: "Save",
+    uploadPhoto: "Upload photo",
+    editProfile: "Edit profile",
+    delete: "Delete",
+    imgGenTitle: "Image generation",
+    imgGenHint: "Genblaze → Backblaze B2 · identity, personality & seed from the profile carry into every frame",
+    modeLabel: "Mode",
+    optSingle: "Single image",
+    optVariation: "Variation set — different outfits/poses/backgrounds",
+    optPhotoshoot: "Photoshoot — same outfit & setting, many shots",
+    optStory: "Story series — one panel per script line",
+    howMany: "How many",
+    composerTitle: "Prompt builder",
+    composerSub: "optional — style, light, angle…",
+    clearFields: "Clear fields",
+    modelLabel: "Model",
+    identityKeep: "Keep character identity",
+    identityRefNote: " stored portrait(s) used as reference · ",
+    qualityLegend: "Quality",
+    qualityDraft: "<b>Draft</b> — ~$0.01 per image, for finding the right motif",
+    qualityFinal: "<b>Final</b> — ~$0.17 per image, full quality for the keeper",
+    disclosureLegend: "AI disclosure",
+    disclInvisible: "<b>Invisible</b> — provenance manifest embedded in the file",
+    disclVisible: "<b>Visible</b> — “✦ AI” watermark badge on the image",
+    stop: "Stop",
+    voiceTitle: "Voice line",
+    ttsHint: "Genblaze TTS → Backblaze B2",
+    phVoiceText: "What should the character say?",
+    voiceLabel: "Voice",
+    genVoiceBtn: "Generate voice line",
+    assetsHeading: "Assets",
+    assetsEmpty: "No assets yet — generate a portrait or voice line above.",
+    filterAnyGender: "Any gender",
+    filterFemale: "Female",
+    filterMale: "Male",
+    filterNeutral: "Neutral",
+    filterAnyAge: "Any age",
+    filterYoung: "Young / teen",
+    filterAdult: "Adult",
+    filterMature: "Mature",
+    newScene: "New scene",
+    sceneHint: "Nano Banana multi-character composition → Backblaze B2",
+    scenePick: "Pick the characters in the scene (2–4):",
+    genSceneBtn: "Generate scene",
+    yourScenes: "Your scenes",
+    scenesEmpty: "No scenes yet — pick characters and describe a scene above.",
+    studioPhotoArt: "✦ Photo Art",
+    studioBackground: "▤ Background / Scene",
+    phStudioPrompt: "Describe the image, e.g. 'a lone lighthouse on a stormy cliff'",
+    studioQualityDraft: "<b>Draft</b> — ~$0.01 per image",
+    studioQualityFinal: "<b>Final</b> — ~$0.17 per image",
+    genImageBtn: "Generate image",
+    yourStudio: "Your studio images",
+    studioEmpty: "Nothing here yet — pick a mode and generate.",
+    phAudioText: "What should be spoken? e.g. 'In a world long forgotten, one traveller set out at dawn…'",
+    audioCatalog: "Catalog voice",
+    audioCustom: "Your ElevenLabs voice (by ID)",
+    voiceIdLabel: "Voice ID",
+    phVoiceId: "ElevenLabs Voice ID, e.g. 21m00Tcm4TlvDq8ikWAM",
+    voiceIdHint: "Copy the Voice ID from your ElevenLabs voice library. Requires an ElevenLabs plan reachable from the server — otherwise it falls back to an OpenAI voice.",
+    genAudioBtn: "Generate audio",
+    yourAudio: "Your audio",
+    audioEmpty: "Nothing here yet — write a line and generate.",
+    characterLabel: "Character",
+    phVideoPrompt: "Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'",
+    durationLabel: "Duration",
+    dur5: "5 seconds",
+    dur8: "8 seconds",
+    dur10: "10 seconds",
+    aspectLabel: "Aspect",
+    asp169: "16:9 — landscape",
+    asp916: "9:16 — vertical",
+    asp11: "1:1 — square",
+    videoRunHint: "Video generation runs on GMI Cloud and takes 1–4 minutes. It keeps running if you switch views.",
+    genVideoBtn: "Generate video",
+    yourVideos: "Your videos",
+    videoEmpty: "No videos yet — pick a model and generate.",
+    keyDialogTitle: "Generation API key",
+    keyDialogBody: "Portrait and voice generation call paid provider APIs, so they require the shared key. It is stored only in this browser.",
+    phKeyInput: "X-API-Key value",
+    // JS-set strings
+    modePortraitBtn: "Generate portrait",
+    modeVariationBtn: "Generate variation set",
+    modePhotoshootBtn: "Run photoshoot",
+    modeStoryBtn: "Generate story series",
+    phSinglePrompt: "Describe the portrait, e.g. 'a weathered sea captain, oil painting style'",
+    phVariationPrompt: "Describe the character, e.g. 'a young sorceress with silver hair'",
+    phPhotoshootPrompt: "Describe the look & setting, e.g. 'in a beige trench coat, city street at dusk'",
+    phStoryPrompt: "One line per panel:\nShe wakes at dawn.\nShe walks to the harbour.\nShe boards the ship.",
+    hintVariation: "Each frame changes outfit, pose, background and lighting — same person throughout.",
+    hintPhotoshoot: "Wardrobe, location and lighting stay locked — only the camera angle and expression change, like a real shoot.",
+    hintStory: "One image per line of the script. The character stays consistent across every panel.",
+    identityLocks: "this model locks facial identity",
+    identityLoose: "loose likeness only — for locked identity pick an identity model",
+    studioHintPhoto: "Free artistic image generation — like Midjourney or Grok. No character, no identity lock.",
+    studioHintBg: "An empty environment/scene plate with no people — a backdrop you can reuse or drop a character into later.",
+    videoHintChar: "Animates the chosen character's portrait as the first frame — their identity carries into the clip.",
+    videoHintAudio: "Includes a generated audio track.",
+    videoHintText: "No character needed — describe the whole shot.",
+    videoRendering: "Rendering… 1–4 minutes.",
+    toastPortraitSaved: "Portrait stored in the vault.",
+    toastVoiceSaved: "Voice line stored in the vault.",
+    toastImageSaved: "Image stored in the vault.",
+    toastAudioSaved: "Audio stored in the vault.",
+    toastVideoSaved: "Video stored in the vault.",
+    toastSceneCreated: "Scene created.",
+    toastDeleted: "Deleted.",
+    toastNeedKey: "Generation needs a valid API key.",
+    toastDescribeFirst: "Describe the character first.",
+    generatingImage: "Generating portrait… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.",
+    generatingVoice: "Generating voice line… this usually takes 15–60 seconds.",
+    generatingAudio: "Generating audio… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.",
   },
   de: {
     provenanceNote: "Jedes Asset auf Backblaze B2 gespeichert – mit verifiziertem Herkunftsnachweis",
@@ -160,6 +283,129 @@ const TRANSLATIONS = {
     scriptNone: "Noch keine Skripte – beschreibe oben eine Idee.",
     scriptGenerating: "Dein Skript wird geschrieben …",
     scriptCopied: "Skript kopiert.",
+    phName: "Name",
+    phDescription: "Aussehen / Kurzbeschreibung",
+    phPersonality: "Persönlichkeit & Eigenschaften – z. B. 'schüchtern, spricht nicht direkt mit Frauen' oder 'stark, selbstbewusst, charismatisch'",
+    phPurpose: "Verwendungszweck (optional)",
+    phSeed: "Seed (optional, für Reproduzierbarkeit)",
+    phPersonalityShort: "Persönlichkeit & Eigenschaften",
+    phPurposeShort: "Verwendungszweck",
+    phSeedShort: "Seed",
+    refPhotoLabel: "Referenzfoto (optional – aus deinem eigenen Bild erstellen)",
+    create: "Erstellen",
+    cancel: "Abbrechen",
+    save: "Speichern",
+    uploadPhoto: "Foto hochladen",
+    editProfile: "Profil bearbeiten",
+    delete: "Löschen",
+    imgGenTitle: "Bildgenerierung",
+    imgGenHint: "Genblaze → Backblaze B2 · Identität, Persönlichkeit & Seed aus dem Profil fließen in jedes Bild",
+    modeLabel: "Modus",
+    optSingle: "Einzelbild",
+    optVariation: "Variationsset – verschiedene Outfits/Posen/Hintergründe",
+    optPhotoshoot: "Fotoshooting – gleiches Outfit & Setting, viele Aufnahmen",
+    optStory: "Bildergeschichte – ein Panel pro Skriptzeile",
+    howMany: "Anzahl",
+    composerTitle: "Prompt-Baukasten",
+    composerSub: "optional – Stil, Licht, Winkel …",
+    clearFields: "Felder leeren",
+    modelLabel: "Modell",
+    identityKeep: "Charakter-Identität halten",
+    identityRefNote: " gespeicherte(s) Porträt(s) als Referenz · ",
+    qualityLegend: "Qualität",
+    qualityDraft: "<b>Entwurf</b> – ~$0,01 pro Bild, zum Finden des Motivs",
+    qualityFinal: "<b>Final</b> – ~$0,17 pro Bild, volle Qualität für den Keeper",
+    disclosureLegend: "KI-Kennzeichnung",
+    disclInvisible: "<b>Unsichtbar</b> – Herkunftsnachweis in der Datei eingebettet",
+    disclVisible: "<b>Sichtbar</b> – „✦ AI“-Wasserzeichen auf dem Bild",
+    stop: "Stopp",
+    voiceTitle: "Sprachzeile",
+    ttsHint: "Genblaze TTS → Backblaze B2",
+    phVoiceText: "Was soll der Charakter sagen?",
+    voiceLabel: "Stimme",
+    genVoiceBtn: "Sprachzeile generieren",
+    assetsHeading: "Assets",
+    assetsEmpty: "Noch keine Assets – generiere oben ein Porträt oder eine Sprachzeile.",
+    filterAnyGender: "Beliebiges Geschlecht",
+    filterFemale: "Weiblich",
+    filterMale: "Männlich",
+    filterNeutral: "Neutral",
+    filterAnyAge: "Beliebiges Alter",
+    filterYoung: "Jung / Teenager",
+    filterAdult: "Erwachsen",
+    filterMature: "Reif",
+    newScene: "Neue Szene",
+    sceneHint: "Nano-Banana-Multi-Charakter-Komposition → Backblaze B2",
+    scenePick: "Wähle die Charaktere der Szene (2–4):",
+    genSceneBtn: "Szene generieren",
+    yourScenes: "Deine Szenen",
+    scenesEmpty: "Noch keine Szenen – wähle Charaktere und beschreibe oben eine Szene.",
+    studioPhotoArt: "✦ Foto-Art",
+    studioBackground: "▤ Hintergrund / Szene",
+    phStudioPrompt: "Beschreibe das Bild, z. B. 'ein einsamer Leuchtturm auf einer stürmischen Klippe'",
+    studioQualityDraft: "<b>Entwurf</b> – ~$0,01 pro Bild",
+    studioQualityFinal: "<b>Final</b> – ~$0,17 pro Bild",
+    genImageBtn: "Bild generieren",
+    yourStudio: "Deine Studio-Bilder",
+    studioEmpty: "Noch nichts hier – wähle einen Modus und generiere.",
+    phAudioText: "Was soll gesprochen werden? z. B. 'In einer längst vergessenen Welt brach ein Reisender bei Tagesanbruch auf …'",
+    audioCatalog: "Katalog-Stimme",
+    audioCustom: "Deine ElevenLabs-Stimme (per ID)",
+    voiceIdLabel: "Voice-ID",
+    phVoiceId: "ElevenLabs Voice-ID, z. B. 21m00Tcm4TlvDq8ikWAM",
+    voiceIdHint: "Kopiere die Voice-ID aus deiner ElevenLabs-Stimmen-Bibliothek. Benötigt einen vom Server erreichbaren ElevenLabs-Plan – sonst greift eine OpenAI-Stimme.",
+    genAudioBtn: "Audio generieren",
+    yourAudio: "Deine Audios",
+    audioEmpty: "Noch nichts hier – schreibe eine Zeile und generiere.",
+    characterLabel: "Charakter",
+    phVideoPrompt: "Beschreibe die Bewegung, z. B. 'sie dreht den Kopf und lächelt, sanfte Kamerafahrt nach vorn'",
+    durationLabel: "Dauer",
+    dur5: "5 Sekunden",
+    dur8: "8 Sekunden",
+    dur10: "10 Sekunden",
+    aspectLabel: "Format",
+    asp169: "16:9 – Querformat",
+    asp916: "9:16 – Hochformat",
+    asp11: "1:1 – Quadratisch",
+    videoRunHint: "Video-Generierung läuft auf GMI Cloud und dauert 1–4 Minuten. Sie läuft weiter, wenn du die Ansicht wechselst.",
+    genVideoBtn: "Video generieren",
+    yourVideos: "Deine Videos",
+    videoEmpty: "Noch keine Videos – wähle ein Modell und generiere.",
+    keyDialogTitle: "Generierungs-API-Schlüssel",
+    keyDialogBody: "Bild- und Sprachgenerierung rufen kostenpflichtige Anbieter-APIs auf und brauchen daher den gemeinsamen Schlüssel. Er wird nur in diesem Browser gespeichert.",
+    phKeyInput: "X-API-Key-Wert",
+    // JS-set strings
+    modePortraitBtn: "Porträt generieren",
+    modeVariationBtn: "Variationsset generieren",
+    modePhotoshootBtn: "Fotoshooting starten",
+    modeStoryBtn: "Bildergeschichte generieren",
+    phSinglePrompt: "Beschreibe das Porträt, z. B. 'ein wettergegerbter Seekapitän, Ölgemälde-Stil'",
+    phVariationPrompt: "Beschreibe den Charakter, z. B. 'eine junge Zauberin mit silbernem Haar'",
+    phPhotoshootPrompt: "Beschreibe Look & Setting, z. B. 'in einem beigen Trenchcoat, Stadtstraße in der Dämmerung'",
+    phStoryPrompt: "Eine Zeile pro Panel:\nSie erwacht bei Tagesanbruch.\nSie geht zum Hafen.\nSie geht an Bord des Schiffs.",
+    hintVariation: "Jedes Bild ändert Outfit, Pose, Hintergrund und Licht – durchgängig dieselbe Person.",
+    hintPhotoshoot: "Garderobe, Ort und Licht bleiben fixiert – nur Kamerawinkel und Ausdruck ändern sich, wie bei einem echten Shooting.",
+    hintStory: "Ein Bild pro Skriptzeile. Der Charakter bleibt über alle Panels konsistent.",
+    identityLocks: "dieses Modell fixiert die Gesichtsidentität",
+    identityLoose: "nur lose Ähnlichkeit – für fixierte Identität ein Identity-Modell wählen",
+    studioHintPhoto: "Freie künstlerische Bildgenerierung – wie Midjourney oder Grok. Kein Charakter, kein Identitäts-Lock.",
+    studioHintBg: "Eine leere Umgebungs-/Szenen-Plate ohne Personen – ein Hintergrund zum Wiederverwenden oder für einen späteren Charakter.",
+    videoHintChar: "Animiert das Porträt des gewählten Charakters als ersten Frame – seine Identität überträgt sich in den Clip.",
+    videoHintAudio: "Enthält eine generierte Tonspur.",
+    videoHintText: "Kein Charakter nötig – beschreibe die ganze Aufnahme.",
+    videoRendering: "Rendern … 1–4 Minuten.",
+    toastPortraitSaved: "Porträt im Vault gespeichert.",
+    toastVoiceSaved: "Sprachzeile im Vault gespeichert.",
+    toastImageSaved: "Bild im Vault gespeichert.",
+    toastAudioSaved: "Audio im Vault gespeichert.",
+    toastVideoSaved: "Video im Vault gespeichert.",
+    toastSceneCreated: "Szene erstellt.",
+    toastDeleted: "Gelöscht.",
+    toastNeedKey: "Generierung braucht einen gültigen API-Schlüssel.",
+    toastDescribeFirst: "Beschreibe zuerst den Charakter.",
+    generatingImage: "Porträt wird generiert … dauert meist 15–60 Sekunden. Das Asset wird mit Herkunftsnachweis auf Backblaze B2 hochgeladen.",
+    generatingVoice: "Sprachzeile wird generiert … dauert meist 15–60 Sekunden.",
+    generatingAudio: "Audio wird generiert … 15–60 Sekunden. Auf Backblaze B2 mit Herkunftsnachweis gespeichert.",
   },
 };
 
@@ -183,6 +429,9 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-ph]").forEach((node) => {
     node.setAttribute("placeholder", t(node.getAttribute("data-i18n-ph")));
   });
+  document.querySelectorAll("[data-i18n-html]").forEach((node) => {
+    node.innerHTML = t(node.getAttribute("data-i18n-html"));
+  });
   const toggle = el("lang-toggle");
   if (toggle) toggle.textContent = lang === "de" ? "EN" : "DE";
 }
@@ -191,6 +440,13 @@ function setLang(next) {
   lang = next;
   localStorage.setItem(LANG_STORAGE, next);
   applyI18n();
+  // Re-render the strings that JS sets dynamically (not covered by data-i18n).
+  try { updateModeUI(); } catch {}
+  try { applyModelUI(); } catch {}
+  try { applyStudioModelUI(); } catch {}
+  try { if (studioComposer) setStudioMode(studioMode); } catch {}
+  try { applyVideoModelUI(); } catch {}
+  try { updateVoiceNote(); } catch {}
 }
 
 const state = {
@@ -340,9 +596,7 @@ function applyModelUI() {
   const model = selectedModel();
   if (!model) return;
   el("quality-choice").hidden = !model.quality_tiers;
-  el("identity-hint").textContent = model.identity
-    ? "this model locks facial identity"
-    : "loose likeness only — for locked identity pick an identity model";
+  el("identity-hint").textContent = model.identity ? t("identityLocks") : t("identityLoose");
   if (typeof updateCostEstimate === "function") updateCostEstimate();
 }
 
@@ -962,30 +1216,10 @@ function setupImageComposer() {
 /* ---------- Generation ---------- */
 
 const MODE_META = {
-  single: {
-    counted: false,
-    button: "Generate portrait",
-    placeholder: "Describe the portrait, e.g. 'a weathered sea captain, oil painting style'",
-    hint: "",
-  },
-  variation: {
-    counted: true,
-    button: "Generate variation set",
-    placeholder: "Describe the character, e.g. 'a young sorceress with silver hair'",
-    hint: "Each frame changes outfit, pose, background and lighting — same person throughout.",
-  },
-  photoshoot: {
-    counted: true,
-    button: "Run photoshoot",
-    placeholder: "Describe the look & setting, e.g. 'in a beige trench coat, city street at dusk'",
-    hint: "Wardrobe, location and lighting stay locked — only the camera angle and expression change, like a real shoot.",
-  },
-  story: {
-    counted: false,
-    button: "Generate story series",
-    placeholder: "One line per panel:\nShe wakes at dawn.\nShe walks to the harbour.\nShe boards the ship.",
-    hint: "One image per line of the script. The character stays consistent across every panel.",
-  },
+  single: { counted: false, buttonKey: "modePortraitBtn", phKey: "phSinglePrompt", hintKey: null },
+  variation: { counted: true, buttonKey: "modeVariationBtn", phKey: "phVariationPrompt", hintKey: "hintVariation" },
+  photoshoot: { counted: true, buttonKey: "modePhotoshootBtn", phKey: "phPhotoshootPrompt", hintKey: "hintPhotoshoot" },
+  story: { counted: false, buttonKey: "modeStoryBtn", phKey: "phStoryPrompt", hintKey: "hintStory" },
 };
 
 function currentMode() {
@@ -1028,11 +1262,11 @@ function updateCostEstimate() {
 function updateModeUI() {
   const meta = MODE_META[currentMode()];
   el("count-row").hidden = !meta.counted;
-  el("image-prompt").placeholder = meta.placeholder;
+  el("image-prompt").placeholder = t(meta.phKey);
   el("image-prompt").rows = currentMode() === "story" ? 5 : 2;
-  el("mode-hint").textContent = meta.hint;
-  el("mode-hint").hidden = !meta.hint;
-  el("generate-image-button").textContent = meta.button;
+  el("mode-hint").textContent = meta.hintKey ? t(meta.hintKey) : "";
+  el("mode-hint").hidden = !meta.hintKey;
+  el("generate-image-button").textContent = t(meta.buttonKey);
   updateCostEstimate();
 }
 
@@ -1057,7 +1291,7 @@ async function generateImage() {
   if (state.generating || !state.selectedId) return;
   const input = el("image-prompt");
   const value = input.value.trim();
-  if (!value) { toast("Describe the character first.", true); input.focus(); return; }
+  if (!value) { toast(t("toastDescribeFirst"), true); input.focus(); return; }
   if (!apiKey()) { openKeyDialog(); return; }
 
   const mode = currentMode();
@@ -1076,7 +1310,7 @@ async function generateImage() {
   };
 
   if (mode === "single") {
-    setGenerating(true, "Generating portrait… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.");
+    setGenerating(true, t("generatingImage"));
     try {
       await api(`/characters/${state.selectedId}/generate/image`, {
         method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
@@ -1084,9 +1318,9 @@ async function generateImage() {
       input.value = "";
       setGenerating(false);
       await selectCharacter(state.selectedId);
-      toast("Portrait stored in the vault.");
+      toast(t("toastPortraitSaved"));
     } catch (err) {
-      if (err.status === 401) { setGenerating(false); openKeyDialog(); toast("Generation needs a valid API key.", true); }
+      if (err.status === 401) { setGenerating(false); openKeyDialog(); toast(t("toastNeedKey"), true); }
       else { setGenerating(false, err.message, true); }
     }
     return;
@@ -1164,7 +1398,7 @@ async function generateVoice() {
   if (!value) { toast("Enter a line for the character to say.", true); input.focus(); return; }
   if (!apiKey()) { openKeyDialog(); return; }
 
-  setGenerating(true, "Generating voice line… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.");
+  setGenerating(true, t("generatingVoice"));
   try {
     await api(`/characters/${state.selectedId}/generate/voice`, {
       method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify({ text: value }),
@@ -1172,9 +1406,9 @@ async function generateVoice() {
     input.value = "";
     setGenerating(false);
     await selectCharacter(state.selectedId);
-    toast("Voice line stored in the vault.");
+    toast(t("toastVoiceSaved"));
   } catch (err) {
-    if (err.status === 401) { setGenerating(false); openKeyDialog(); toast("Generation needs a valid API key.", true); }
+    if (err.status === 401) { setGenerating(false); openKeyDialog(); toast(t("toastNeedKey"), true); }
     else { setGenerating(false, err.message, true); }
   }
 }
@@ -1349,7 +1583,7 @@ async function generateScene() {
     el("scene-prompt").value = "";
     status.hidden = true;
     await loadScenes();
-    toast("Scene created.");
+    toast(t("toastSceneCreated"));
   } catch (err) {
     if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Scene generation needs a valid API key.", true); }
     else { status.classList.add("error"); status.textContent = err.message; }
@@ -1361,10 +1595,7 @@ async function generateScene() {
 
 /* ---------- Studio: backgrounds & photo art ---------- */
 
-const STUDIO_MODE_HINT = {
-  "photo-art": "Free artistic image generation — like Midjourney or Grok. No character, no identity lock.",
-  "background": "An empty environment/scene plate with no people — a backdrop you can reuse or drop a character into later.",
-};
+const STUDIO_MODE_HINT = { "photo-art": "studioHintPhoto", "background": "studioHintBg" };
 
 let studioComposer = null;
 let studioMode = "photo-art";
@@ -1443,7 +1674,7 @@ function setStudioMode(mode) {
   document.querySelectorAll(".studio-mode").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
   });
-  el("studio-mode-hint").textContent = STUDIO_MODE_HINT[mode];
+  el("studio-mode-hint").textContent = t(STUDIO_MODE_HINT[mode]);
 }
 
 function setupStudio() {
@@ -1474,7 +1705,7 @@ async function generateStudioImage() {
   el("generate-studio-button").disabled = true;
   const status = el("studio-status");
   status.classList.remove("error");
-  status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Generating… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.';
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("generatingAudio")}`;
   status.hidden = false;
   try {
     await api("/studio", {
@@ -1491,7 +1722,7 @@ async function generateStudioImage() {
     el("studio-prompt").value = "";
     status.hidden = true;
     await loadStudio();
-    toast("Image stored in the vault.");
+    toast(t("toastImageSaved"));
   } catch (err) {
     if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Generation needs a valid API key.", true); }
     else { status.classList.add("error"); status.textContent = err.message; }
@@ -1669,7 +1900,7 @@ async function generateAudioClip() {
   el("generate-audio-button").disabled = true;
   const status = el("audio-status");
   status.classList.remove("error");
-  status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Generating audio… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.';
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("generatingAudio")}`;
   status.hidden = false;
   try {
     await api("/audio", {
@@ -1680,7 +1911,7 @@ async function generateAudioClip() {
     el("audio-text").value = "";
     status.hidden = true;
     await loadAudio();
-    toast("Audio stored in the vault.");
+    toast(t("toastAudioSaved"));
   } catch (err) {
     if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Generation needs a valid API key.", true); }
     else { status.classList.add("error"); status.textContent = err.message; }
@@ -1815,9 +2046,7 @@ function applyVideoModelUI() {
 
   const hint = el("video-model-hint");
   if (!model) { hint.hidden = true; return; }
-  hint.textContent = needsImage
-    ? "Animates the chosen character's portrait as the first frame — their identity carries into the clip."
-    : (model.audio ? "Includes a generated audio track." : "No character needed — describe the whole shot.");
+  hint.textContent = needsImage ? t("videoHintChar") : (model.audio ? t("videoHintAudio") : t("videoHintText"));
   hint.hidden = false;
 }
 
@@ -1876,14 +2105,14 @@ async function generateVideo() {
       method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
     });
     progress.hidden = false;
-    el("video-progress-label").textContent = "Rendering… 1–4 minutes.";
+    el("video-progress-label").textContent = t("videoRendering");
     while (true) {
       await new Promise((r) => setTimeout(r, 4000));
       const status = await api(`/videos/${job.id}`);
       if (["done", "error"].includes(status.status)) {
         progress.hidden = true;
         if (status.status === "error") toast(status.error || "Video generation failed.", true);
-        else { el("video-prompt").value = ""; toast("Video stored in the vault."); }
+        else { el("video-prompt").value = ""; toast(t("toastVideoSaved")); }
         await loadVideos();
         break;
       }
