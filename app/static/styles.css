@@ -505,6 +505,55 @@ input[type="number"] {
 
 .model-row select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 
+.model-row input[type="number"] {
+  flex: 1;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+}
+.model-row input[type="number"]:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+.mode-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.mode-grid #count-row { max-width: 220px; }
+
+.cost-estimate {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--brass);
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-progress { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+
+.batch-bar {
+  height: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.batch-bar-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--brass-deep), var(--brass));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.batch-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
 .preview-button {
   flex: none;
   width: 36px;

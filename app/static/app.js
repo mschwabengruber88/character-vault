@@ -48,6 +48,7 @@ function applyModelUI() {
   el("identity-hint").textContent = model.identity
     ? "this model locks facial identity"
     : "loose likeness only — for locked identity pick an identity model";
+  if (typeof updateCostEstimate === "function") updateCostEstimate();
 }
 
 /* ---------- Voices ---------- */
@@ -517,6 +518,81 @@ function setupDelete() {
 
 /* ---------- Generation ---------- */
 
+const MODE_META = {
+  single: {
+    counted: false,
+    button: "Generate portrait",
+    placeholder: "Describe the portrait, e.g. 'a weathered sea captain, oil painting style'",
+    hint: "",
+  },
+  variation: {
+    counted: true,
+    button: "Generate variation set",
+    placeholder: "Describe the character, e.g. 'a young sorceress with silver hair'",
+    hint: "Each frame changes outfit, pose, background and lighting — same person throughout.",
+  },
+  photoshoot: {
+    counted: true,
+    button: "Run photoshoot",
+    placeholder: "Describe the look & setting, e.g. 'in a beige trench coat, city street at dusk'",
+    hint: "Wardrobe, location and lighting stay locked — only the camera angle and expression change, like a real shoot.",
+  },
+  story: {
+    counted: false,
+    button: "Generate story series",
+    placeholder: "One line per panel:\nShe wakes at dawn.\nShe walks to the harbour.\nShe boards the ship.",
+    hint: "One image per line of the script. The character stays consistent across every panel.",
+  },
+};
+
+function currentMode() {
+  return el("gen-mode").value;
+}
+
+function plannedCount() {
+  const mode = currentMode();
+  if (mode === "single") return 1;
+  if (mode === "story") {
+    const lines = el("image-prompt").value.split("\n").map((l) => l.trim()).filter(Boolean);
+    return Math.max(1, lines.length);
+  }
+  return Math.max(1, Math.min(100, Number(el("gen-count").value) || 1));
+}
+
+function unitCost() {
+  const model = selectedModel();
+  if (!model) return null;
+  if (model.quality_tiers) {
+    const q = document.querySelector('input[name="quality"]:checked').value;
+    return q === "final" ? model.cost_final : model.cost_draft;
+  }
+  return model.cost;
+}
+
+function updateCostEstimate() {
+  const box = el("cost-estimate");
+  const unit = unitCost();
+  const count = plannedCount();
+  if (unit == null) { box.hidden = true; return; }
+  const total = unit * count;
+  const frames = currentMode() === "story" ? "panel" : "image";
+  box.textContent = count > 1
+    ? `Estimated cost: ${count} × $${unit.toFixed(3)} ≈ $${total.toFixed(2)}`
+    : `Estimated cost: ~$${unit.toFixed(3)} for one ${frames}`;
+  box.hidden = false;
+}
+
+function updateModeUI() {
+  const meta = MODE_META[currentMode()];
+  el("count-row").hidden = !meta.counted;
+  el("image-prompt").placeholder = meta.placeholder;
+  el("image-prompt").rows = currentMode() === "story" ? 5 : 2;
+  el("mode-hint").textContent = meta.hint;
+  el("mode-hint").hidden = !meta.hint;
+  el("generate-image-button").textContent = meta.button;
+  updateCostEstimate();
+}
+
 function setGenerating(active, message = "", isError = false) {
   state.generating = active;
   el("generate-image-button").disabled = active;
@@ -534,50 +610,123 @@ function setGenerating(active, message = "", isError = false) {
   }
 }
 
-async function generate(kind) {
+async function generateImage() {
   if (state.generating || !state.selectedId) return;
-  const input = kind === "image" ? el("image-prompt") : el("voice-text");
+  const input = el("image-prompt");
   const value = input.value.trim();
-  if (!value) {
-    toast(kind === "image" ? "Describe the portrait first." : "Enter a line for the character to say.", true);
-    input.focus();
-    return;
-  }
-  if (!apiKey()) {
-    openKeyDialog();
+  if (!value) { toast("Describe the character first.", true); input.focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  const mode = currentMode();
+  const payload = {
+    prompt: value,
+    model: el("image-model").value,
+    disclosure: document.querySelector('input[name="disclosure"]:checked').value,
+    use_identity: !el("identity-row").hidden && el("use-identity").checked,
+    quality: document.querySelector('input[name="quality"]:checked').value,
+  };
+
+  if (mode === "single") {
+    setGenerating(true, "Generating portrait… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.");
+    try {
+      await api(`/characters/${state.selectedId}/generate/image`, {
+        method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
+      });
+      input.value = "";
+      setGenerating(false);
+      await selectCharacter(state.selectedId);
+      toast("Portrait stored in the vault.");
+    } catch (err) {
+      if (err.status === 401) { setGenerating(false); openKeyDialog(); toast("Generation needs a valid API key.", true); }
+      else { setGenerating(false, err.message, true); }
+    }
     return;
   }
 
-  const label = kind === "image" ? "Generating portrait" : "Generating voice line";
-  setGenerating(true, `${label}… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.`);
+  await runBatch({ ...payload, mode, count: plannedCount() });
+}
 
+let batchCancelId = null;
+
+async function runBatch(payload) {
+  setGenerating(true, "Starting the batch…");
+  const progress = el("batch-progress");
   try {
-    const payload = kind === "image"
-      ? {
-          prompt: value,
-          model: el("image-model").value,
-          disclosure: document.querySelector('input[name="disclosure"]:checked').value,
-          use_identity: !el("identity-row").hidden && el("use-identity").checked,
-          quality: document.querySelector('input[name="quality"]:checked').value,
-        }
-      : { text: value };
-    await api(`/characters/${state.selectedId}/generate/${kind}`, {
-      method: "POST",
-      headers: { "X-API-Key": apiKey() },
-      body: JSON.stringify(payload),
+    const job = await api(`/characters/${state.selectedId}/generate/batch`, {
+      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
+    });
+    batchCancelId = job.id;
+    progress.hidden = false;
+    el("generation-status").hidden = true;
+    updateBatchProgress(job);
+
+    while (true) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const status = await api(`/batches/${job.id}`);
+      updateBatchProgress(status);
+      await selectCharacter(state.selectedId);  // stream new frames into the gallery
+      if (["done", "error", "cancelled"].includes(status.status)) {
+        finishBatch(status);
+        break;
+      }
+    }
+  } catch (err) {
+    progress.hidden = true;
+    if (err.status === 401) { setGenerating(false); openKeyDialog(); toast("Generation needs a valid API key.", true); }
+    else { setGenerating(false, err.message, true); }
+  } finally {
+    batchCancelId = null;
+  }
+}
+
+function updateBatchProgress(job) {
+  const total = job.requested || 1;
+  const done = (job.completed || 0) + (job.failed || 0);
+  el("batch-bar-fill").style.width = `${Math.round((done / total) * 100)}%`;
+  const failed = job.failed ? ` · ${job.failed} failed` : "";
+  el("batch-progress-label").textContent = `${job.completed || 0} / ${total} generated${failed}`;
+}
+
+function finishBatch(job) {
+  setGenerating(false);
+  el("generate-image-button").disabled = false;
+  el("batch-progress").hidden = true;
+  if (job.status === "cancelled") toast(`Stopped — ${job.completed} of ${job.requested} generated.`);
+  else if (job.status === "error") toast(job.error || "Batch failed.", true);
+  else {
+    el("image-prompt").value = "";
+    const failed = job.failed ? ` (${job.failed} failed)` : "";
+    toast(`Done — ${job.completed} images stored in the vault${failed}.`);
+  }
+}
+
+async function cancelBatch() {
+  if (batchCancelId == null) return;
+  el("batch-cancel").disabled = true;
+  try { await api(`/batches/${batchCancelId}/cancel`, { method: "POST" }); }
+  catch (err) { toast(err.message, true); }
+  finally { el("batch-cancel").disabled = false; }
+}
+
+async function generateVoice() {
+  if (state.generating || !state.selectedId) return;
+  const input = el("voice-text");
+  const value = input.value.trim();
+  if (!value) { toast("Enter a line for the character to say.", true); input.focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  setGenerating(true, "Generating voice line… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.");
+  try {
+    await api(`/characters/${state.selectedId}/generate/voice`, {
+      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify({ text: value }),
     });
     input.value = "";
     setGenerating(false);
     await selectCharacter(state.selectedId);
-    toast(kind === "image" ? "Portrait stored in the vault." : "Voice line stored in the vault.");
+    toast("Voice line stored in the vault.");
   } catch (err) {
-    if (err.status === 401) {
-      setGenerating(false, "", false);
-      openKeyDialog();
-      toast("Generation needs a valid API key.", true);
-    } else {
-      setGenerating(false, err.message, true);
-    }
+    if (err.status === 401) { setGenerating(false); openKeyDialog(); toast("Generation needs a valid API key.", true); }
+    else { setGenerating(false, err.message, true); }
   }
 }
 
@@ -773,8 +922,14 @@ function init() {
   setupKeyDialog();
   setupLightbox();
   refreshKeyButton();
-  el("generate-image-button").addEventListener("click", () => generate("image"));
-  el("generate-voice-button").addEventListener("click", () => generate("voice"));
+  el("generate-image-button").addEventListener("click", generateImage);
+  el("generate-voice-button").addEventListener("click", generateVoice);
+  el("gen-mode").addEventListener("change", updateModeUI);
+  el("gen-count").addEventListener("input", updateCostEstimate);
+  el("image-prompt").addEventListener("input", () => { if (currentMode() === "story") updateCostEstimate(); });
+  el("batch-cancel").addEventListener("click", cancelBatch);
+  document.querySelectorAll('input[name="quality"]').forEach((r) => r.addEventListener("change", updateCostEstimate));
+  updateModeUI();
   el("voice-select").addEventListener("change", saveVoice);
   el("voice-preview").addEventListener("click", previewSelectedVoice);
   el("filter-gender").addEventListener("change", renderVoiceOptions);

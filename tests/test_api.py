@@ -1,6 +1,27 @@
+import time
 from unittest.mock import patch
 
 API_KEY = "test-key"
+
+
+def _fake_portrait(tag="x"):
+    return {
+        "url": f"https://example.com/{tag}.png",
+        "original_url": f"https://example.com/{tag}.png",
+        "sha256": tag, "mime_type": "image/png", "manifest_verified": True,
+        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
+        "model": "gpt-image-1",
+    }
+
+
+def _await_batch(client, batch_id, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/batches/{batch_id}").json()
+        if job["status"] in ("done", "error", "cancelled"):
+            return job
+        time.sleep(0.02)
+    return client.get(f"/batches/{batch_id}").json()
 
 
 def test_health(client):
@@ -462,6 +483,106 @@ def test_scene_generation_stores_participants(client):
     assert len(passed_refs) == 2
 
     assert any(s["id"] == scene["id"] for s in client.get("/scenes").json())
+
+
+def test_build_batch_prompts_strategies():
+    from app.pipelines import build_batch_prompts
+
+    assert build_batch_prompts("single", "a knight", 5) == ["a knight"]
+
+    variation = build_batch_prompts("variation", "a knight", 4)
+    assert len(variation) == 4
+    assert all(p.startswith("a knight. Variation") for p in variation)
+    assert len(set(variation)) == 4  # each frame genuinely differs
+
+    shoot = build_batch_prompts("photoshoot", "a knight", 3)
+    assert len(shoot) == 3
+    assert all("keep the EXACT same outfit" in p for p in shoot)
+
+    story = build_batch_prompts("story", "She wakes.\nShe leaves.\nShe returns.", 60)
+    assert len(story) == 3
+    assert "She wakes." in story[0]
+
+
+def test_batch_variation_generates_all_frames(client):
+    cid = client.post("/characters", json={"name": "BatchChar"}).json()["id"]
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.side_effect = lambda *a, **k: _fake_portrait("f")
+        resp = client.post(
+            f"/characters/{cid}/generate/batch",
+            json={"mode": "variation", "prompt": "a knight", "count": 3},
+            headers={"X-API-Key": API_KEY},
+        )
+        assert resp.status_code == 200
+        job = resp.json()
+        assert job["status"] == "running"
+        assert job["requested"] == 3
+        assert job["cost_estimate"] is not None
+        job = _await_batch(client, job["id"])
+    assert job["status"] == "done"
+    assert job["completed"] == 3
+
+    character = client.get(f"/characters/{cid}").json()
+    imgs = [a for a in character["assets"] if a["kind"] == "image"]
+    assert len(imgs) == 3
+    assert all(a["batch_id"] == job["id"] for a in imgs)
+
+
+def test_batch_story_derives_count_from_script(client):
+    cid = client.post("/characters", json={"name": "StoryChar"}).json()["id"]
+    with patch("app.main.generate_character_portrait") as mock_gen:
+        mock_gen.side_effect = lambda *a, **k: _fake_portrait("s")
+        resp = client.post(
+            f"/characters/{cid}/generate/batch",
+            json={"mode": "story", "prompt": "Beat one.\nBeat two.\nBeat three.\nBeat four.", "count": 1},
+            headers={"X-API-Key": API_KEY},
+        )
+        job = resp.json()
+        assert job["requested"] == 4  # one frame per beat, not the count field
+        job = _await_batch(client, job["id"])
+    assert job["status"] == "done"
+    assert job["completed"] == 4
+
+
+def test_batch_requires_api_key(client):
+    cid = client.post("/characters", json={"name": "NoKeyBatch"}).json()["id"]
+    resp = client.post(
+        f"/characters/{cid}/generate/batch",
+        json={"mode": "variation", "prompt": "a knight", "count": 2},
+    )
+    assert resp.status_code == 401
+
+
+def test_batch_rejects_bad_count(client):
+    cid = client.post("/characters", json={"name": "BadCount"}).json()["id"]
+    resp = client.post(
+        f"/characters/{cid}/generate/batch",
+        json={"mode": "variation", "prompt": "a knight", "count": 500},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 422
+
+
+def test_batch_records_partial_failure(client):
+    cid = client.post("/characters", json={"name": "PartialFail"}).json()["id"]
+    calls = {"n": 0}
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("provider hiccup")
+        return _fake_portrait("p")
+
+    with patch("app.main.generate_character_portrait", side_effect=flaky):
+        resp = client.post(
+            f"/characters/{cid}/generate/batch",
+            json={"mode": "variation", "prompt": "a knight", "count": 3},
+            headers={"X-API-Key": API_KEY},
+        )
+        job = _await_batch(client, resp.json()["id"])
+    assert job["status"] == "done"  # partial success still completes
+    assert job["completed"] == 2
+    assert job["failed"] == 1
 
 
 def test_assign_voice_rejects_unknown_id(client):

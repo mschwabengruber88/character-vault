@@ -48,6 +48,23 @@ CREATE TABLE IF NOT EXISTS scenes (
     participant_names TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS batch_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER NOT NULL REFERENCES characters(id),
+    mode TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    requested INTEGER NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'running',
+    quality TEXT,
+    model TEXT,
+    disclosure TEXT,
+    cost_estimate REAL,
+    error TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 MIGRATIONS = (
@@ -61,6 +78,7 @@ MIGRATIONS = (
     "ALTER TABLE characters ADD COLUMN personality TEXT",
     "ALTER TABLE characters ADD COLUMN purpose TEXT",
     "ALTER TABLE characters ADD COLUMN seed INTEGER",
+    "ALTER TABLE assets ADD COLUMN batch_id INTEGER",
 )
 
 
@@ -206,13 +224,14 @@ def add_asset(
     quality: str | None = None,
     cost_usd: float | None = None,
     model: str | None = None,
+    batch_id: int | None = None,
 ) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO assets
                (character_id, kind, url, sha256, mime_type, prompt, manifest_verified,
-                created_at, disclosure, original_url, quality, cost_usd, model)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, disclosure, original_url, quality, cost_usd, model, batch_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 character_id,
                 kind,
@@ -227,6 +246,7 @@ def add_asset(
                 quality,
                 cost_usd,
                 model,
+                batch_id,
             ),
         )
         row = conn.execute(
@@ -291,3 +311,51 @@ def delete_scene(scene_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM scenes WHERE id = ?", (scene_id,))
         return cur.rowcount > 0
+
+
+def create_batch(
+    character_id: int,
+    mode: str,
+    prompt: str,
+    requested: int,
+    quality: str | None,
+    model: str | None,
+    disclosure: str | None,
+    cost_estimate: float | None,
+) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO batch_jobs
+               (character_id, mode, prompt, requested, quality, model, disclosure,
+                cost_estimate, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (character_id, mode, prompt, requested, quality, model, disclosure,
+             cost_estimate, now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM batch_jobs WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def get_batch(batch_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM batch_jobs WHERE id = ?", (batch_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def bump_batch(batch_id: int, *, completed: int = 0, failed: int = 0) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE batch_jobs SET completed = completed + ?, failed = failed + ? WHERE id = ?",
+            (completed, failed, batch_id),
+        )
+
+
+def finish_batch(batch_id: int, status: str, error: str | None = None) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE batch_jobs SET status = ?, error = ? WHERE id = ?",
+            (status, error, batch_id),
+        )

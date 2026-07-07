@@ -101,6 +101,9 @@ def available_image_models() -> list[dict]:
             "label": meta["label"],
             "identity": meta["identity"],
             "quality_tiers": meta["quality_tiers"],
+            "cost_draft": IMAGE_COST_USD["draft"] if meta["quality_tiers"] else None,
+            "cost_final": IMAGE_COST_USD["final"] if meta["quality_tiers"] else None,
+            "cost": meta.get("cost_usd"),
         })
     return out
 
@@ -215,6 +218,75 @@ def generate_character_portrait(
         asset["quality"] = None
         asset["cost_usd"] = meta.get("cost_usd")
     return asset
+
+
+# ── Ebene 2: image-generation modes ──────────────────────────────────────
+# One standing character → many images. The mode decides the PROMPT STRATEGY:
+# a variation set deliberately changes outfit/pose/background each frame; a
+# photoshoot locks wardrobe & location and only moves the camera; a story
+# turns a script into one panel per beat. Identity is held across every frame
+# by the same reference portraits + seed, so the person stays the same person.
+MODE_MAX = {"single": 1, "variation": 100, "photoshoot": 100, "story": 60}
+
+# Rotated per frame so a set genuinely varies instead of drifting by luck.
+_VARIATION_AXES = [
+    "wearing a completely different outfit",
+    "in a different pose and gesture",
+    "against a different background/location",
+    "in different lighting and time of day",
+    "with a different facial expression and mood",
+    "seen from a different camera angle",
+    "in a different season and weather",
+    "doing a different everyday activity",
+]
+
+# A photoshoot keeps the SAME wardrobe/location/light — only the shot changes.
+_PHOTOSHOOT_SHOTS = [
+    "tight head-and-shoulders portrait, eye contact",
+    "three-quarter body shot, relaxed stance",
+    "full-body shot",
+    "side profile view",
+    "candid shot looking away from camera",
+    "over-the-shoulder glance back at the camera",
+    "low-angle hero shot",
+    "soft-smile close-up",
+]
+
+_PHOTOSHOOT_LOCK = (
+    "Professional photo session: keep the EXACT same outfit, hairstyle, makeup, "
+    "location and lighting consistent across every shot. This frame: "
+)
+
+
+def _split_story_beats(script: str, limit: int) -> list[str]:
+    """Turn a script into ordered beats — one image per beat. Blank-line or
+    newline separated lines are beats; a single blob is split by sentence."""
+    lines = [ln.strip(" -•\t") for ln in script.splitlines() if ln.strip(" -•\t")]
+    if len(lines) <= 1:
+        import re
+
+        blob = lines[0] if lines else script.strip()
+        lines = [s.strip() for s in re.split(r"(?<=[.!?])\s+", blob) if s.strip()]
+    return lines[:limit]
+
+
+def build_batch_prompts(mode: str, prompt: str, count: int) -> list[str]:
+    """Expand a base prompt/script into one prompt per image for the mode."""
+    limit = MODE_MAX.get(mode, 1)
+    if mode == "story":
+        beats = _split_story_beats(prompt, limit)
+        return [f"A single illustrated panel for this story moment: {b}" for b in beats]
+
+    count = max(1, min(count, limit))
+    if mode == "single" or count == 1:
+        return [prompt]
+    if mode == "variation":
+        axes = _VARIATION_AXES
+        return [f"{prompt}. Variation — {axes[i % len(axes)]}." for i in range(count)]
+    if mode == "photoshoot":
+        shots = _PHOTOSHOOT_SHOTS
+        return [f"{prompt}. {_PHOTOSHOOT_LOCK}{shots[i % len(shots)]}." for i in range(count)]
+    return [prompt for _ in range(count)]
 
 
 def generate_scene(

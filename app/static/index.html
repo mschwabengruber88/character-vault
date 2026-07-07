@@ -88,9 +88,25 @@
 
         <div class="generate-panel">
           <div class="generate-card">
-            <h3>Portrait</h3>
-            <p class="generate-hint">Genblaze → Backblaze B2</p>
-            <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="500" rows="2"></textarea>
+            <h3>Image generation</h3>
+            <p class="generate-hint">Genblaze → Backblaze B2 · identity, personality &amp; seed from the profile carry into every frame</p>
+            <div class="mode-grid">
+              <label class="model-row">
+                <span class="model-label">Mode</span>
+                <select id="gen-mode">
+                  <option value="single">Single image</option>
+                  <option value="variation">Variation set — different outfits/poses/backgrounds</option>
+                  <option value="photoshoot">Photoshoot — same outfit &amp; setting, many shots</option>
+                  <option value="story">Story series — one panel per script line</option>
+                </select>
+              </label>
+              <label class="model-row" id="count-row" hidden>
+                <span class="model-label">How many</span>
+                <input id="gen-count" type="number" min="1" max="100" value="10">
+              </label>
+            </div>
+            <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="4000" rows="2"></textarea>
+            <p id="mode-hint" class="generate-hint" hidden></p>
             <label class="model-row">
               <span class="model-label">Model</span>
               <select id="image-model"></select>
@@ -121,7 +137,15 @@
                 <span><b>Visible</b> — “✦ AI” watermark badge on the image</span>
               </label>
             </fieldset>
+            <p id="cost-estimate" class="cost-estimate" hidden></p>
             <button id="generate-image-button" class="button primary">Generate portrait</button>
+            <div id="batch-progress" class="batch-progress" hidden>
+              <div class="batch-bar"><div id="batch-bar-fill" class="batch-bar-fill"></div></div>
+              <div class="batch-progress-row">
+                <span id="batch-progress-label"></span>
+                <button type="button" id="batch-cancel" class="button danger small">Stop</button>
+              </div>
+            </div>
           </div>
           <div class="generate-card">
             <h3>Voice line</h3>

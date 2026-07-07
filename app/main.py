@@ -14,9 +14,12 @@ from app import db
 from app.config import CORS_ORIGINS, GENERATE_API_KEY
 from app.pipelines import (
     DEFAULT_IMAGE_MODEL,
+    IMAGE_COST_USD,
     IMAGE_MODELS,
+    MODE_MAX,
     available_image_models,
     available_voices,
+    build_batch_prompts,
     generate_character_portrait,
     generate_character_voice_line,
     generate_scene,
@@ -35,11 +38,7 @@ _inflight_lock = threading.Lock()
 _inflight: set[tuple[int, str]] = set()
 
 
-@contextmanager
-def generation_slot(character_id: int, kind: str):
-    """One paid generation per character+kind at a time — a duplicate
-    request (double-click, impatient retry) is rejected instead of
-    silently billed twice."""
+def _acquire_slot(character_id: int, kind: str) -> None:
     key = (character_id, kind)
     with _inflight_lock:
         if key in _inflight:
@@ -48,11 +47,23 @@ def generation_slot(character_id: int, kind: str):
                 detail="A generation for this character is already running. Please wait for it to finish.",
             )
         _inflight.add(key)
+
+
+def _release_slot(character_id: int, kind: str) -> None:
+    with _inflight_lock:
+        _inflight.discard((character_id, kind))
+
+
+@contextmanager
+def generation_slot(character_id: int, kind: str):
+    """One paid generation per character+kind at a time — a duplicate
+    request (double-click, impatient retry) is rejected instead of
+    silently billed twice."""
+    _acquire_slot(character_id, kind)
     try:
         yield
     finally:
-        with _inflight_lock:
-            _inflight.discard(key)
+        _release_slot(character_id, kind)
 
 
 @asynccontextmanager
@@ -121,6 +132,24 @@ def identity_references(character: dict) -> list[dict]:
                 "sha256": asset.get("sha256"),
             })
     return refs
+
+
+class BatchRequest(BaseModel):
+    mode: Literal["single", "variation", "photoshoot", "story"]
+    prompt: str = Field(min_length=1, max_length=4000)
+    count: int = Field(default=1, ge=1, le=100)
+    disclosure: Literal["visible", "invisible"] = "invisible"
+    use_identity: bool = True
+    quality: Literal["draft", "final"] = "draft"
+    model: str = DEFAULT_IMAGE_MODEL
+
+
+def per_image_cost(model: str, quality: str) -> float | None:
+    """Best-effort per-image price for the estimate shown before a batch runs."""
+    meta = IMAGE_MODELS.get(model, {})
+    if meta.get("quality_tiers"):
+        return IMAGE_COST_USD.get(quality)
+    return meta.get("cost_usd")
 
 
 class VoiceLineRequest(BaseModel):
@@ -295,6 +324,101 @@ def generate_image(character_id: int, body: PortraitRequest):
         cost_usd=result.get("cost_usd"),
         model=result.get("model"),
     ))
+
+
+def _run_batch(job_id: int, character_id: int, prompts: list[str], references: list[dict],
+               body: BatchRequest, personality: str | None, base_seed: int | None) -> None:
+    """Background worker: generate each frame in turn, recording every image as
+    a normal asset tagged with this batch. A cancelled job stops between frames
+    so a runaway 100-image run can be halted without wasting the rest."""
+    try:
+        for i, prompt in enumerate(prompts):
+            job = db.get_batch(job_id)
+            if job is None or job["status"] == "cancelled":
+                break
+            seed = None if base_seed is None else base_seed + i
+            try:
+                result = generate_character_portrait(
+                    character_id, prompt, body.disclosure, references, body.quality,
+                    body.model, personality, seed,
+                )
+                db.add_asset(
+                    character_id=character_id, kind="image", url=result["url"],
+                    sha256=result["sha256"], mime_type=result["mime_type"], prompt=prompt,
+                    manifest_verified=result["manifest_verified"],
+                    disclosure=result.get("disclosure"), original_url=result.get("original_url"),
+                    quality=result.get("quality"), cost_usd=result.get("cost_usd"),
+                    model=result.get("model"), batch_id=job_id,
+                )
+                db.bump_batch(job_id, completed=1)
+            except Exception:
+                logger.exception("Batch %s frame %s failed", job_id, i)
+                db.bump_batch(job_id, failed=1)
+        final = db.get_batch(job_id)
+        if final and final["status"] != "cancelled":
+            done = final["completed"] > 0
+            db.finish_batch(job_id, "done" if done else "error",
+                            None if done else "No frames were generated.")
+    finally:
+        _release_slot(character_id, "image")
+
+
+@app.post("/characters/{character_id}/generate/batch", dependencies=[Depends(require_api_key)])
+def generate_batch(character_id: int, body: BatchRequest):
+    character = db.get_character(character_id)
+    if character is None:
+        raise HTTPException(status_code=404, detail="Character not found")
+    if body.model not in {m["slug"] for m in available_image_models()}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{body.model}' is not available. Configure its API key first.",
+        )
+    prompts = build_batch_prompts(body.mode, body.prompt, body.count)
+    if not prompts:
+        raise HTTPException(status_code=400, detail="Nothing to generate — the script is empty.")
+    if len(prompts) > MODE_MAX[body.mode]:
+        prompts = prompts[: MODE_MAX[body.mode]]
+
+    unit = per_image_cost(body.model, body.quality)
+    estimate = round(unit * len(prompts), 4) if unit is not None else None
+    references = identity_references(character) if body.use_identity else []
+
+    _acquire_slot(character_id, "image")
+    try:
+        job = db.create_batch(
+            character_id=character_id, mode=body.mode, prompt=body.prompt,
+            requested=len(prompts), quality=body.quality, model=body.model,
+            disclosure=body.disclosure, cost_estimate=estimate,
+        )
+    except Exception:
+        _release_slot(character_id, "image")
+        raise
+    thread = threading.Thread(
+        target=_run_batch,
+        args=(job["id"], character_id, prompts, references, body,
+              character.get("personality"), character.get("seed")),
+        daemon=True,
+    )
+    thread.start()
+    return job
+
+
+@app.get("/batches/{batch_id}")
+def get_batch(batch_id: int):
+    job = db.get_batch(batch_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    return job
+
+
+@app.post("/batches/{batch_id}/cancel")
+def cancel_batch(batch_id: int):
+    job = db.get_batch(batch_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    if job["status"] == "running":
+        db.finish_batch(batch_id, "cancelled")
+    return db.get_batch(batch_id)
 
 
 @app.post("/characters/{character_id}/generate/voice", dependencies=[Depends(require_api_key)])
