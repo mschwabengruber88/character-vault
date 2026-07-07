@@ -4,14 +4,24 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+import time
+
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import db
-from app.config import CORS_ORIGINS, GENERATE_API_KEY
+from app.config import (
+    CORS_ORIGINS,
+    GENERATE_API_KEY,
+    MAX_KEYLESS_BATCH,
+    RATE_GLOBAL_PER_DAY,
+    RATE_IP_PER_HOUR,
+    RATE_VIDEO_PER_DAY,
+    VIDEO_UNITS,
+)
 from app.pipelines import (
     DEFAULT_IMAGE_MODEL,
     IMAGE_COST_USD,
@@ -36,9 +46,80 @@ from app.storage import presign_asset_url, upload_reference_image, with_signed_u
 logger = logging.getLogger("character_vault")
 
 
-def require_api_key(x_api_key: str = Header(default="")):
-    if not GENERATE_API_KEY or x_api_key != GENERATE_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+def _is_owner(x_api_key: str) -> bool:
+    """The GENERATE_API_KEY still exists — but now as an OWNER bypass for
+    unlimited generation, not a wall. Anyone else generates rate-limited."""
+    return bool(GENERATE_API_KEY) and x_api_key == GENERATE_API_KEY
+
+
+class RateLimiter:
+    """In-memory rate limiter. Keyless generation runs on the owner's provider
+    keys, so cap it: per-IP hourly units, a global daily unit budget, and a
+    hard global daily video count. Counters live in fixed time buckets and old
+    buckets are pruned lazily. Resets on restart — fine for this scale."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._ip_hour: dict = {}   # (ip, hour_bucket) -> units
+        self._day: dict = {}       # (scope, day_bucket) -> count/units
+
+    def allow(self, ip: str, kind: str, units: int = 1) -> bool:
+        now = time.time()
+        hour, day = int(now // 3600), int(now // 86400)
+        with self._lock:
+            self._prune(hour, day)
+            ip_used = self._ip_hour.get((ip, hour), 0)
+            global_used = self._day.get(("all", day), 0)
+            video_used = self._day.get(("video", day), 0)
+            if ip_used + units > RATE_IP_PER_HOUR:
+                return False
+            if global_used + units > RATE_GLOBAL_PER_DAY:
+                return False
+            if kind == "video" and video_used + 1 > RATE_VIDEO_PER_DAY:
+                return False
+            self._ip_hour[(ip, hour)] = ip_used + units
+            self._day[("all", day)] = global_used + units
+            if kind == "video":
+                self._day[("video", day)] = video_used + 1
+            return True
+
+    def _prune(self, hour: int, day: int) -> None:
+        for key in [k for k in self._ip_hour if k[1] != hour]:
+            del self._ip_hour[key]
+        for key in [k for k in self._day if k[1] != day]:
+            del self._day[key]
+
+    def reset(self) -> None:
+        with self._lock:
+            self._ip_hour.clear()
+            self._day.clear()
+
+
+rate_limiter = RateLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def enforce_rate(request: Request, x_api_key: str, kind: str, units: int = 1) -> None:
+    if _is_owner(x_api_key):
+        return
+    if not rate_limiter.allow(_client_ip(request), kind, units):
+        raise HTTPException(
+            status_code=429,
+            detail="The shared free limit is reached for now — please try again later, "
+                   "or add the owner API key for unlimited generation.",
+        )
+
+
+def generation_guard(kind: str, units: int = 1):
+    def dep(request: Request, x_api_key: str = Header(default="")):
+        enforce_rate(request, x_api_key, kind, units)
+    return dep
 
 
 def require_workspace(x_workspace_id: str = Header(default="")) -> str:
@@ -274,7 +355,7 @@ MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 ALLOWED_UPLOAD_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
-@app.post("/characters/{character_id}/reference", dependencies=[Depends(require_api_key)])
+@app.post("/characters/{character_id}/reference", dependencies=[Depends(generation_guard("image", 1))])
 async def upload_reference(character_id: int, file: UploadFile = File(...),
                            workspace: str = Depends(require_workspace)):
     character = db.get_character(workspace, character_id)
@@ -331,7 +412,7 @@ def delete_asset(asset_id: int, workspace: str = Depends(require_workspace)):
         raise HTTPException(status_code=404, detail="Asset not found")
 
 
-@app.post("/characters/{character_id}/generate/image", dependencies=[Depends(require_api_key)])
+@app.post("/characters/{character_id}/generate/image", dependencies=[Depends(generation_guard("image", 1))])
 def generate_image(character_id: int, body: PortraitRequest, workspace: str = Depends(require_workspace)):
     character = db.get_character(workspace, character_id)
     if character is None:
@@ -406,8 +487,10 @@ def _run_batch(job_id: int, character_id: int, prompts: list[str], references: l
         _release_slot(character_id, "image")
 
 
-@app.post("/characters/{character_id}/generate/batch", dependencies=[Depends(require_api_key)])
-def generate_batch(character_id: int, body: BatchRequest, workspace: str = Depends(require_workspace)):
+@app.post("/characters/{character_id}/generate/batch")
+def generate_batch(character_id: int, body: BatchRequest, request: Request,
+                   workspace: str = Depends(require_workspace),
+                   x_api_key: str = Header(default="")):
     character = db.get_character(workspace, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -421,6 +504,11 @@ def generate_batch(character_id: int, body: BatchRequest, workspace: str = Depen
         raise HTTPException(status_code=400, detail="Nothing to generate — the script is empty.")
     if len(prompts) > MODE_MAX[body.mode]:
         prompts = prompts[: MODE_MAX[body.mode]]
+    # Keyless callers get a smaller batch cap; the owner key lifts it.
+    if not _is_owner(x_api_key) and len(prompts) > MAX_KEYLESS_BATCH:
+        prompts = prompts[:MAX_KEYLESS_BATCH]
+    # Rate-limit the whole batch by its frame count (owner bypasses).
+    enforce_rate(request, x_api_key, "image", units=len(prompts))
 
     unit = per_image_cost(body.model, body.quality)
     estimate = round(unit * len(prompts), 4) if unit is not None else None
@@ -466,7 +554,7 @@ def cancel_batch(batch_id: int, workspace: str = Depends(require_workspace)):
     return db.get_batch(batch_id)
 
 
-@app.post("/characters/{character_id}/generate/voice", dependencies=[Depends(require_api_key)])
+@app.post("/characters/{character_id}/generate/voice", dependencies=[Depends(generation_guard("voice", 1))])
 def generate_voice(character_id: int, body: VoiceLineRequest, workspace: str = Depends(require_workspace)):
     character = db.get_character(workspace, character_id)
     if character is None:
@@ -508,7 +596,7 @@ def list_scenes(workspace: str = Depends(require_workspace)):
     return [_scene_with_signed_url(s) for s in db.list_scenes(workspace)]
 
 
-@app.post("/scenes", dependencies=[Depends(require_api_key)])
+@app.post("/scenes", dependencies=[Depends(generation_guard("scene", 4))])
 def create_scene(body: SceneRequest, workspace: str = Depends(require_workspace)):
     references, descriptors, names, ids = [], [], [], []
     for cid in body.character_ids:
@@ -578,7 +666,7 @@ def list_studio(kind: str | None = Query(default=None, pattern="^(background|pho
     return [_scene_with_signed_url(s) for s in db.list_studio_images(workspace, kind)]
 
 
-@app.post("/studio", dependencies=[Depends(require_api_key)])
+@app.post("/studio", dependencies=[Depends(generation_guard("image", 1))])
 def create_studio(body: StudioRequest, workspace: str = Depends(require_workspace)):
     if body.model not in {m["slug"] for m in available_image_models()}:
         raise HTTPException(
@@ -627,7 +715,7 @@ def list_audio(workspace: str = Depends(require_workspace)):
     return [_scene_with_signed_url(c) for c in db.list_audio_clips(workspace)]
 
 
-@app.post("/audio", dependencies=[Depends(require_api_key)])
+@app.post("/audio", dependencies=[Depends(generation_guard("voice", 1))])
 def create_audio(body: AudioRequest, workspace: str = Depends(require_workspace)):
     # OpenAI voices must be one of the fixed set; ElevenLabs accepts ANY id so
     # users can import their own cloned voice by its Voice ID.
@@ -710,7 +798,7 @@ def get_video(video_id: int, workspace: str = Depends(require_workspace)):
     return _video_with_signed_url(video)
 
 
-@app.post("/videos", dependencies=[Depends(require_api_key)])
+@app.post("/videos", dependencies=[Depends(generation_guard("video", VIDEO_UNITS))])
 def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)):
     if body.model not in {m["slug"] for m in available_video_models()}:
         raise HTTPException(
@@ -771,7 +859,7 @@ def list_scripts(workspace: str = Depends(require_workspace)):
     return db.list_scripts(workspace)
 
 
-@app.post("/scripts", dependencies=[Depends(require_api_key)])
+@app.post("/scripts", dependencies=[Depends(generation_guard("script", 1))])
 def create_script(body: ScriptRequest, workspace: str = Depends(require_workspace)):
     names = []
     for cid in body.character_ids:

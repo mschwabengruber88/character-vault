@@ -125,19 +125,25 @@ def test_character_name_validation(client):
     assert resp.status_code == 422
 
 
-def test_generate_image_requires_api_key(client):
-    resp = client.post("/characters", json={"name": "NeedsAuth"})
-    char_id = resp.json()["id"]
+def test_keyless_generation_rate_limited_and_owner_bypass(client):
+    from app.main import rate_limiter
+    import app.main as m
+    rate_limiter.reset()
+    char_id = client.post("/characters", json={"name": "Keyless"}).json()["id"]
 
-    no_key = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "a robot"})
-    assert no_key.status_code == 401
-
-    wrong_key = client.post(
-        f"/characters/{char_id}/generate/image",
-        json={"prompt": "a robot"},
-        headers={"X-API-Key": "wrong"},
-    )
-    assert wrong_key.status_code == 401
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("k")):
+        # keyless works (no X-API-Key) up to the per-IP hourly cap...
+        with patch.object(m, "RATE_IP_PER_HOUR", 2):
+            a = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "x"})
+            b = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "y"})
+            c = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "z"})
+            assert a.status_code == 200 and b.status_code == 200
+            assert c.status_code == 429  # limit reached
+            # the owner key bypasses the limit
+            owner = client.post(f"/characters/{char_id}/generate/image",
+                                json={"prompt": "w"}, headers={"X-API-Key": API_KEY})
+            assert owner.status_code == 200
+    rate_limiter.reset()
 
 
 def test_generate_image_success(client):
@@ -592,14 +598,18 @@ def test_batch_story_derives_count_from_script(client):
     assert job["completed"] == 4
 
 
-def test_batch_requires_api_key(client):
+def test_batch_keyless_allowed(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
     cid = client.post("/characters", json={"name": "NoKeyBatch"}).json()["id"]
-    resp = client.post(
-        f"/characters/{cid}/generate/batch",
-        json={"mode": "variation", "prompt": "a knight", "count": 2},
-    )
-    assert resp.status_code == 401
-
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("b")):
+        resp = client.post(
+            f"/characters/{cid}/generate/batch",
+            json={"mode": "variation", "prompt": "a knight", "count": 2},
+        )
+    assert resp.status_code == 200  # no key needed anymore
+    _await_batch(client, resp.json()["id"])
+    rate_limiter.reset()
 
 def test_batch_rejects_bad_count(client):
     cid = client.post("/characters", json={"name": "BadCount"}).json()["id"]
@@ -662,10 +672,18 @@ def test_studio_generation_and_listing(client):
     assert client.delete(f"/studio/{img['id']}").status_code == 404
 
 
-def test_studio_requires_api_key(client):
-    resp = client.post("/studio", json={"kind": "background", "prompt": "a forest"})
-    assert resp.status_code == 401
-
+def test_studio_keyless_allowed(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    with patch("app.main.generate_studio_image", return_value={
+        "url": "https://example.com/s.png", "original_url": "https://example.com/s.png",
+        "sha256": "s", "mime_type": "image/png", "manifest_verified": True,
+        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
+        "model": "gpt-image-1", "kind": "background",
+    }):
+        resp = client.post("/studio", json={"kind": "background", "prompt": "a forest"})
+    assert resp.status_code == 200
+    rate_limiter.reset()
 
 def test_studio_rejects_unknown_kind(client):
     resp = client.post(
@@ -731,10 +749,16 @@ def test_audio_rejects_unknown_openai_voice(client):
     assert resp.status_code == 400
 
 
-def test_audio_requires_api_key(client):
-    resp = client.post("/audio", json={"text": "hi", "voice_provider": "openai", "voice_id": "nova"})
-    assert resp.status_code == 401
-
+def test_audio_keyless_allowed(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    with patch("app.main.generate_audio", return_value={
+        "url": "https://example.com/a.mp3", "sha256": "a", "mime_type": "audio/mpeg",
+        "manifest_verified": True, "cost_usd": 0.0006, "voice": "openai:nova",
+    }):
+        resp = client.post("/audio", json={"text": "hi", "voice_provider": "openai", "voice_id": "nova"})
+    assert resp.status_code == 200
+    rate_limiter.reset()
 
 def _await_video(client, video_id, timeout=5.0):
     deadline = time.time() + timeout
@@ -797,10 +821,14 @@ def test_video_character_mode_requires_portrait(client):
     assert resp.status_code == 400
 
 
-def test_video_requires_api_key(client):
+def test_video_keyless_no_wall(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    # No key wall: without GMI configured the model is simply unavailable (400),
+    # not an auth rejection (401).
     resp = client.post("/videos", json={"prompt": "x", "model": "Veo3-Fast"})
-    assert resp.status_code == 401
-
+    assert resp.status_code == 400
+    rate_limiter.reset()
 
 def test_video_models_carry_descriptions(client):
     from app.pipelines import VIDEO_MODELS, available_video_models
@@ -864,10 +892,13 @@ def test_script_passes_character_names(client):
     assert mock.call_args.args[3] == ["Mira"]
 
 
-def test_script_requires_api_key(client):
-    resp = client.post("/scripts", json={"idea": "x"})
-    assert resp.status_code == 401
-
+def test_script_keyless_allowed(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    with patch("app.main.generate_script", return_value="A line."):
+        resp = client.post("/scripts", json={"idea": "x"})
+    assert resp.status_code == 200
+    rate_limiter.reset()
 
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]

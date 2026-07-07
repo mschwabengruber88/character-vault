@@ -172,9 +172,9 @@ const TRANSLATIONS = {
     genVideoBtn: "Generate video",
     yourVideos: "Your videos",
     videoEmpty: "No videos yet — pick a model and generate.",
-    keyDialogTitle: "Generation API key",
-    keyDialogBody: "Portrait and voice generation call paid provider APIs, so they require the shared key. It is stored only in this browser.",
-    phKeyInput: "X-API-Key value",
+    keyDialogTitle: "Owner key (optional)",
+    keyDialogBody: "Generation is free for everyone, just rate-limited. Add the owner key only to lift the limits (unlimited generation). Stored only in this browser.",
+    phKeyInput: "Owner key (optional)",
     // JS-set strings
     modePortraitBtn: "Generate portrait",
     modeVariationBtn: "Generate variation set",
@@ -371,9 +371,9 @@ const TRANSLATIONS = {
     genVideoBtn: "Video generieren",
     yourVideos: "Deine Videos",
     videoEmpty: "Noch keine Videos – wähle ein Modell und generiere.",
-    keyDialogTitle: "Generierungs-API-Schlüssel",
-    keyDialogBody: "Bild- und Sprachgenerierung rufen kostenpflichtige Anbieter-APIs auf und brauchen daher den gemeinsamen Schlüssel. Er wird nur in diesem Browser gespeichert.",
-    phKeyInput: "X-API-Key-Wert",
+    keyDialogTitle: "Owner-Schlüssel (optional)",
+    keyDialogBody: "Generierung ist für alle kostenlos, nur rate-limitiert. Der Owner-Schlüssel hebt die Limits auf (unbegrenzt). Nur in diesem Browser gespeichert.",
+    phKeyInput: "Owner-Schlüssel (optional)",
     // JS-set strings
     modePortraitBtn: "Porträt generieren",
     modeVariationBtn: "Variationsset generieren",
@@ -998,7 +998,6 @@ function setupCreateForm() {
 }
 
 async function uploadReferenceImage(characterId, file) {
-  if (!apiKey()) { openKeyDialog(); throw new Error("API key required to upload."); }
   const data = new FormData();
   data.append("file", file);
   const resp = await fetch(`/characters/${characterId}/reference`, {
@@ -1292,7 +1291,6 @@ async function generateImage() {
   const input = el("image-prompt");
   const value = input.value.trim();
   if (!value) { toast(t("toastDescribeFirst"), true); input.focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   const mode = currentMode();
   const mods = imageComposer ? imageComposer.modifiers() : "";
@@ -1396,7 +1394,6 @@ async function generateVoice() {
   const input = el("voice-text");
   const value = input.value.trim();
   if (!value) { toast("Enter a line for the character to say.", true); input.focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   setGenerating(true, t("generatingVoice"));
   try {
@@ -1566,7 +1563,6 @@ async function generateScene() {
   if (ids.length < 2) { toast("Pick at least two characters.", true); return; }
   if (ids.length > 4) { toast("Pick at most four characters.", true); return; }
   if (!prompt) { toast("Describe the scene first.", true); el("scene-prompt").focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   sceneGenerating = true;
   el("generate-scene-button").disabled = true;
@@ -1698,7 +1694,6 @@ async function generateStudioImage() {
   if (studioGenerating) return;
   const base = el("studio-prompt").value.trim();
   if (!base) { toast("Describe the image first.", true); el("studio-prompt").focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   const prompt = composePrompt(base, studioComposer ? studioComposer.modifiers() : "");
   studioGenerating = true;
@@ -1881,7 +1876,6 @@ async function generateAudioClip() {
   if (audioGenerating) return;
   const text = el("audio-text").value.trim();
   if (!text) { toast("Write the line to speak first.", true); el("audio-text").focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   let provider, voiceId;
   if (audioSource === "custom") {
@@ -2083,7 +2077,6 @@ async function generateVideo() {
   if (!model) { toast("No video model available.", true); return; }
   const prompt = el("video-prompt").value.trim();
   if (!prompt) { toast("Describe the motion first.", true); el("video-prompt").focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   const payload = {
     prompt,
@@ -2255,7 +2248,6 @@ async function generateScript() {
   if (scriptGenerating) return;
   const idea = el("script-idea").value.trim();
   if (!idea) { toast(t("scriptIdeaPh"), true); el("script-idea").focus(); return; }
-  if (!apiKey()) { openKeyDialog(); return; }
 
   const characterIds = [...document.querySelectorAll("#script-cast input:checked")].map((c) => Number(c.value));
   scriptGenerating = true;
