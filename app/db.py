@@ -114,6 +114,15 @@ CREATE TABLE IF NOT EXISTS audio_clips (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    idea TEXT NOT NULL,
+    format TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS batch_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id TEXT NOT NULL DEFAULT 'default',
@@ -583,6 +592,34 @@ def delete_audio_clip(workspace_id: str, clip_id: int) -> bool:
 
 
 # ── Batch jobs ───────────────────────────────────────────────────────────
+
+def create_script(workspace_id: str, idea: str, fmt: str, content: str) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO scripts (workspace_id, idea, format, content, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (workspace_id, idea, fmt, content, now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM scripts WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def list_scripts(workspace_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM scripts WHERE workspace_id = ? ORDER BY id DESC", (workspace_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def delete_script(workspace_id: str, script_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM scripts WHERE id = ? AND workspace_id = ?", (script_id, workspace_id)
+        )
+        return cur.rowcount > 0
+
 
 def create_batch(
     workspace_id: str,

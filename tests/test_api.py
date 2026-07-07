@@ -833,6 +833,42 @@ def test_video_rejects_bad_duration(client):
     assert resp.status_code == 422
 
 
+def test_script_generation_and_isolation(client, other_client):
+    with patch("app.main.generate_script", return_value="Line one.\nLine two.\nLine three.") as mock:
+        resp = client.post(
+            "/scripts",
+            json={"idea": "a lighthouse keeper", "format": "story", "length": "short"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    script = resp.json()
+    assert script["format"] == "story"
+    assert "Line two." in script["content"]
+    mock.assert_called_once_with("a lighthouse keeper", "story", "short", None)
+
+    assert any(s["id"] == script["id"] for s in client.get("/scripts").json())
+    # another workspace can't see or delete it
+    assert other_client.get("/scripts").json() == []
+    assert other_client.delete(f"/scripts/{script['id']}").status_code == 404
+    assert client.delete(f"/scripts/{script['id']}").status_code == 204
+
+
+def test_script_passes_character_names(client):
+    cid = client.post("/characters", json={"name": "Mira"}).json()["id"]
+    with patch("app.main.generate_script", return_value="x") as mock:
+        client.post(
+            "/scripts",
+            json={"idea": "adventure", "format": "video", "character_ids": [cid]},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert mock.call_args.args[3] == ["Mira"]
+
+
+def test_script_requires_api_key(client):
+    resp = client.post("/scripts", json={"idea": "x"})
+    assert resp.status_code == 401
+
+
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
     resp = client.put(

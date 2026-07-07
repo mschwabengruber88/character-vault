@@ -53,6 +53,7 @@
       <button id="open-studio" class="scenes-nav"><span class="nav-glyph">◈</span><span data-i18n="navStudio">Studio — backgrounds &amp; photo art</span></button>
       <button id="open-audio" class="scenes-nav"><span class="nav-glyph">♪</span><span data-i18n="navAudio">Audio — narration &amp; voiceover</span></button>
       <button id="open-video" class="scenes-nav"><span class="nav-glyph">▷</span><span data-i18n="navVideo">Video — animate characters</span></button>
+      <button id="open-script" class="scenes-nav"><span class="nav-glyph">✎</span><span data-i18n="navScript">Idea → Script</span></button>
     </aside>
 
     <section class="detail" id="detail">
@@ -431,6 +432,55 @@
         <h3 class="assets-heading">Your videos</h3>
         <div id="video-grid" class="asset-grid"></div>
         <p id="video-empty" class="empty-note" hidden>No videos yet — pick a model and generate.</p>
+      </div>
+
+      <div id="script-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2 data-i18n="scriptTitle">Idea → Script</h2>
+            <p class="detail-description" data-i18n="scriptDesc">Describe an idea in a sentence and get a ready-to-shoot script. A story script drops straight into the Story image mode — one line becomes one panel.</p>
+          </div>
+        </div>
+
+        <div class="generate-card">
+          <textarea id="script-idea" data-i18n-ph="scriptIdeaPh" placeholder="Describe your idea, e.g. 'a shy robot learns to dance at a city festival'" maxlength="2000" rows="3"></textarea>
+          <div class="mode-grid">
+            <label class="model-row">
+              <span class="model-label" data-i18n="scriptFormat">Format</span>
+              <select id="script-format">
+                <option value="story" data-i18n="fmtStory">Story — one line per panel</option>
+                <option value="video" data-i18n="fmtVideo">Video — scenes + narration</option>
+                <option value="manga" data-i18n="fmtManga">Manga — panels + dialogue</option>
+                <option value="dialogue" data-i18n="fmtDialogue">Dialogue — spoken lines</option>
+              </select>
+            </label>
+            <label class="model-row">
+              <span class="model-label" data-i18n="scriptLength">Length</span>
+              <select id="script-length">
+                <option value="short" data-i18n="lenShort">Short</option>
+                <option value="medium" selected data-i18n="lenMedium">Medium</option>
+                <option value="long" data-i18n="lenLong">Long</option>
+              </select>
+            </label>
+          </div>
+          <p class="generate-hint" data-i18n="scriptCastHint">Optionally include your characters by name:</p>
+          <div id="script-cast" class="scene-participants"></div>
+          <button id="generate-script-button" class="button primary" data-i18n="scriptGenerate">Generate script</button>
+        </div>
+
+        <div id="script-status" class="generation-status" hidden></div>
+
+        <div id="script-output" class="script-output" hidden>
+          <div class="script-output-head">
+            <span class="script-output-title" data-i18n="scriptResult">Script</span>
+            <button type="button" id="script-copy" class="button small" data-i18n="wsCopy">Copy</button>
+          </div>
+          <pre id="script-text"></pre>
+        </div>
+
+        <h3 class="assets-heading" data-i18n="scriptSaved">Saved scripts</h3>
+        <div id="script-list" class="script-list"></div>
+        <p id="script-empty" class="empty-note" hidden data-i18n="scriptNone">No scripts yet — describe an idea above.</p>
       </div>
     </section>
 

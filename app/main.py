@@ -27,6 +27,7 @@ from app.pipelines import (
     generate_character_portrait,
     generate_character_voice_line,
     generate_scene,
+    generate_script,
     generate_studio_image,
     generate_video,
 )
@@ -756,3 +757,41 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
 def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
     if not db.delete_video(workspace, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
+
+
+class ScriptRequest(BaseModel):
+    idea: str = Field(min_length=1, max_length=2000)
+    format: Literal["story", "video", "manga", "dialogue"] = "story"
+    length: Literal["short", "medium", "long"] = "medium"
+    character_ids: list[int] = Field(default_factory=list, max_length=6)
+
+
+@app.get("/scripts")
+def list_scripts(workspace: str = Depends(require_workspace)):
+    return db.list_scripts(workspace)
+
+
+@app.post("/scripts", dependencies=[Depends(require_api_key)])
+def create_script(body: ScriptRequest, workspace: str = Depends(require_workspace)):
+    names = []
+    for cid in body.character_ids:
+        character = db.get_character(workspace, cid)
+        if character:
+            names.append(character["name"])
+    with generation_slot(workspace, "script"):
+        try:
+            content = generate_script(body.idea, body.format, body.length, names or None)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Script generation failed")
+            raise HTTPException(status_code=502, detail="Script generation failed. Please try again.")
+    if not content:
+        raise HTTPException(status_code=502, detail="The script came back empty. Please try again.")
+    return db.create_script(workspace, body.idea, body.format, content)
+
+
+@app.delete("/scripts/{script_id}", status_code=204)
+def delete_script(script_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_script(workspace, script_id):
+        raise HTTPException(status_code=404, detail="Script not found")

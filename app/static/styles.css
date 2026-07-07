@@ -996,6 +996,69 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 .ws-token-row { display: flex; gap: 8px; margin-bottom: 14px; }
 .ws-token-row input { flex: 1; margin-bottom: 0 !important; font-family: ui-monospace, monospace; font-size: 12px; }
 
+/* Script generator */
+.script-output {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--brass);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-inset);
+}
+.script-output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.script-output-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brass);
+  font-weight: 700;
+}
+#script-text, .script-card-text {
+  margin: 0;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.script-list { display: flex; flex-direction: column; gap: 14px; }
+.script-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.script-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 0;
+}
+.script-card-idea { font-weight: 600; font-size: 14px; color: var(--ink); }
+.script-card-tag {
+  flex: none;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--brass);
+  font-weight: 700;
+}
+.script-card-text {
+  max-height: 220px;
+  overflow-y: auto;
+  color: var(--ink-soft);
+}
+.script-card .asset-meta { padding: 0 14px 12px; }
+
 /* ---------- Toast ---------- */
 
 .toast {

@@ -64,6 +64,26 @@ const TRANSLATIONS = {
     wsBadToken: "That workspace token was not found.",
     wsError: "Could not create the workspace. Try again.",
     wsCopied: "Workspace token copied.",
+    navScript: "Idea → Script",
+    scriptTitle: "Idea → Script",
+    scriptDesc: "Describe an idea in a sentence and get a ready-to-shoot script. A story script drops straight into the Story image mode — one line becomes one panel.",
+    scriptIdeaPh: "Describe your idea, e.g. 'a shy robot learns to dance at a city festival'",
+    scriptFormat: "Format",
+    fmtStory: "Story — one line per panel",
+    fmtVideo: "Video — scenes + narration",
+    fmtManga: "Manga — panels + dialogue",
+    fmtDialogue: "Dialogue — spoken lines",
+    scriptLength: "Length",
+    lenShort: "Short",
+    lenMedium: "Medium",
+    lenLong: "Long",
+    scriptCastHint: "Optionally include your characters by name:",
+    scriptGenerate: "Generate script",
+    scriptResult: "Script",
+    scriptSaved: "Saved scripts",
+    scriptNone: "No scripts yet — describe an idea above.",
+    scriptGenerating: "Writing your script…",
+    scriptCopied: "Script copied.",
   },
   de: {
     provenanceNote: "Jedes Asset auf Backblaze B2 gespeichert – mit verifiziertem Herkunftsnachweis",
@@ -120,6 +140,26 @@ const TRANSLATIONS = {
     wsBadToken: "Dieser Workspace-Token wurde nicht gefunden.",
     wsError: "Workspace konnte nicht erstellt werden. Bitte erneut versuchen.",
     wsCopied: "Workspace-Token kopiert.",
+    navScript: "Idee → Skript",
+    scriptTitle: "Idee → Skript",
+    scriptDesc: "Beschreibe eine Idee in einem Satz und erhalte ein drehfertiges Skript. Ein Story-Skript fließt direkt in den Story-Bildmodus – eine Zeile wird ein Panel.",
+    scriptIdeaPh: "Beschreibe deine Idee, z. B. 'ein schüchterner Roboter lernt auf einem Stadtfest tanzen'",
+    scriptFormat: "Format",
+    fmtStory: "Story – eine Zeile pro Panel",
+    fmtVideo: "Video – Szenen + Erzählung",
+    fmtManga: "Manga – Panels + Dialog",
+    fmtDialogue: "Dialog – gesprochene Zeilen",
+    scriptLength: "Länge",
+    lenShort: "Kurz",
+    lenMedium: "Mittel",
+    lenLong: "Lang",
+    scriptCastHint: "Optional deine Charaktere namentlich einbeziehen:",
+    scriptGenerate: "Skript generieren",
+    scriptResult: "Skript",
+    scriptSaved: "Gespeicherte Skripte",
+    scriptNone: "Noch keine Skripte – beschreibe oben eine Idee.",
+    scriptGenerating: "Dein Skript wird geschrieben …",
+    scriptCopied: "Skript kopiert.",
   },
 };
 
@@ -505,6 +545,7 @@ function renderDetail(character) {
   hideStudioView();
   hideAudioView();
   hideVideoView();
+  hideScriptView();
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
   if (!character) return;
@@ -1174,6 +1215,7 @@ function showScenesView() {
   hideStudioView();
   hideAudioView();
   hideVideoView();
+  hideScriptView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -1333,6 +1375,7 @@ function showStudioView() {
   hideScenesView();
   hideAudioView();
   hideVideoView();
+  hideScriptView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
@@ -1539,6 +1582,7 @@ function showAudioView() {
   hideScenesView();
   hideStudioView();
   hideVideoView();
+  hideScriptView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("audio-view").hidden = false;
@@ -1718,6 +1762,7 @@ function showVideoView() {
   hideScenesView();
   hideStudioView();
   hideAudioView();
+  hideScriptView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("video-view").hidden = false;
@@ -1932,6 +1977,166 @@ function renderVideos(videos) {
   }
 }
 
+/* ---------- Idea → Script ---------- */
+
+function showScriptView() {
+  state.selectedId = null;
+  renderCharacterList();
+  hideScenesView();
+  hideStudioView();
+  hideAudioView();
+  hideVideoView();
+  hideScriptView();
+  el("detail-placeholder").hidden = true;
+  el("detail-content").hidden = true;
+  el("script-view").hidden = false;
+  el("open-script").classList.add("active");
+  renderScriptCast();
+  loadScripts();
+}
+
+function hideScriptView() {
+  el("script-view").hidden = true;
+  el("open-script").classList.remove("active");
+}
+
+function renderScriptCast() {
+  const box = el("script-cast");
+  box.innerHTML = "";
+  if (!state.characters.length) {
+    box.innerHTML = `<p class="empty-note">${t("noCharacters")}</p>`;
+    return;
+  }
+  for (const character of state.characters) {
+    const label = document.createElement("label");
+    label.className = "participant";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = String(character.id);
+    const name = document.createElement("span");
+    name.textContent = character.name;
+    label.append(cb, name);
+    box.appendChild(label);
+  }
+}
+
+let scriptGenerating = false;
+
+async function generateScript() {
+  if (scriptGenerating) return;
+  const idea = el("script-idea").value.trim();
+  if (!idea) { toast(t("scriptIdeaPh"), true); el("script-idea").focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  const characterIds = [...document.querySelectorAll("#script-cast input:checked")].map((c) => Number(c.value));
+  scriptGenerating = true;
+  el("generate-script-button").disabled = true;
+  const status = el("script-status");
+  status.classList.remove("error");
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("scriptGenerating")}`;
+  status.hidden = false;
+  try {
+    const script = await api("/scripts", {
+      method: "POST",
+      headers: { "X-API-Key": apiKey() },
+      body: JSON.stringify({
+        idea,
+        format: el("script-format").value,
+        length: el("script-length").value,
+        character_ids: characterIds,
+      }),
+    });
+    status.hidden = true;
+    showScriptOutput(script.content);
+    await loadScripts();
+  } catch (err) {
+    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast(t("scriptIdeaPh"), true); }
+    else { status.classList.add("error"); status.textContent = err.message; }
+  } finally {
+    scriptGenerating = false;
+    el("generate-script-button").disabled = false;
+  }
+}
+
+function showScriptOutput(content) {
+  el("script-text").textContent = content;
+  el("script-output").hidden = false;
+  el("script-output").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard?.writeText(text); toast(t("scriptCopied")); }
+  catch { toast(text.slice(0, 0) || "…", true); }
+}
+
+async function loadScripts() {
+  try {
+    renderScripts(await api("/scripts"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+const SCRIPT_FORMAT_LABEL = { story: "fmtStory", video: "fmtVideo", manga: "fmtManga", dialogue: "fmtDialogue" };
+
+function renderScripts(scripts) {
+  const list = el("script-list");
+  list.innerHTML = "";
+  el("script-empty").hidden = scripts.length > 0;
+  for (const script of scripts) {
+    const card = document.createElement("div");
+    card.className = "script-card";
+
+    const head = document.createElement("div");
+    head.className = "script-card-head";
+    const idea = document.createElement("span");
+    idea.className = "script-card-idea";
+    idea.textContent = script.idea;
+    const tag = document.createElement("span");
+    tag.className = "script-card-tag";
+    tag.textContent = t(SCRIPT_FORMAT_LABEL[script.format] || "scriptResult").split(" —")[0];
+    head.append(idea, tag);
+    card.appendChild(head);
+
+    const pre = document.createElement("pre");
+    pre.className = "script-card-text";
+    pre.textContent = script.content;
+    card.appendChild(pre);
+
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    time.textContent = formatTimestamp(script.created_at);
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "asset-delete";
+    copy.textContent = t("wsCopy");
+    copy.addEventListener("click", () => copyText(script.content));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this script?")) return;
+      try { await api(`/scripts/${script.id}`, { method: "DELETE" }); loadScripts(); }
+      catch (err) { toast(err.message, true); }
+    });
+    actions.append(copy, remove);
+    meta.appendChild(actions);
+    card.appendChild(meta);
+    list.appendChild(card);
+  }
+}
+
+function setupScript() {
+  el("open-script").addEventListener("click", showScriptView);
+  el("generate-script-button").addEventListener("click", generateScript);
+  el("script-copy").addEventListener("click", () => copyText(el("script-text").textContent));
+}
+
 function setupLightbox() {
   const lightbox = el("lightbox");
   el("lightbox-close").addEventListener("click", () => lightbox.close());
@@ -1966,6 +2171,7 @@ function init() {
   setupStudio();
   setupAudio();
   setupVideo();
+  setupScript();
   setupWorkspace();
   applyI18n();
   el("lang-toggle").addEventListener("click", () => setLang(lang === "de" ? "en" : "de"));

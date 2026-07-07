@@ -14,6 +14,7 @@ from app.config import (
     B2_REGION,
     ELEVENLABS_API_KEY,
     GMI_API_KEY,
+    OPENAI_API_KEY,
 )
 
 logger = logging.getLogger("character_vault.pipelines")
@@ -287,6 +288,56 @@ def build_batch_prompts(mode: str, prompt: str, count: int) -> list[str]:
         shots = _PHOTOSHOOT_SHOTS
         return [f"{prompt}. {_PHOTOSHOOT_LOCK}{shots[i % len(shots)]}." for i in range(count)]
     return [prompt for _ in range(count)]
+
+
+# ── Script generator: idea → script ──────────────────────────────────────
+# Turn a one-line idea into a structured, visual script. Each format is shaped
+# to flow straight into the rest of the app: "story" emits one line per panel
+# (drops into the Story image mode), the others read as shootable scene scripts.
+SCRIPT_MODEL = "gpt-4o-mini"
+
+SCRIPT_FORMATS = {
+    "story": "an illustrated picture-book story. Output ONE short line per page — each line is a single vivid visual moment that could become one illustration. No page numbers, no headings, no commentary; just the lines, one per row.",
+    "video": "a short video script. Break it into numbered scenes. For each scene give a one-line VISUAL: description, then a NARRATION: line for the voiceover. Keep it tight and shootable.",
+    "manga": "a manga / comic script. Break it into numbered panels. For each panel give a short visual description, then any dialogue in quotes with the speaker's name.",
+    "dialogue": "a dialogue scene. Format every line as SPEAKER: their line. Keep it natural and characterful, and let it move the story forward.",
+}
+
+SCRIPT_LENGTHS = {
+    "short": "about 5 beats",
+    "medium": "about 10 beats",
+    "long": "about 16 beats",
+}
+
+
+def available_script_formats() -> list[str]:
+    return list(SCRIPT_FORMATS)
+
+
+def generate_script(idea: str, fmt: str = "story", length: str = "medium",
+                    characters: list[str] | None = None) -> str:
+    """Generate a script from a short idea via OpenAI chat. Returns plain text."""
+    from openai import OpenAI
+
+    style = SCRIPT_FORMATS.get(fmt, SCRIPT_FORMATS["story"])
+    beats = SCRIPT_LENGTHS.get(length, SCRIPT_LENGTHS["medium"])
+    cast = ""
+    if characters:
+        cast = f" Feature these characters by name: {', '.join(characters)}."
+    system = (
+        "You are a concise creative writer for a generative-media studio. Write "
+        "vivid, concrete, visual scripts that are easy to turn into images and "
+        "video. No preamble, no closing remarks — output only the script."
+    )
+    user = f"Idea: {idea}\n\nWrite {style}\nLength: {beats}.{cast}"
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    resp = client.chat.completions.create(
+        model=SCRIPT_MODEL,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        max_tokens=1200,
+        temperature=0.9,
+    )
+    return (resp.choices[0].message.content or "").strip()
 
 
 # ── Video: image-to-video (character) & text-to-video ────────────────────
