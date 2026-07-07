@@ -40,6 +40,7 @@ from app.pipelines import (
     generate_script,
     generate_studio_image,
     generate_video,
+    mux_video_with_audio,
 )
 from app.storage import presign_asset_url, upload_reference_image, with_signed_url
 
@@ -198,6 +199,8 @@ class CharacterCreate(BaseModel):
     personality: str | None = Field(default=None, max_length=1000)
     purpose: str | None = Field(default=None, max_length=500)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    voice_provider: Literal["openai", "elevenlabs"] | None = None
+    voice_id: str | None = Field(default=None, max_length=100)
 
 
 class CharacterUpdate(BaseModel):
@@ -206,6 +209,21 @@ class CharacterUpdate(BaseModel):
     personality: str | None = Field(default=None, max_length=1000)
     purpose: str | None = Field(default=None, max_length=500)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    voice_provider: Literal["openai", "elevenlabs"] | None = None
+    voice_id: str | None = Field(default=None, max_length=100)
+
+
+def _apply_voice(workspace: str, character_id: int, provider: str | None, voice_id: str | None) -> None:
+    """The character's voice is fixed on the character (set at creation, edited
+    only in the profile). OpenAI voices are validated against the catalog;
+    ElevenLabs accepts any id (own cloned voice)."""
+    if not provider or not voice_id:
+        return
+    if provider == "openai":
+        valid = {v["id"] for v in available_voices().get("openai", [])}
+        if voice_id not in valid:
+            raise HTTPException(status_code=400, detail=f"Unknown OpenAI voice '{voice_id}'.")
+    db.set_character_voice(workspace, character_id, provider, voice_id)
 
 
 class PortraitRequest(BaseModel):
@@ -319,16 +337,23 @@ def current_workspace(workspace: str = Depends(require_workspace)):
 
 @app.post("/characters")
 def create_character(body: CharacterCreate, workspace: str = Depends(require_workspace)):
-    return db.create_character(
+    character = db.create_character(
         workspace, body.name, body.description, body.personality, body.purpose, body.seed
     )
+    _apply_voice(workspace, character["id"], body.voice_provider, body.voice_id)
+    return db.get_character(workspace, character["id"])
 
 
 @app.patch("/characters/{character_id}")
 def update_character(character_id: int, body: CharacterUpdate, workspace: str = Depends(require_workspace)):
-    character = db.update_character(workspace, character_id, body.model_dump(exclude_unset=True))
+    fields = body.model_dump(exclude_unset=True)
+    fields.pop("voice_provider", None)
+    fields.pop("voice_id", None)
+    character = db.update_character(workspace, character_id, fields)
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
+    _apply_voice(workspace, character_id, body.voice_provider, body.voice_id)
+    character = db.get_character(workspace, character_id)
     character["assets"] = [with_signed_url(a) for a in character["assets"]]
     return character
 
@@ -756,21 +781,37 @@ class VideoRequest(BaseModel):
     character_id: int | None = None
     duration: int = Field(default=5, ge=3, le=10)
     aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+    # Optional line for the character to SPEAK — turns a silent clip into a
+    # talking one (their fixed voice, muxed onto the video).
+    speech: str | None = Field(default=None, max_length=400)
 
 
 def _run_video(scope, video_id: int, prompt: str, model: str, reference: dict | None,
-               duration: int, aspect_ratio: str) -> None:
+               duration: int, aspect_ratio: str, character_id: int | None = None,
+               speech: str | None = None, voice_provider: str | None = None,
+               voice_id: str | None = None) -> None:
     """Background worker — video generation takes minutes, so it runs off the
-    request thread and the row's status is polled by the client."""
+    request thread and the row's status is polled by the client. If `speech`
+    is set, the character's fixed voice is generated and muxed onto the clip so
+    the character actually talks."""
     try:
         result = generate_video(prompt, model, reference, duration, aspect_ratio)
+        url, sha, mime = result["url"], result["sha256"], result["mime_type"]
+        if speech and speech.strip():
+            try:
+                voice = generate_character_voice_line(
+                    character_id or 0, speech.strip(), voice_provider, voice_id,
+                )
+                talking = mux_video_with_audio(result["url"], voice["url"])
+                url, sha, mime = talking["url"], talking["sha256"], talking["mime_type"]
+            except Exception:
+                logger.exception("Muxing speech onto video %s failed — keeping silent clip", video_id)
         db.finish_video(
-            video_id, status="done", url=result["url"],
-            original_url=result.get("original_url"), sha256=result["sha256"],
-            mime_type=result["mime_type"], cost_usd=result.get("cost_usd"),
+            video_id, status="done", url=url, original_url=result.get("original_url"),
+            sha256=sha, mime_type=mime, cost_usd=result.get("cost_usd"),
             manifest_verified=result["manifest_verified"],
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Video %s failed", video_id)
         db.finish_video(video_id, status="error", error="Video generation failed. Please try again.")
     finally:
@@ -807,6 +848,8 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
         )
     meta = VIDEO_MODELS[body.model]
     reference, character_id, character_name, kind = None, None, None, "text"
+    voice_provider = voice_id = None
+    speech = body.speech
     if meta["needs_image"]:
         if body.character_id is None:
             raise HTTPException(status_code=400, detail="This model animates a character — pick one.")
@@ -821,6 +864,9 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
             )
         reference = refs[0]
         character_id, character_name, kind = character["id"], character["name"], "character"
+        voice_provider, voice_id = character.get("voice_provider"), character.get("voice_id")
+    else:
+        speech = None  # text-to-video has no character voice to speak with
 
     _acquire_slot(workspace, "video")
     try:
@@ -834,7 +880,8 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
         raise
     thread = threading.Thread(
         target=_run_video,
-        args=(workspace, video["id"], body.prompt, body.model, reference, body.duration, body.aspect_ratio),
+        args=(workspace, video["id"], body.prompt, body.model, reference, body.duration,
+              body.aspect_ratio, character_id, speech, voice_provider, voice_id),
         daemon=True,
     )
     thread.start()

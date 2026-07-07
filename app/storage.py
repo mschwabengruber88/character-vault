@@ -58,6 +58,22 @@ def with_signed_url(asset: dict) -> dict:
     return asset
 
 
+def upload_bytes(key: str, data: bytes, content_type: str) -> tuple[str, str]:
+    """Store arbitrary bytes in B2 at `key`. Returns (plain_url, sha256)."""
+    _s3_client().put_object(
+        Bucket=B2_BUCKET_NAME, Key=key, Body=data, ContentType=content_type
+    )
+    url = f"https://s3.{B2_REGION}.backblazeb2.com/{B2_BUCKET_NAME}/{key}"
+    return url, hashlib.sha256(data).hexdigest()
+
+
+def download_bytes(url: str) -> bytes:
+    """Fetch the raw bytes of one of our stored B2 objects by its plain URL."""
+    path = urlparse(url).path.lstrip("/")
+    key = path[len(f"{B2_BUCKET_NAME}/"):] if path.startswith(f"{B2_BUCKET_NAME}/") else path
+    return _s3_client().get_object(Bucket=B2_BUCKET_NAME, Key=key)["Body"].read()
+
+
 def upload_reference_image(character_id: int, data: bytes, content_type: str) -> tuple[str, str]:
     """Store a user-uploaded reference image in B2. Returns (plain_url, sha256)."""
     ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(content_type, "png")

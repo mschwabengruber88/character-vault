@@ -392,6 +392,32 @@ def available_video_models() -> list[dict]:
     ]
 
 
+def mux_video_with_audio(video_url: str, audio_url: str) -> dict:
+    """Combine a silent clip with the character's spoken line into one talking
+    MP4 (ffmpeg), upload it to B2 and return {url, sha256, mime_type}. The video
+    keeps its full length; the voice plays over the start."""
+    import subprocess
+    import uuid as _uuid
+
+    from app.storage import download_bytes, upload_bytes
+
+    video = download_bytes(video_url)
+    audio = download_bytes(audio_url)
+    with tempfile.TemporaryDirectory() as d:
+        vp, ap, op = f"{d}/v.mp4", f"{d}/a.mp3", f"{d}/out.mp4"
+        Path(vp).write_bytes(video)
+        Path(ap).write_bytes(audio)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", vp, "-i", ap,
+             "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+             "-map", "0:v:0", "-map", "1:a:0", op],
+            check=True, capture_output=True, timeout=120,
+        )
+        out = Path(op).read_bytes()
+    url, sha = upload_bytes(f"videos/talking/{_uuid.uuid4().hex}.mp4", out, "video/mp4")
+    return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
+
+
 def generate_video(
     prompt: str,
     model: str = DEFAULT_VIDEO_MODEL,

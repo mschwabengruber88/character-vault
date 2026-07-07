@@ -900,6 +900,54 @@ def test_script_keyless_allowed(client):
     assert resp.status_code == 200
     rate_limiter.reset()
 
+def test_voice_fixed_on_character(client):
+    # voice chosen at creation, stored on the character
+    c = client.post("/characters", json={
+        "name": "Voxy", "voice_provider": "openai", "voice_id": "nova"}).json()
+    assert c["voice_provider"] == "openai" and c["voice_id"] == "nova"
+    # editable via the profile (PATCH)
+    r = client.patch(f"/characters/{c['id']}",
+                     json={"voice_provider": "openai", "voice_id": "shimmer"}).json()
+    assert r["voice_id"] == "shimmer"
+    # an unknown OpenAI voice is rejected
+    bad = client.post("/characters", json={
+        "name": "Bad", "voice_provider": "openai", "voice_id": "nope"})
+    assert bad.status_code == 400
+
+
+def test_talking_video_muxes_speech(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    cid = client.post("/characters", json={
+        "name": "Talky", "voice_provider": "openai", "voice_id": "nova"}).json()["id"]
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("t")):
+        client.post(f"/characters/{cid}/generate/image",
+                    json={"prompt": "p"}, headers={"X-API-Key": API_KEY})
+
+    with patch("app.main.available_video_models",
+               return_value=[{"slug": "Kling-Image2Video-V2.1-Master", "needs_image": True}]), \
+         patch.dict("app.main.VIDEO_MODELS",
+                    {"Kling-Image2Video-V2.1-Master": {"label": "k", "needs_image": True, "audio": False}}, clear=True), \
+         patch("app.main.generate_video", return_value={
+             "url": "https://ex/v.mp4", "original_url": "https://ex/v.mp4", "sha256": "v",
+             "mime_type": "video/mp4", "manifest_verified": True, "cost_usd": None}), \
+         patch("app.main.generate_character_voice_line", return_value={
+             "url": "https://ex/a.mp3", "sha256": "a", "mime_type": "audio/mpeg",
+             "manifest_verified": True, "cost_usd": 0.0006, "voice": "openai:nova"}) as mock_voice, \
+         patch("app.main.mux_video_with_audio", return_value={
+             "url": "https://ex/talking.mp4", "sha256": "tk", "mime_type": "video/mp4"}) as mock_mux:
+        resp = client.post("/videos", json={
+            "prompt": "she waves", "model": "Kling-Image2Video-V2.1-Master",
+            "character_id": cid, "speech": "Hi. Nice to meet you."},
+            headers={"X-API-Key": API_KEY})
+        job = _await_video(client, resp.json()["id"])
+    assert job["status"] == "done"
+    assert job["url"] == "https://ex/talking.mp4"  # the muxed talking clip
+    assert mock_voice.call_args.args[1] == "Hi. Nice to meet you."
+    mock_mux.assert_called_once_with("https://ex/v.mp4", "https://ex/a.mp3")
+    rate_limiter.reset()
+
+
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
     resp = client.put(
