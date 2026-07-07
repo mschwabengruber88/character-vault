@@ -902,9 +902,21 @@ def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
 
 
 @app.get("/debug/lipsync", include_in_schema=False)
-def debug_lipsync(video_url: str, audio_url: str, workspace: str = Depends(require_workspace)):
-    """TEMPORARY: run only the lip-sync step to surface the raw GMI error."""
+def debug_lipsync(video_url: str, audio_url: str = "", step: str = "full",
+                  workspace: str = Depends(require_workspace)):
+    """TEMPORARY: diagnose the GMI lip-sync flow. step=identify returns the raw
+    identify-face response so we can find where session_id/face_id live."""
     try:
+        if step == "identify":
+            import httpx
+            from app.config import GMI_API_KEY
+            from app.pipelines import IDENTIFY_FACE_MODEL, _GMI_QUEUE, _gmi_submit_poll
+            from app.storage import presign_asset_url
+            v = presign_asset_url(video_url) or video_url
+            headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
+            with httpx.Client(timeout=60) as c:
+                st = _gmi_submit_poll(c, IDENTIFY_FACE_MODEL, {"video_url": v}, headers, 300)
+            return {"ok": True, "raw": st}
         return {"ok": True, "result": generate_lipsync(video_url, audio_url)}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
