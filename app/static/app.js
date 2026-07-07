@@ -79,6 +79,25 @@ function populateVoiceSelect(character) {
   updateVoiceNote();
 }
 
+let previewAudio = null;
+
+function previewSelectedVoice() {
+  const value = el("voice-select").value;
+  if (!value) return;
+  const [provider, ...rest] = value.split(":");
+  const voiceId = rest.join(":");
+  const button = el("voice-preview");
+  if (previewAudio) { previewAudio.pause(); previewAudio = null; }
+  previewAudio = new Audio(`/static/voice-samples/${provider}-${voiceId}.mp3`);
+  button.classList.add("playing");
+  previewAudio.addEventListener("ended", () => button.classList.remove("playing"));
+  previewAudio.addEventListener("error", () => {
+    button.classList.remove("playing");
+    toast("No sample available for this voice.", true);
+  });
+  previewAudio.play().catch(() => button.classList.remove("playing"));
+}
+
 function updateVoiceNote() {
   const note = el("voice-note");
   const provider = (el("voice-select").value || "").split(":")[0];
@@ -493,6 +512,7 @@ function init() {
   el("generate-image-button").addEventListener("click", () => generate("image"));
   el("generate-voice-button").addEventListener("click", () => generate("voice"));
   el("voice-select").addEventListener("change", saveVoice);
+  el("voice-preview").addEventListener("click", previewSelectedVoice);
   Promise.all([
     loadImageModels(),
     loadVoices(),

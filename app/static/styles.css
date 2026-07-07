@@ -403,6 +403,25 @@ h1, h2, h3 {
 
 .model-row select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 
+.preview-button {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-inset);
+  color: var(--brass);
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-button:hover { border-color: var(--brass); }
+.preview-button.playing { color: var(--ink-faint); }
+.preview-button:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
 .identity-row {
   display: flex;
   align-items: baseline;

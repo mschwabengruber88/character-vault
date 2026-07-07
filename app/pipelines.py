@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -14,6 +15,8 @@ from app.config import (
     ELEVENLABS_API_KEY,
     GMI_API_KEY,
 )
+
+logger = logging.getLogger("character_vault.pipelines")
 
 _sink: ObjectStorageSink | None = None
 
@@ -224,7 +227,6 @@ _OPENAI_VOICE_IDS = {v["id"] for v in OPENAI_VOICES}
 ELEVENLABS_VOICES = [
     {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "George — warm storyteller"},
     {"id": "nPczCjzI2devNBz1zQrb", "name": "Brian — deep, resonant"},
-    {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel — calm female"},
     {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah — soft news"},
     {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily — warm female"},
     {"id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Liam — youthful male"},
@@ -283,8 +285,13 @@ def generate_character_voice_line(
             asset["cost_usd"] = None  # ElevenLabs pricing is plan-dependent
             asset["voice"] = f"elevenlabs:{voice_id}"
             return asset
-        except Exception:
-            pass  # ElevenLabs unreachable (e.g. cloud IP block) → OpenAI fallback
+        except Exception as exc:
+            # Surface WHY it fell back (cloud IP block, quota, voice needs a
+            # paid plan, …) instead of silently swallowing it.
+            logger.warning(
+                "ElevenLabs voice %s unavailable, falling back to OpenAI: %s",
+                voice_id, exc,
+            )
 
     if voice_provider == "openai" and voice_id in _OPENAI_VOICE_IDS:
         voice = voice_id
