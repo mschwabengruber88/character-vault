@@ -241,13 +241,15 @@ def test_generate_image_uses_identity_references(client):
         )
         assert mock_gen.call_args.args[3] == []
 
-        # second portrait: the first one is passed as identity reference (original url)
+        # second portrait: the first one is passed as identity reference (original url + sha)
         client.post(
             f"/characters/{char_id}/generate/image",
             json={"prompt": "second portrait"},
             headers={"X-API-Key": API_KEY},
         )
-        assert mock_gen.call_args.args[3] == ["https://example.com/ref.png"]
+        assert mock_gen.call_args.args[3] == [
+            {"url": "https://example.com/ref.png", "sha256": "ref111"}
+        ]
 
         # use_identity=false skips references entirely
         client.post(

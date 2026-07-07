@@ -1,4 +1,6 @@
+import os
 import tempfile
+from pathlib import Path
 
 from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline, StepStatus
 from genblaze_core.models.asset import Asset
@@ -51,39 +53,67 @@ IMAGE_COST_USD = {"draft": 0.011, "final": 0.167}
 OPENAI_TTS_USD_PER_CHAR = 12 / 1_000_000
 
 
+def _fetch_references_to_temp(references: list[dict]) -> tuple[list[Asset], list[Path]]:
+    """Download reference originals from B2 to local .png temp files.
+
+    The OpenAI SDK infers upload MIME type from the file suffix, so the
+    provider's own https download (suffix .img) gets rejected as
+    octet-stream — local file:// inputs with a .png suffix don't. The
+    stored sha256 rides along so the provenance manifest stays stable.
+    """
+    from app.disclosure import _bucket_key
+    from app.storage import _s3_client
+
+    client = _s3_client()
+    assets: list[Asset] = []
+    temps: list[Path] = []
+    for ref in references[:3]:
+        data = client.get_object(Bucket=B2_BUCKET_NAME, Key=_bucket_key(ref["url"]))["Body"].read()
+        fd, tmp = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        path = Path(tmp)
+        path.write_bytes(data)
+        temps.append(path)
+        assets.append(Asset(url=path.as_uri(), media_type="image/png", sha256=ref.get("sha256")))
+    return assets, temps
+
+
 def generate_character_portrait(
     character_id: int,
     prompt: str,
     disclosure: str = "invisible",
-    references: list[str] | None = None,
+    references: list[dict] | None = None,
     quality: str = "draft",
 ) -> dict:
     from app.disclosure import apply_image_disclosure
-    from app.storage import presign_asset_url
 
     step_kwargs: dict = {}
     final_prompt = prompt
+    temps: list[Path] = []
     if references:
-        signed = [presign_asset_url(url) for url in references[:3]]
-        step_kwargs["external_inputs"] = [
-            Asset(url=u, media_type="image/png") for u in signed if u
-        ]
-        if step_kwargs["external_inputs"]:
+        inputs, temps = _fetch_references_to_temp(references)
+        if inputs:
+            step_kwargs["external_inputs"] = inputs
             final_prompt = IDENTITY_INSTRUCTION + prompt
 
-    result = (
-        Pipeline(f"character-{character_id}-portrait")
-        .step(
-            DalleProvider(),
-            model="gpt-image-1",
-            prompt=final_prompt,
-            modality=Modality.IMAGE,
-            size="1024x1024",
-            quality=QUALITY_TIERS[quality],
-            **step_kwargs,
+    try:
+        result = (
+            Pipeline(f"character-{character_id}-portrait")
+            .step(
+                DalleProvider(),
+                model="gpt-image-1",
+                prompt=final_prompt,
+                modality=Modality.IMAGE,
+                size="1024x1024",
+                quality=QUALITY_TIERS[quality],
+                **step_kwargs,
+            )
+            .run(sink=get_storage_sink(), timeout=180)
         )
-        .run(sink=get_storage_sink(), timeout=180)
-    )
+    finally:
+        for path in temps:
+            path.unlink(missing_ok=True)
+
     asset = _asset_result(result)
     asset["original_url"] = asset["url"]
     asset["url"] = apply_image_disclosure(asset["url"], result.manifest, disclosure)

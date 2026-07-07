@@ -83,7 +83,7 @@ class PortraitRequest(BaseModel):
     quality: Literal["draft", "final"] = "draft"
 
 
-def identity_references(character: dict) -> list[str]:
+def identity_references(character: dict) -> list[dict]:
     """Pick reference images for consistent identity: the character's first
     portrait anchors the identity, plus up to two of the newest portraits.
     Uses the untouched originals, never watermarked copies."""
@@ -96,7 +96,10 @@ def identity_references(character: dict) -> list[str]:
     for asset in picked:
         if asset["id"] not in seen:
             seen.add(asset["id"])
-            refs.append(asset.get("original_url") or asset["url"])
+            refs.append({
+                "url": asset.get("original_url") or asset["url"],
+                "sha256": asset.get("sha256"),
+            })
     return refs
 
 
