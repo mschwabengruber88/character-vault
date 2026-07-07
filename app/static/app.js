@@ -58,23 +58,49 @@ async function loadVoices() {
   state.voices = await api("/voices").catch(() => ({}));
 }
 
+function voiceOptionLabel(voice) {
+  return voice.style ? `${voice.name} — ${voice.style}` : voice.name;
+}
+
 function populateVoiceSelect(character) {
+  state.currentCharacter = character;
+  renderVoiceOptions();
+}
+
+function renderVoiceOptions() {
+  const character = state.currentCharacter;
+  if (!character) return;
   const select = el("voice-select");
-  select.innerHTML = "";
+  const gender = el("filter-gender").value;
+  const age = el("filter-age").value;
   const assigned = character.voice_id || "";
+  const assignedProvider = character.voice_provider || "";
+  select.innerHTML = "";
+  let shown = 0;
   for (const [provider, voices] of Object.entries(state.voices)) {
+    const filtered = voices.filter((v) => {
+      const isAssigned = provider === assignedProvider && v.id === assigned;
+      const matches = (!gender || v.gender === gender) && (!age || v.age === age);
+      return matches || isAssigned;
+    });
+    if (!filtered.length) continue;
     const group = document.createElement("optgroup");
     group.label = PROVIDER_LABEL[provider] || provider;
-    for (const voice of voices) {
+    for (const voice of filtered) {
       const option = document.createElement("option");
       option.value = `${provider}:${voice.id}`;
-      option.textContent = voice.name;
-      if (provider === character.voice_provider && voice.id === assigned) {
-        option.selected = true;
-      }
+      option.textContent = voiceOptionLabel(voice);
+      if (provider === assignedProvider && voice.id === assigned) option.selected = true;
       group.appendChild(option);
+      shown += 1;
     }
     select.appendChild(group);
+  }
+  if (shown === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No voices match these filters";
+    opt.disabled = true;
+    select.appendChild(opt);
   }
   updateVoiceNote();
 }
@@ -212,6 +238,7 @@ async function selectCharacter(id) {
 }
 
 function renderDetail(character) {
+  hideScenesView();
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
   if (!character) return;
@@ -494,6 +521,154 @@ function setupKeyDialog() {
 
 /* ---------- Init ---------- */
 
+/* ---------- Scenes / storytelling ---------- */
+
+function showScenesView() {
+  state.selectedId = null;
+  renderCharacterList();
+  el("detail-placeholder").hidden = true;
+  el("detail-content").hidden = true;
+  el("scenes-view").hidden = false;
+  el("open-scenes").classList.add("active");
+  renderSceneParticipants();
+  loadScenes();
+}
+
+function hideScenesView() {
+  el("scenes-view").hidden = true;
+  el("open-scenes").classList.remove("active");
+}
+
+function renderSceneParticipants() {
+  const box = el("scene-participants");
+  box.innerHTML = "";
+  const withPortrait = state.characters.filter((c) => c.thumbnail_url);
+  if (!withPortrait.length) {
+    box.innerHTML = '<p class="empty-note">Create at least two characters with a portrait first.</p>';
+    return;
+  }
+  for (const character of withPortrait) {
+    const label = document.createElement("label");
+    label.className = "participant";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = String(character.id);
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    const img = document.createElement("img");
+    img.src = character.thumbnail_url;
+    img.alt = "";
+    avatar.appendChild(img);
+    const name = document.createElement("span");
+    name.textContent = character.name;
+    label.append(cb, avatar, name);
+    box.appendChild(label);
+  }
+}
+
+async function loadScenes() {
+  try {
+    const scenes = await api("/scenes");
+    renderScenes(scenes);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderScenes(scenes) {
+  const grid = el("scene-grid");
+  grid.innerHTML = "";
+  el("scene-empty").hidden = scenes.length > 0;
+  for (const scene of scenes) {
+    const card = document.createElement("div");
+    card.className = "asset-card";
+    if (scene.signed_url) {
+      const img = document.createElement("img");
+      img.src = scene.signed_url;
+      img.alt = scene.prompt;
+      img.loading = "lazy";
+      img.tabIndex = 0;
+      img.addEventListener("click", () => openLightbox(scene.signed_url, scene.prompt));
+      card.appendChild(img);
+    }
+    const body = document.createElement("div");
+    body.className = "asset-body";
+    const who = document.createElement("p");
+    who.className = "scene-who";
+    who.textContent = (scene.participant_names || []).join(" + ");
+    body.appendChild(who);
+    const prompt = document.createElement("p");
+    prompt.className = "asset-prompt";
+    prompt.textContent = scene.prompt;
+    body.appendChild(prompt);
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    time.textContent = `${formatTimestamp(scene.created_at)}${typeof scene.cost_usd === "number" ? ` · $${scene.cost_usd.toFixed(3)}` : ""}`;
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    if (scene.signed_url) {
+      const open = document.createElement("a");
+      open.href = scene.signed_url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.textContent = "Open ↗";
+      actions.appendChild(open);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this scene?")) return;
+      try { await api(`/scenes/${scene.id}`, { method: "DELETE" }); loadScenes(); toast("Scene deleted."); }
+      catch (err) { toast(err.message, true); }
+    });
+    actions.appendChild(remove);
+    meta.appendChild(actions);
+    body.appendChild(meta);
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
+let sceneGenerating = false;
+
+async function generateScene() {
+  if (sceneGenerating) return;
+  const ids = [...document.querySelectorAll("#scene-participants input:checked")].map((c) => Number(c.value));
+  const prompt = el("scene-prompt").value.trim();
+  if (ids.length < 2) { toast("Pick at least two characters.", true); return; }
+  if (ids.length > 4) { toast("Pick at most four characters.", true); return; }
+  if (!prompt) { toast("Describe the scene first.", true); el("scene-prompt").focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  sceneGenerating = true;
+  el("generate-scene-button").disabled = true;
+  const status = el("scene-status");
+  status.classList.remove("error");
+  status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Composing the scene with Nano Banana… 20–60 seconds.';
+  status.hidden = false;
+  try {
+    await api("/scenes", {
+      method: "POST",
+      headers: { "X-API-Key": apiKey() },
+      body: JSON.stringify({ character_ids: ids, prompt }),
+    });
+    el("scene-prompt").value = "";
+    status.hidden = true;
+    await loadScenes();
+    toast("Scene created.");
+  } catch (err) {
+    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Scene generation needs a valid API key.", true); }
+    else { status.classList.add("error"); status.textContent = err.message; }
+  } finally {
+    sceneGenerating = false;
+    el("generate-scene-button").disabled = false;
+  }
+}
+
 function setupLightbox() {
   const lightbox = el("lightbox");
   el("lightbox-close").addEventListener("click", () => lightbox.close());
@@ -513,6 +688,10 @@ function init() {
   el("generate-voice-button").addEventListener("click", () => generate("voice"));
   el("voice-select").addEventListener("change", saveVoice);
   el("voice-preview").addEventListener("click", previewSelectedVoice);
+  el("filter-gender").addEventListener("change", renderVoiceOptions);
+  el("filter-age").addEventListener("change", renderVoiceOptions);
+  el("open-scenes").addEventListener("click", showScenesView);
+  el("generate-scene-button").addEventListener("click", generateScene);
   Promise.all([
     loadImageModels(),
     loadVoices(),

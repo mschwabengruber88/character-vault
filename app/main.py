@@ -127,13 +127,17 @@ class SceneRequest(BaseModel):
     disclosure: Literal["visible", "invisible"] = "invisible"
 
 
-def scene_reference(character: dict) -> dict | None:
-    """One identity anchor (first portrait, untouched original) per character."""
+def scene_reference(character: dict) -> tuple[dict, str] | None:
+    """One identity anchor (first portrait) per character, plus an appearance
+    descriptor built from the character's name and that portrait's prompt."""
     images = [a for a in character["assets"] if a["kind"] == "image"]
     if not images:
         return None
     anchor = images[0]
-    return {"url": anchor.get("original_url") or anchor["url"], "sha256": anchor.get("sha256")}
+    ref = {"url": anchor.get("original_url") or anchor["url"], "sha256": anchor.get("sha256")}
+    appearance = (anchor.get("prompt") or "").strip()[:160]
+    descriptor = f"{character['name']} ({appearance})" if appearance else character["name"]
+    return ref, descriptor
 
 
 @app.get("/health")
@@ -286,18 +290,20 @@ def list_scenes():
 
 @app.post("/scenes", dependencies=[Depends(require_api_key)])
 def create_scene(body: SceneRequest):
-    references, names, ids = [], [], []
+    references, descriptors, names, ids = [], [], [], []
     for cid in body.character_ids:
         character = db.get_character(cid)
         if character is None:
             raise HTTPException(status_code=404, detail=f"Character {cid} not found")
-        ref = scene_reference(character)
-        if ref is None:
+        result = scene_reference(character)
+        if result is None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Character '{character['name']}' has no portrait to use as reference.",
             )
+        ref, descriptor = result
         references.append(ref)
+        descriptors.append(descriptor)
         names.append(character["name"])
         ids.append(cid)
 
@@ -310,7 +316,7 @@ def create_scene(body: SceneRequest):
 
     with generation_slot(0, "scene"):
         try:
-            result = generate_scene(body.prompt, references, body.disclosure)
+            result = generate_scene(body.prompt, references, descriptors, body.disclosure)
         except HTTPException:
             raise
         except Exception:

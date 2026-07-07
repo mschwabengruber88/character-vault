@@ -1,0 +1,230 @@
+{
+  "openai": [
+    {
+      "id": "alloy",
+      "name": "Alloy",
+      "provider": "openai",
+      "gender": "neutral",
+      "age": "adult",
+      "style": "balanced"
+    },
+    {
+      "id": "ash",
+      "name": "Ash",
+      "provider": "openai",
+      "gender": "male",
+      "age": "adult",
+      "style": "warm"
+    },
+    {
+      "id": "ballad",
+      "name": "Ballad",
+      "provider": "openai",
+      "gender": "male",
+      "age": "young",
+      "style": "soft"
+    },
+    {
+      "id": "coral",
+      "name": "Coral",
+      "provider": "openai",
+      "gender": "female",
+      "age": "young",
+      "style": "bright"
+    },
+    {
+      "id": "echo",
+      "name": "Echo",
+      "provider": "openai",
+      "gender": "male",
+      "age": "adult",
+      "style": "calm"
+    },
+    {
+      "id": "fable",
+      "name": "Fable",
+      "provider": "openai",
+      "gender": "neutral",
+      "age": "adult",
+      "style": "storyteller"
+    },
+    {
+      "id": "nova",
+      "name": "Nova",
+      "provider": "openai",
+      "gender": "female",
+      "age": "young",
+      "style": "friendly"
+    },
+    {
+      "id": "onyx",
+      "name": "Onyx",
+      "provider": "openai",
+      "gender": "male",
+      "age": "mature",
+      "style": "deep"
+    },
+    {
+      "id": "sage",
+      "name": "Sage",
+      "provider": "openai",
+      "gender": "female",
+      "age": "adult",
+      "style": "measured"
+    },
+    {
+      "id": "shimmer",
+      "name": "Shimmer",
+      "provider": "openai",
+      "gender": "female",
+      "age": "young",
+      "style": "light"
+    }
+  ],
+  "elevenlabs": [
+    {
+      "id": "CwhRBWXzGAHq8TQ4Fs17",
+      "name": "Roger",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "adult",
+      "style": "casual"
+    },
+    {
+      "id": "EXAVITQu4vr4xnSDxMaL",
+      "name": "Sarah",
+      "provider": "elevenlabs",
+      "gender": "female",
+      "age": "young",
+      "style": "soft"
+    },
+    {
+      "id": "FGY2WhTYpPnrIDTdsKH5",
+      "name": "Laura",
+      "provider": "elevenlabs",
+      "gender": "female",
+      "age": "young",
+      "style": "sassy"
+    },
+    {
+      "id": "IKne3meq5aSn9XLyUdCD",
+      "name": "Charlie",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "adult",
+      "style": "casual"
+    },
+    {
+      "id": "JBFqnCBsd6RMkjVDRZzb",
+      "name": "George",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "mature",
+      "style": "warm storyteller"
+    },
+    {
+      "id": "N2lVS1w4EtoT3dr4eOWO",
+      "name": "Callum",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "adult",
+      "style": "intense"
+    },
+    {
+      "id": "SAz9YHcvj6GT2YYXdXww",
+      "name": "River",
+      "provider": "elevenlabs",
+      "gender": "neutral",
+      "age": "adult",
+      "style": "calm"
+    },
+    {
+      "id": "TX3LPaxmHKxFdv7VOQHJ",
+      "name": "Liam",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "young",
+      "style": "articulate"
+    },
+    {
+      "id": "Xb7hH8MSUJpSbSDYk0k2",
+      "name": "Alice",
+      "provider": "elevenlabs",
+      "gender": "female",
+      "age": "adult",
+      "style": "confident"
+    },
+    {
+      "id": "XrExE9yKIg1WjnnlVkGX",
+      "name": "Matilda",
+      "provider": "elevenlabs",
+      "gender": "female",
+      "age": "adult",
+      "style": "warm"
+    },
+    {
+      "id": "bIHbv24MWmeRgasZH58o",
+      "name": "Will",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "young",
+      "style": "friendly"
+    },
+    {
+      "id": "cgSgspJ2msm6clMCkdW9",
+      "name": "Jessica",
+      "provider": "elevenlabs",
+      "gender": "female",
+      "age": "young",
+      "style": "playful"
+    },
+    {
+      "id": "cjVigY5qzO86Huf0OWal",
+      "name": "Eric",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "adult",
+      "style": "smooth"
+    },
+    {
+      "id": "iP95p4xoKVk53GoZ742B",
+      "name": "Chris",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "adult",
+      "style": "casual"
+    },
+    {
+      "id": "nPczCjzI2devNBz1zQrb",
+      "name": "Brian",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "mature",
+      "style": "deep"
+    },
+    {
+      "id": "onwK4e9ZLuTAKqWW03F9",
+      "name": "Daniel",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "adult",
+      "style": "news"
+    },
+    {
+      "id": "pFZP5JQG7iQjIQuC4Bku",
+      "name": "Lily",
+      "provider": "elevenlabs",
+      "gender": "female",
+      "age": "adult",
+      "style": "warm"
+    },
+    {
+      "id": "pqHfZKP75CvOlQylNhV4",
+      "name": "Bill",
+      "provider": "elevenlabs",
+      "gender": "male",
+      "age": "mature",
+      "style": "trustworthy"
+    }
+  ]
+}

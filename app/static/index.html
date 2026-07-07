@@ -39,6 +39,8 @@
 
       <ul id="character-list" class="character-list"></ul>
       <p id="character-empty" class="empty-note" hidden>No characters yet. Create your first one.</p>
+
+      <button id="open-scenes" class="scenes-nav">▦ Scenes / Story</button>
     </aside>
 
     <section class="detail" id="detail">
@@ -98,6 +100,20 @@
             <h3>Voice line</h3>
             <p class="generate-hint">Genblaze TTS → Backblaze B2</p>
             <textarea id="voice-text" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
+            <div class="voice-filters">
+              <select id="filter-gender" class="filter-select" aria-label="Filter by gender">
+                <option value="">Any gender</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="neutral">Neutral</option>
+              </select>
+              <select id="filter-age" class="filter-select" aria-label="Filter by age">
+                <option value="">Any age</option>
+                <option value="young">Young / teen</option>
+                <option value="adult">Adult</option>
+                <option value="mature">Mature</option>
+              </select>
+            </div>
             <label class="model-row">
               <span class="model-label">Voice</span>
               <select id="voice-select"></select>
@@ -113,6 +129,30 @@
         <h3 class="assets-heading">Assets</h3>
         <div id="asset-grid" class="asset-grid"></div>
         <p id="asset-empty" class="empty-note" hidden>No assets yet — generate a portrait or voice line above.</p>
+      </div>
+
+      <div id="scenes-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2>Scenes &amp; Storytelling</h2>
+            <p class="detail-description">Bring two or more of your characters together in one image — manga panels, picture-book pages. Each keeps their own look via Nano Banana multi-character composition.</p>
+          </div>
+        </div>
+
+        <div class="generate-card scene-composer">
+          <h3>New scene</h3>
+          <p class="generate-hint">Nano Banana multi-character composition → Backblaze B2</p>
+          <p class="scene-sub">Pick the characters in the scene (2–4):</p>
+          <div id="scene-participants" class="scene-participants"></div>
+          <textarea id="scene-prompt" placeholder="Describe the scene, e.g. 'the two of them talking by the classroom window, manga panel'" maxlength="500" rows="2"></textarea>
+          <button id="generate-scene-button" class="button primary">Generate scene</button>
+        </div>
+
+        <div id="scene-status" class="generation-status" hidden></div>
+
+        <h3 class="assets-heading">Your scenes</h3>
+        <div id="scene-grid" class="asset-grid"></div>
+        <p id="scene-empty" class="empty-note" hidden>No scenes yet — pick characters and describe a scene above.</p>
       </div>
     </section>
 

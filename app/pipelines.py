@@ -46,9 +46,9 @@ def _asset_result(result) -> dict:
 
 
 SCENE_INSTRUCTION = (
-    "Compose a single new image that includes ALL of the characters shown in "
-    "the reference images together in one scene. Keep each character's identity "
-    "consistent with their reference — same face, hair, and outfit style. Scene: "
+    "Compose a single new image containing ALL of these characters together in "
+    "one scene, each matching their own reference image exactly (same face, hair, "
+    "colors, and outfit). Do not merge or swap their features. "
 )
 
 IDENTITY_INSTRUCTION = (
@@ -209,10 +209,19 @@ def generate_character_portrait(
     return asset
 
 
-def generate_scene(prompt: str, references: list[dict], disclosure: str = "invisible") -> dict:
+def generate_scene(
+    prompt: str,
+    references: list[dict],
+    descriptors: list[str] | None = None,
+    disclosure: str = "invisible",
+) -> dict:
     """Compose one scene containing MULTIPLE characters, each kept consistent
     with their reference. Only Nano Banana (multi-image composition) is used —
-    it's the model that actually holds several identities in one frame."""
+    it's the model that actually holds several identities in one frame.
+
+    `descriptors` (one appearance line per character, in reference order) gives
+    the model a per-character text anchor, which markedly improves fidelity of
+    the 2nd+ character vs. a bare "put them together" instruction."""
     from app.disclosure import apply_image_disclosure
     from genblaze_gmicloud import GMICloudImageProvider
 
@@ -220,12 +229,18 @@ def generate_scene(prompt: str, references: list[dict], disclosure: str = "invis
     if len(inputs) < 2:
         raise ValueError("A scene needs at least two character references.")
 
+    who = ""
+    if descriptors:
+        lines = "; ".join(f"reference {i + 1} = {d}" for i, d in enumerate(descriptors))
+        who = f"The characters are: {lines}. "
+    full_prompt = f"{SCENE_INSTRUCTION}{who}Scene: {prompt}"
+
     result = (
         Pipeline("multi-character-scene")
         .step(
             GMICloudImageProvider(),
             model="gemini-2.5-flash-image",
-            prompt=SCENE_INSTRUCTION + prompt,
+            prompt=full_prompt,
             modality=Modality.IMAGE,
             external_inputs=inputs,
         )
@@ -246,29 +261,23 @@ def generate_scene(prompt: str, references: list[dict], disclosure: str = "invis
 # richer but its free tier blocks datacenter IPs, so from the cloud it may
 # be unreachable — those requests fall back to a deterministic OpenAI voice,
 # and the asset records which voice actually spoke.
-OPENAI_VOICES = [
-    {"id": "alloy", "name": "Alloy — neutral"},
-    {"id": "ash", "name": "Ash — warm male"},
-    {"id": "ballad", "name": "Ballad — soft male"},
-    {"id": "coral", "name": "Coral — bright female"},
-    {"id": "echo", "name": "Echo — calm male"},
-    {"id": "fable", "name": "Fable — expressive"},
-    {"id": "nova", "name": "Nova — friendly female"},
-    {"id": "onyx", "name": "Onyx — deep male"},
-    {"id": "sage", "name": "Sage — measured"},
-    {"id": "shimmer", "name": "Shimmer — light female"},
-]
-_OPENAI_VOICE_IDS = {v["id"] for v in OPENAI_VOICES}
+# The catalog (id/name/gender/age/style per voice) is generated alongside the
+# sample clips by scripts/generate_voice_samples.py and committed. Loaded once.
+def _load_voice_catalog() -> dict:
+    import json
 
-# Curated ElevenLabs premade voices (stable public IDs) so the picker works
-# without a server-side ElevenLabs call (which is blocked in the cloud).
-ELEVENLABS_VOICES = [
-    {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "George — warm storyteller"},
-    {"id": "nPczCjzI2devNBz1zQrb", "name": "Brian — deep, resonant"},
-    {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah — soft news"},
-    {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily — warm female"},
-    {"id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Liam — youthful male"},
-]
+    path = Path(__file__).parent / "static" / "voice-samples" / "catalog.json"
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {"openai": [{"id": "onyx", "name": "Onyx", "gender": "male",
+                            "age": "mature", "style": "deep"}], "elevenlabs": []}
+
+
+VOICE_CATALOG = _load_voice_catalog()
+OPENAI_VOICES = VOICE_CATALOG.get("openai", [])
+ELEVENLABS_VOICES = VOICE_CATALOG.get("elevenlabs", [])
+_OPENAI_VOICE_IDS = {v["id"] for v in OPENAI_VOICES}
 
 
 def available_voices() -> dict:

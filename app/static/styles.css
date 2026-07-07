@@ -194,6 +194,58 @@ h1, h2, h3 {
   white-space: nowrap;
 }
 
+.scenes-nav {
+  width: 100%;
+  margin-top: 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.scenes-nav:hover { border-color: var(--brass); color: var(--brass); }
+.scenes-nav.active { border-color: var(--brass-deep); color: var(--brass); background: color-mix(in srgb, var(--brass) 6%, transparent); }
+
+.scene-sub { font-size: 13px; color: var(--ink-soft); margin: 0; }
+
+.scene-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 99px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.participant:has(input:checked) {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 8%, transparent);
+  color: var(--brass);
+}
+
+.participant input { accent-color: var(--brass); }
+.participant .avatar { width: 24px; height: 24px; }
+
+.scene-who {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--brass);
+}
+
 /* ---------- Detail ---------- */
 
 .detail { padding: 26px 30px; min-width: 0; }
@@ -417,6 +469,24 @@ h1, h2, h3 {
   align-items: center;
   justify-content: center;
 }
+
+.voice-filters {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-select {
+  flex: 1;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.filter-select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 
 .preview-button:hover { border-color: var(--brass); }
 .preview-button.playing { color: var(--ink-faint); }
