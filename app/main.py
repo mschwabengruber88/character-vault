@@ -174,7 +174,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Character Vault", lifespan=lifespan)
+app = FastAPI(title="Loomina", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

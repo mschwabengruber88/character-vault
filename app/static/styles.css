@@ -1,18 +1,26 @@
 :root {
-  --bg: #16171a;
-  --bg-raised: #1e2024;
-  --bg-inset: #121316;
-  --line: #2c2f35;
-  --line-strong: #3a3e46;
-  --ink: #e8e6e1;
-  --ink-soft: #a5a29b;
-  --ink-faint: #6e6c66;
-  --brass: #c9a35c;
-  --brass-deep: #a5823f;
-  --brass-ink: #16171a;
-  --green: #7fb069;
-  --red: #c96b5c;
-  --radius: 6px;
+  --bg: #0B0A16;
+  --bg-raised: #171331;
+  --bg-inset: #100E20;
+  --line: rgba(157, 140, 255, 0.16);
+  --line-strong: rgba(157, 140, 255, 0.32);
+  --ink: #EDEBFA;
+  --ink-soft: #B7B2D8;
+  --ink-faint: #8E86B8;
+  /* "brass" is repurposed as the primary violet accent so every existing
+     usage recolours to the glow palette at once. */
+  --brass: #9D5BFF;
+  --brass-deep: #7A3BFF;
+  --brass-ink: #0B0A16;
+  --cyan: #22E6FF;
+  --violet: #9D5BFF;
+  --pink: #FF3DA5;
+  --lime: #A8FF35;
+  --amber: #FFB84D;
+  --grad: linear-gradient(92deg, #22E6FF, #9D5BFF 55%, #FF3DA5);
+  --green: #A8FF35;
+  --red: #FF5C8A;
+  --radius: 10px;
 }
 
 * { box-sizing: border-box; }
@@ -31,11 +39,20 @@ body {
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  /* ambient glow blooms — luminous, cheap (no blur), fixed to the viewport */
+  background:
+    radial-gradient(620px 460px at 8% -5%, rgba(122, 59, 255, 0.22), transparent 60%),
+    radial-gradient(560px 420px at 102% 12%, rgba(255, 61, 165, 0.16), transparent 60%),
+    radial-gradient(600px 520px at 50% 108%, rgba(34, 211, 255, 0.15), transparent 62%),
+    var(--bg);
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
-h1, h2, h3 {
-  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-  font-weight: 700;
+h1, h2, h3, h4 {
+  font-family: -apple-system, "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   margin: 0;
   text-wrap: balance;
 }
@@ -59,14 +76,23 @@ h1, h2, h3 {
 }
 
 .wordmark-glyph {
-  color: var(--brass);
   font-size: 20px;
   line-height: 1;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 10px rgba(157, 91, 255, 0.6));
 }
 
 .wordmark h1 {
-  font-size: 19px;
-  letter-spacing: 0.01em;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(157, 91, 255, 0.45));
 }
 
 .topbar-right {
@@ -191,7 +217,7 @@ h1, h2, h3 {
   background: var(--bg-raised);
   border: 1px solid var(--line-strong);
   color: var(--brass);
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 14px;
 }
 
@@ -924,9 +950,20 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 }
 
 .button:hover { border-color: var(--ink-faint); }
-.button.primary { background: var(--brass); border-color: var(--brass); color: var(--brass-ink); }
-.button.primary:hover { background: var(--brass-deep); border-color: var(--brass-deep); }
-.button.primary:disabled { opacity: 0.55; cursor: default; }
+.button.primary {
+  background: var(--grad);
+  background-size: 140% 100%;
+  border: none;
+  color: #0B0A16;
+  font-weight: 700;
+  box-shadow: 0 0 20px rgba(34, 230, 255, 0.35), 0 0 34px rgba(157, 91, 255, 0.28);
+  transition: background-position 0.3s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+.button.primary:hover {
+  background-position: 100% 0;
+  box-shadow: 0 0 26px rgba(255, 61, 165, 0.45), 0 0 44px rgba(157, 91, 255, 0.35);
+}
+.button.primary:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 .button.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); background: none; }
 .button.danger:hover { border-color: var(--red); }
 .button.small { padding: 5px 11px; font-size: 13px; }
@@ -1109,11 +1146,16 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 }
 
 .landing-title {
-  font-size: clamp(30px, 4.4vw, 46px);
-  line-height: 1.08;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 1.04;
   margin: 0 0 18px;
-  max-width: 18ch;
+  max-width: 16ch;
   text-wrap: balance;
+  background: linear-gradient(96deg, #22E6FF 0%, #9D5BFF 45%, #FF3DA5 78%, #FFB84D 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 22px rgba(157, 91, 255, 0.4));
 }
 
 .landing-sub {
@@ -1152,19 +1194,29 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 }
 
 .landing-card {
-  background: var(--bg-raised);
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 14px;
   padding: 20px 18px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.landing-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 28px rgba(157, 91, 255, 0.18);
+  transform: translateY(-2px);
 }
 .landing-card-icon {
   display: block;
-  font-size: 22px;
-  color: var(--brass);
+  font-size: 24px;
   margin-bottom: 12px;
+  filter: drop-shadow(0 0 10px rgba(34, 230, 255, 0.5));
 }
+.landing-card:nth-child(1) .landing-card-icon { color: var(--cyan); }
+.landing-card:nth-child(2) .landing-card-icon { color: var(--violet); }
+.landing-card:nth-child(3) .landing-card-icon { color: var(--pink); }
+.landing-card:nth-child(4) .landing-card-icon { color: var(--lime); }
 .landing-card h4 {
-  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font-family: inherit; font-weight: 800;
   font-size: 17px;
   font-weight: 700;
   margin: 0 0 8px;
