@@ -901,6 +901,15 @@ def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
         raise HTTPException(status_code=404, detail="Video not found")
 
 
+@app.get("/debug/lipsync", include_in_schema=False)
+def debug_lipsync(video_url: str, audio_url: str, workspace: str = Depends(require_workspace)):
+    """TEMPORARY: run only the lip-sync step to surface the raw GMI error."""
+    try:
+        return {"ok": True, "result": generate_lipsync(video_url, audio_url)}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 class ScriptRequest(BaseModel):
     idea: str = Field(min_length=1, max_length=2000)
     format: Literal["story", "video", "manga", "dialogue"] = "story"

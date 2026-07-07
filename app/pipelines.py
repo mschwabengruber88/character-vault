@@ -430,11 +430,12 @@ def generate_lipsync(video_url: str, audio_url: str) -> dict:
 
     with httpx.Client(timeout=60) as client:
         resp = client.post(_GMI_QUEUE, json=body, headers=headers)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RuntimeError(f"lip-sync submit {resp.status_code}: {resp.text[:500]}")
         submitted = resp.json()
-        rid = _dig(submitted, "request_id", "id", "requestId")
+        rid = _dig(submitted, "request_id", "id", "requestId") or _dig(_dig(submitted, "data") or {}, "request_id", "id")
         if not rid:
-            raise RuntimeError(f"lip-sync submit returned no request id: {submitted}")
+            raise RuntimeError(f"lip-sync submit returned no request id: {str(submitted)[:400]}")
 
         deadline = _time.time() + 600
         out_url = None
