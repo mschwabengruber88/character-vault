@@ -54,19 +54,16 @@ IMAGE_COST_USD = {"draft": 0.011, "final": 0.167}
 # identity conditioning from reference images — purpose-built for keeping the
 # same character across scenes. GMI models take references as HTTPS URLs;
 # OpenAI takes them as local files (different SDK requirements).
+# Note: GMI's flux-kontext-pro is deployed as text-to-image ONLY (no image
+# input), so it cannot do identity conditioning from a reference — it would
+# silently ignore the reference. It's deliberately not offered here.
+# gemini-2.5-flash-image (Nano Banana) is the verified identity model.
 IMAGE_MODELS = {
     "gpt-image-1": {
         "label": "OpenAI gpt-image-1",
         "provider": "openai",
         "identity": False,
         "quality_tiers": True,
-    },
-    "flux-kontext-pro": {
-        "label": "FLUX.1 Kontext (identity)",
-        "provider": "gmi",
-        "identity": True,
-        "quality_tiers": False,
-        "cost_usd": 0.04,  # GMI list price estimate
     },
     "gemini-2.5-flash-image": {
         "label": "Nano Banana / Gemini 2.5 Flash Image (identity)",
