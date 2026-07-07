@@ -915,6 +915,71 @@ def test_voice_fixed_on_character(client):
     assert bad.status_code == 400
 
 
+def test_talking_video_prefers_lipsync(client):
+    """The talking path uses lip-sync first; mux is only the fallback."""
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    cid = client.post("/characters", json={
+        "name": "Lippy", "voice_provider": "openai", "voice_id": "nova"}).json()["id"]
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("l")):
+        client.post(f"/characters/{cid}/generate/image",
+                    json={"prompt": "p"}, headers={"X-API-Key": API_KEY})
+    with patch("app.main.available_video_models",
+               return_value=[{"slug": "Kling-Image2Video-V2.1-Master", "needs_image": True}]), \
+         patch.dict("app.main.VIDEO_MODELS",
+                    {"Kling-Image2Video-V2.1-Master": {"label": "k", "needs_image": True, "audio": False}}, clear=True), \
+         patch("app.main.generate_video", return_value={
+             "url": "https://ex/v.mp4", "original_url": "https://ex/v.mp4", "sha256": "v",
+             "mime_type": "video/mp4", "manifest_verified": True, "cost_usd": None}), \
+         patch("app.main.generate_character_voice_line", return_value={
+             "url": "https://ex/a.mp3", "sha256": "a", "mime_type": "audio/mpeg",
+             "manifest_verified": True, "cost_usd": 0.0006, "voice": "openai:nova"}), \
+         patch("app.main.generate_lipsync", return_value={
+             "url": "https://ex/lipsync.mp4", "sha256": "ls", "mime_type": "video/mp4"}) as mock_ls, \
+         patch("app.main.mux_video_with_audio") as mock_mux:
+        resp = client.post("/videos", json={
+            "prompt": "she talks", "model": "Kling-Image2Video-V2.1-Master",
+            "character_id": cid, "speech": "Hi there."}, headers={"X-API-Key": API_KEY})
+        job = _await_video(client, resp.json()["id"])
+    assert job["status"] == "done"
+    assert job["url"] == "https://ex/lipsync.mp4"  # lip-synced, not muxed
+    mock_ls.assert_called_once_with("https://ex/v.mp4", "https://ex/a.mp3")
+    mock_mux.assert_not_called()
+    rate_limiter.reset()
+
+
+def test_talking_video_falls_back_to_mux(client):
+    """If lip-sync fails, the mux fallback keeps the talking feature working."""
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    cid = client.post("/characters", json={
+        "name": "Fally", "voice_provider": "openai", "voice_id": "nova"}).json()["id"]
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("f")):
+        client.post(f"/characters/{cid}/generate/image",
+                    json={"prompt": "p"}, headers={"X-API-Key": API_KEY})
+    with patch("app.main.available_video_models",
+               return_value=[{"slug": "Kling-Image2Video-V2.1-Master", "needs_image": True}]), \
+         patch.dict("app.main.VIDEO_MODELS",
+                    {"Kling-Image2Video-V2.1-Master": {"label": "k", "needs_image": True, "audio": False}}, clear=True), \
+         patch("app.main.generate_video", return_value={
+             "url": "https://ex/v.mp4", "original_url": "https://ex/v.mp4", "sha256": "v",
+             "mime_type": "video/mp4", "manifest_verified": True, "cost_usd": None}), \
+         patch("app.main.generate_character_voice_line", return_value={
+             "url": "https://ex/a.mp3", "sha256": "a", "mime_type": "audio/mpeg",
+             "manifest_verified": True, "cost_usd": 0.0006, "voice": "openai:nova"}), \
+         patch("app.main.generate_lipsync", side_effect=RuntimeError("lipsync down")), \
+         patch("app.main.mux_video_with_audio", return_value={
+             "url": "https://ex/muxed.mp4", "sha256": "mx", "mime_type": "video/mp4"}) as mock_mux:
+        resp = client.post("/videos", json={
+            "prompt": "she talks", "model": "Kling-Image2Video-V2.1-Master",
+            "character_id": cid, "speech": "Hi there."}, headers={"X-API-Key": API_KEY})
+        job = _await_video(client, resp.json()["id"])
+    assert job["status"] == "done"
+    assert job["url"] == "https://ex/muxed.mp4"  # fell back to mux
+    mock_mux.assert_called_once()
+    rate_limiter.reset()
+
+
 def test_talking_video_muxes_speech(client):
     from app.main import rate_limiter
     rate_limiter.reset()

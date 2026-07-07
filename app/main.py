@@ -40,6 +40,7 @@ from app.pipelines import (
     generate_script,
     generate_studio_image,
     generate_video,
+    generate_lipsync,
     mux_video_with_audio,
 )
 from app.storage import presign_asset_url, upload_reference_image, with_signed_url
@@ -802,10 +803,16 @@ def _run_video(scope, video_id: int, prompt: str, model: str, reference: dict | 
                 voice = generate_character_voice_line(
                     character_id or 0, speech.strip(), voice_provider, voice_id,
                 )
-                talking = mux_video_with_audio(result["url"], voice["url"])
+                try:
+                    # Pipeline 2: real audio-driven lip-sync (kling-lip-sync).
+                    talking = generate_lipsync(result["url"], voice["url"])
+                except Exception:
+                    # Robust fallback: audio muxed onto the motion clip.
+                    logger.exception("Lip-sync failed for video %s — falling back to mux", video_id)
+                    talking = mux_video_with_audio(result["url"], voice["url"])
                 url, sha, mime = talking["url"], talking["sha256"], talking["mime_type"]
             except Exception:
-                logger.exception("Muxing speech onto video %s failed — keeping silent clip", video_id)
+                logger.exception("Adding speech to video %s failed — keeping silent clip", video_id)
         db.finish_video(
             video_id, status="done", url=url, original_url=result.get("original_url"),
             sha256=sha, mime_type=mime, cost_usd=result.get("cost_usd"),

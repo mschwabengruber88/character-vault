@@ -392,6 +392,73 @@ def available_video_models() -> list[dict]:
     ]
 
 
+# ── Lip-sync (Pipeline 2): audio-driven talking video ────────────────────
+# GMI hosts kling-lip-sync (Audio-to-Video): feed a short face video + an audio
+# track and it re-renders the mouth to match the speech — real lip-sync, not
+# audio laid over motion. It's not in the Genblaze SDK's model registry, so we
+# call GMI's request-queue REST API directly (same key, same account). Any
+# failure falls back to the ffmpeg mux so the talking feature never breaks.
+LIPSYNC_MODEL = "kling-lip-sync"
+_GMI_QUEUE = "https://console.gmicloud.ai/api/v1/ie/requestqueue/apikey/requests"
+
+
+def _dig(obj, *keys):
+    for k in keys:
+        if isinstance(obj, dict) and obj.get(k) is not None:
+            return obj[k]
+    return None
+
+
+def generate_lipsync(video_url: str, audio_url: str) -> dict:
+    """Lip-sync a face video to an audio track via GMI kling-lip-sync. Returns
+    {url, sha256, mime_type} of the result stored in B2. Raises on any failure
+    so the caller can fall back to the plain mux."""
+    import time as _time
+    import uuid as _uuid
+
+    import httpx
+
+    from app.storage import download_bytes, presign_asset_url, upload_bytes
+
+    if not GMI_API_KEY:
+        raise RuntimeError("GMI_API_KEY not configured")
+    # The model fetches the inputs itself, so they must be publicly reachable.
+    v = presign_asset_url(video_url) or video_url
+    a = presign_asset_url(audio_url) or audio_url
+    headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
+    body = {"model": LIPSYNC_MODEL, "payload": {"video_url": v, "audio_url": a}}
+
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(_GMI_QUEUE, json=body, headers=headers)
+        resp.raise_for_status()
+        submitted = resp.json()
+        rid = _dig(submitted, "request_id", "id", "requestId")
+        if not rid:
+            raise RuntimeError(f"lip-sync submit returned no request id: {submitted}")
+
+        deadline = _time.time() + 600
+        out_url = None
+        while _time.time() < deadline:
+            _time.sleep(6)
+            st = client.get(f"{_GMI_QUEUE}/{rid}", headers=headers).json()
+            status = str(_dig(st, "status") or "").lower()
+            if status in ("success", "succeeded", "completed", "done"):
+                outcome = _dig(st, "outcome") or st
+                urls = _dig(outcome, "media_urls", "mediaUrls", "outputs", "output")
+                out_url = urls[0] if isinstance(urls, list) and urls else (urls if isinstance(urls, str) else None)
+                if not out_url:
+                    raise RuntimeError(f"lip-sync finished without a media url: {st}")
+                break
+            if status in ("failed", "error", "cancelled"):
+                raise RuntimeError(f"lip-sync failed: {_dig(st, 'error') or st}")
+        if not out_url:
+            raise TimeoutError("lip-sync timed out")
+
+    data = httpx.get(out_url, timeout=180).content
+    url, sha = upload_bytes(f"videos/lipsync/{_uuid.uuid4().hex}.mp4", data, "video/mp4")
+    return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
+
+
 def mux_video_with_audio(video_url: str, audio_url: str) -> dict:
     """Combine a silent clip with the character's spoken line into one talking
     MP4 (ffmpeg), upload it to B2 and return {url, sha256, mime_type}. The video
