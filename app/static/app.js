@@ -108,12 +108,12 @@ function renderVoiceOptions() {
 
 let previewAudio = null;
 
-function previewSelectedVoice() {
-  const value = el("voice-select").value;
+function previewVoice(selectId, buttonId) {
+  const value = el(selectId).value;
   if (!value) return;
   const [provider, ...rest] = value.split(":");
   const voiceId = rest.join(":");
-  const button = el("voice-preview");
+  const button = el(buttonId);
   if (previewAudio) { previewAudio.pause(); previewAudio = null; }
   previewAudio = new Audio(`/static/voice-samples/${provider}-${voiceId}.mp3`);
   button.classList.add("playing");
@@ -123,6 +123,10 @@ function previewSelectedVoice() {
     toast("No sample available for this voice.", true);
   });
   previewAudio.play().catch(() => button.classList.remove("playing"));
+}
+
+function previewSelectedVoice() {
+  previewVoice("voice-select", "voice-preview");
 }
 
 function updateVoiceNote() {
@@ -242,6 +246,7 @@ async function selectCharacter(id) {
 function renderDetail(character) {
   hideScenesView();
   hideStudioView();
+  hideAudioView();
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
   if (!character) return;
@@ -909,6 +914,7 @@ function showScenesView() {
   state.selectedId = null;
   renderCharacterList();
   hideStudioView();
+  hideAudioView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -1066,6 +1072,7 @@ function showStudioView() {
   state.selectedId = null;
   renderCharacterList();
   hideScenesView();
+  hideAudioView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
@@ -1262,6 +1269,186 @@ function renderStudio(images) {
   }
 }
 
+/* ---------- Audio: narration & voiceover ---------- */
+
+let audioSource = "catalog";
+
+function showAudioView() {
+  state.selectedId = null;
+  renderCharacterList();
+  hideScenesView();
+  hideStudioView();
+  el("detail-placeholder").hidden = true;
+  el("detail-content").hidden = true;
+  el("audio-view").hidden = false;
+  el("open-audio").classList.add("active");
+  renderAudioVoices();
+  loadAudio();
+}
+
+function hideAudioView() {
+  el("audio-view").hidden = true;
+  el("open-audio").classList.remove("active");
+}
+
+function renderAudioVoices() {
+  const select = el("audio-voice-select");
+  const gender = el("audio-filter-gender").value;
+  const age = el("audio-filter-age").value;
+  select.innerHTML = "";
+  let shown = 0;
+  for (const [provider, voices] of Object.entries(state.voices)) {
+    const filtered = voices.filter((v) =>
+      (!gender || v.gender === gender) && (!age || v.age === age));
+    if (!filtered.length) continue;
+    const group = document.createElement("optgroup");
+    group.label = PROVIDER_LABEL[provider] || provider;
+    for (const voice of filtered) {
+      const option = document.createElement("option");
+      option.value = `${provider}:${voice.id}`;
+      option.textContent = voiceOptionLabel(voice);
+      group.appendChild(option);
+      shown += 1;
+    }
+    select.appendChild(group);
+  }
+  if (shown === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No voices match these filters";
+    opt.disabled = true;
+    select.appendChild(opt);
+  }
+}
+
+function setAudioSource(source) {
+  audioSource = source;
+  document.querySelectorAll(".audio-source-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.source === source));
+  el("audio-catalog").hidden = source !== "catalog";
+  el("audio-custom").hidden = source !== "custom";
+}
+
+function setupAudio() {
+  el("open-audio").addEventListener("click", showAudioView);
+  el("generate-audio-button").addEventListener("click", generateAudioClip);
+  el("audio-filter-gender").addEventListener("change", renderAudioVoices);
+  el("audio-filter-age").addEventListener("change", renderAudioVoices);
+  el("audio-voice-preview").addEventListener("click", () => previewVoice("audio-voice-select", "audio-voice-preview"));
+  document.querySelectorAll(".audio-source-btn").forEach((b) =>
+    b.addEventListener("click", () => setAudioSource(b.dataset.source)));
+  setAudioSource("catalog");
+}
+
+let audioGenerating = false;
+
+async function generateAudioClip() {
+  if (audioGenerating) return;
+  const text = el("audio-text").value.trim();
+  if (!text) { toast("Write the line to speak first.", true); el("audio-text").focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  let provider, voiceId;
+  if (audioSource === "custom") {
+    provider = "elevenlabs";
+    voiceId = el("audio-custom-id").value.trim();
+    if (!voiceId) { toast("Enter your ElevenLabs Voice ID.", true); el("audio-custom-id").focus(); return; }
+  } else {
+    const value = el("audio-voice-select").value;
+    if (!value) { toast("Pick a voice first.", true); return; }
+    const parts = value.split(":");
+    provider = parts[0];
+    voiceId = parts.slice(1).join(":");
+  }
+
+  audioGenerating = true;
+  el("generate-audio-button").disabled = true;
+  const status = el("audio-status");
+  status.classList.remove("error");
+  status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Generating audio… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.';
+  status.hidden = false;
+  try {
+    await api("/audio", {
+      method: "POST",
+      headers: { "X-API-Key": apiKey() },
+      body: JSON.stringify({ text, voice_provider: provider, voice_id: voiceId }),
+    });
+    el("audio-text").value = "";
+    status.hidden = true;
+    await loadAudio();
+    toast("Audio stored in the vault.");
+  } catch (err) {
+    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Generation needs a valid API key.", true); }
+    else { status.classList.add("error"); status.textContent = err.message; }
+  } finally {
+    audioGenerating = false;
+    el("generate-audio-button").disabled = false;
+  }
+}
+
+async function loadAudio() {
+  try {
+    renderAudio(await api("/audio"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderAudio(clips) {
+  const grid = el("audio-grid");
+  grid.innerHTML = "";
+  el("audio-empty").hidden = clips.length > 0;
+  for (const clip of clips) {
+    const card = document.createElement("div");
+    card.className = "asset-card";
+    const body = document.createElement("div");
+    body.className = "asset-body";
+    if (clip.signed_url) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = clip.signed_url;
+      audio.preload = "none";
+      body.appendChild(audio);
+    }
+    const text = document.createElement("p");
+    text.className = "asset-prompt";
+    text.textContent = clip.text;
+    text.title = clip.text;
+    body.appendChild(text);
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    const parts = [formatTimestamp(clip.created_at)];
+    if (clip.voice) parts.push(clip.voice);
+    if (typeof clip.cost_usd === "number") parts.push(`$${clip.cost_usd.toFixed(4)}`);
+    time.textContent = parts.join(" · ");
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    if (clip.signed_url) {
+      const open = document.createElement("a");
+      open.href = clip.signed_url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.textContent = "Open ↗";
+      actions.appendChild(open);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this audio clip?")) return;
+      try { await api(`/audio/${clip.id}`, { method: "DELETE" }); loadAudio(); toast("Audio deleted."); }
+      catch (err) { toast(err.message, true); }
+    });
+    actions.appendChild(remove);
+    meta.appendChild(actions);
+    body.appendChild(meta);
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
 function setupLightbox() {
   const lightbox = el("lightbox");
   el("lightbox-close").addEventListener("click", () => lightbox.close());
@@ -1294,6 +1481,7 @@ function init() {
   el("open-scenes").addEventListener("click", showScenesView);
   el("generate-scene-button").addEventListener("click", generateScene);
   setupStudio();
+  setupAudio();
   Promise.all([
     loadImageModels(),
     loadVoices(),

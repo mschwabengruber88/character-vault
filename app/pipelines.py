@@ -424,6 +424,18 @@ def _openai_voice_line(character_id: int, text: str, voice: str) -> dict:
     return asset
 
 
+def generate_audio(
+    text: str,
+    voice_provider: str | None = None,
+    voice_id: str | None = None,
+) -> dict:
+    """Standalone TTS for the Audio pipeline — narration/voiceover not tied to a
+    character. Accepts any ElevenLabs voice_id (so users can import their own
+    cloned voice by ID); OpenAI voice_ids are validated by the caller. Reuses
+    the same generation path (incl. ElevenLabs→OpenAI cloud fallback)."""
+    return generate_character_voice_line(0, text, voice_provider, voice_id)
+
+
 def generate_character_voice_line(
     character_id: int,
     text: str,

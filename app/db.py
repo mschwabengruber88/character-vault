@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS studio_images (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS audio_clips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    voice TEXT,
+    url TEXT NOT NULL,
+    sha256 TEXT,
+    mime_type TEXT,
+    model TEXT,
+    cost_usd REAL,
+    manifest_verified INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS batch_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     character_id INTEGER NOT NULL REFERENCES characters(id),
@@ -368,6 +381,41 @@ def list_studio_images(kind: str | None = None) -> list[dict]:
 def delete_studio_image(image_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM studio_images WHERE id = ?", (image_id,))
+        return cur.rowcount > 0
+
+
+def create_audio_clip(
+    text: str,
+    voice: str | None,
+    url: str,
+    sha256: str | None,
+    mime_type: str | None,
+    model: str | None,
+    cost_usd: float | None,
+    manifest_verified: bool,
+) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO audio_clips
+               (text, voice, url, sha256, mime_type, model, cost_usd, manifest_verified, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (text, voice, url, sha256, mime_type, model, cost_usd,
+             int(manifest_verified), now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM audio_clips WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def list_audio_clips() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM audio_clips ORDER BY id DESC").fetchall()
+        return [dict(row) for row in rows]
+
+
+def delete_audio_clip(clip_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM audio_clips WHERE id = ?", (clip_id,))
         return cur.rowcount > 0
 
 

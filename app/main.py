@@ -20,6 +20,7 @@ from app.pipelines import (
     available_image_models,
     available_voices,
     build_batch_prompts,
+    generate_audio,
     generate_character_portrait,
     generate_character_voice_line,
     generate_scene,
@@ -567,3 +568,48 @@ def create_studio(body: StudioRequest):
 def delete_studio(image_id: int):
     if not db.delete_studio_image(image_id):
         raise HTTPException(status_code=404, detail="Studio image not found")
+
+
+class AudioRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    voice_provider: Literal["openai", "elevenlabs"]
+    voice_id: str = Field(min_length=1, max_length=100)
+
+
+@app.get("/audio")
+def list_audio():
+    return [_scene_with_signed_url(c) for c in db.list_audio_clips()]
+
+
+@app.post("/audio", dependencies=[Depends(require_api_key)])
+def create_audio(body: AudioRequest):
+    # OpenAI voices must be one of the fixed set; ElevenLabs accepts ANY id so
+    # users can import their own cloned voice by its Voice ID.
+    if body.voice_provider == "openai":
+        valid = {v["id"] for v in available_voices().get("openai", [])}
+        if body.voice_id not in valid:
+            raise HTTPException(status_code=400, detail=f"Unknown OpenAI voice '{body.voice_id}'.")
+    with generation_slot(0, "audio"):
+        try:
+            result = generate_audio(body.text, body.voice_provider, body.voice_id)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Audio generation failed")
+            raise HTTPException(status_code=502, detail="Audio generation failed. Please try again.")
+    return _scene_with_signed_url(db.create_audio_clip(
+        text=body.text,
+        voice=result.get("voice"),
+        url=result["url"],
+        sha256=result["sha256"],
+        mime_type=result["mime_type"],
+        model=result.get("voice"),
+        cost_usd=result.get("cost_usd"),
+        manifest_verified=result["manifest_verified"],
+    ))
+
+
+@app.delete("/audio/{clip_id}", status_code=204)
+def delete_audio(clip_id: int):
+    if not db.delete_audio_clip(clip_id):
+        raise HTTPException(status_code=404, detail="Audio clip not found")

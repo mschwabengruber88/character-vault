@@ -634,6 +634,60 @@ def test_studio_background_mode_prepends_no_people(client):
     assert STUDIO_MODES["photo-art"] == ""
 
 
+def test_audio_generation_with_catalog_voice(client):
+    with patch("app.main.generate_audio") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/a.mp3", "sha256": "aud1",
+            "mime_type": "audio/mpeg", "manifest_verified": True,
+            "cost_usd": 0.0006, "voice": "openai:nova",
+        }
+        resp = client.post(
+            "/audio",
+            json={"text": "Hello world", "voice_provider": "openai", "voice_id": "nova"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    clip = resp.json()
+    assert clip["text"] == "Hello world"
+    assert clip["voice"] == "openai:nova"
+    mock_gen.assert_called_once_with("Hello world", "openai", "nova")
+
+    assert any(c["id"] == clip["id"] for c in client.get("/audio").json())
+    assert client.delete(f"/audio/{clip['id']}").status_code == 204
+    assert client.delete(f"/audio/{clip['id']}").status_code == 404
+
+
+def test_audio_accepts_custom_elevenlabs_voice_id(client):
+    # a custom (non-catalog) ElevenLabs id is allowed — that's the import path
+    with patch("app.main.generate_audio") as mock_gen:
+        mock_gen.return_value = {
+            "url": "https://example.com/b.mp3", "sha256": "aud2",
+            "mime_type": "audio/mpeg", "manifest_verified": True,
+            "cost_usd": None, "voice": "elevenlabs:MYOWNVOICE123",
+        }
+        resp = client.post(
+            "/audio",
+            json={"text": "Custom voice", "voice_provider": "elevenlabs", "voice_id": "MYOWNVOICE123"},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    mock_gen.assert_called_once_with("Custom voice", "elevenlabs", "MYOWNVOICE123")
+
+
+def test_audio_rejects_unknown_openai_voice(client):
+    resp = client.post(
+        "/audio",
+        json={"text": "hi", "voice_provider": "openai", "voice_id": "not-a-voice"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_audio_requires_api_key(client):
+    resp = client.post("/audio", json={"text": "hi", "voice_provider": "openai", "voice_id": "nova"})
+    assert resp.status_code == 401
+
+
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
     resp = client.put(

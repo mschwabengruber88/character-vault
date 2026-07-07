@@ -617,9 +617,9 @@ input[type="number"] {
   border-radius: 0 var(--radius) var(--radius) 0;
 }
 
-/* Studio mode toggle */
+/* Studio / audio mode toggle */
 .studio-modes { display: flex; gap: 8px; }
-.studio-mode {
+.studio-mode, .audio-source-btn {
   flex: 1;
   padding: 10px 12px;
   background: var(--bg-inset);
@@ -632,13 +632,26 @@ input[type="number"] {
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
-.studio-mode:hover { color: var(--ink); border-color: var(--brass-deep); }
-.studio-mode.active {
+.studio-mode:hover, .audio-source-btn:hover { color: var(--ink); border-color: var(--brass-deep); }
+.studio-mode.active, .audio-source-btn.active {
   color: var(--brass-ink);
   background: var(--brass);
   border-color: var(--brass);
 }
-.studio-mode:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.studio-mode:focus-visible, .audio-source-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+#audio-custom input[type="text"] {
+  flex: 1;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+}
+#audio-custom input[type="text"]:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+#audio-catalog, #audio-custom { display: flex; flex-direction: column; gap: 10px; }
 
 .preview-button {
   flex: none;
