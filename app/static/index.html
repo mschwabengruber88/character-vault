@@ -50,6 +50,7 @@
       <button id="open-scenes" class="scenes-nav">▦ Scenes / Story</button>
       <button id="open-studio" class="scenes-nav">◈ Studio — backgrounds &amp; photo art</button>
       <button id="open-audio" class="scenes-nav">♪ Audio — narration &amp; voiceover</button>
+      <button id="open-video" class="scenes-nav">▷ Video — animate characters</button>
     </aside>
 
     <section class="detail" id="detail">
@@ -328,6 +329,60 @@
         <h3 class="assets-heading">Your audio</h3>
         <div id="audio-grid" class="asset-grid"></div>
         <p id="audio-empty" class="empty-note" hidden>Nothing here yet — write a line and generate.</p>
+      </div>
+
+      <div id="video-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2>Video</h2>
+            <p class="detail-description">Bring a character to life — animate one of their portraits into a short clip (identity held via image-to-video), or generate video straight from a prompt.</p>
+          </div>
+        </div>
+
+        <div class="generate-card">
+          <label class="model-row">
+            <span class="model-label">Model</span>
+            <select id="video-model"></select>
+          </label>
+          <label class="model-row" id="video-character-row">
+            <span class="model-label">Character</span>
+            <select id="video-character"></select>
+          </label>
+          <p id="video-model-hint" class="generate-hint"></p>
+          <textarea id="video-prompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
+          <div class="mode-grid">
+            <label class="model-row">
+              <span class="model-label">Duration</span>
+              <select id="video-duration">
+                <option value="5" selected>5 seconds</option>
+                <option value="8">8 seconds</option>
+                <option value="10">10 seconds</option>
+              </select>
+            </label>
+            <label class="model-row">
+              <span class="model-label">Aspect</span>
+              <select id="video-aspect">
+                <option value="16:9" selected>16:9 — landscape</option>
+                <option value="9:16">9:16 — vertical</option>
+                <option value="1:1">1:1 — square</option>
+              </select>
+            </label>
+          </div>
+          <p class="generate-hint">Video generation runs on GMI Cloud and takes 1–4 minutes. It keeps running if you switch views.</p>
+          <button id="generate-video-button" class="button primary">Generate video</button>
+          <div id="video-progress" class="batch-progress" hidden>
+            <div class="batch-bar"><div id="video-bar-fill" class="batch-bar-fill batch-bar-indeterminate"></div></div>
+            <div class="batch-progress-row">
+              <span id="video-progress-label">Rendering…</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="video-status" class="generation-status" hidden></div>
+
+        <h3 class="assets-heading">Your videos</h3>
+        <div id="video-grid" class="asset-grid"></div>
+        <p id="video-empty" class="empty-note" hidden>No videos yet — pick a model and generate.</p>
       </div>
     </section>
 

@@ -158,8 +158,9 @@ async function saveVoice() {
 }
 
 async function loadImageModels() {
-  const caps = await api("/capabilities").catch(() => ({ image_models: [] }));
+  const caps = await api("/capabilities").catch(() => ({ image_models: [], video_models: [] }));
   state.imageModels = caps.image_models || [];
+  state.videoModels = caps.video_models || [];
   const select = el("image-model");
   select.innerHTML = "";
   for (const model of state.imageModels) {
@@ -171,6 +172,7 @@ async function loadImageModels() {
   select.addEventListener("change", applyModelUI);
   applyModelUI();
   populateStudioModel();
+  populateVideoModels();
 }
 
 /* ---------- Toast ---------- */
@@ -247,6 +249,7 @@ function renderDetail(character) {
   hideScenesView();
   hideStudioView();
   hideAudioView();
+  hideVideoView();
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
   if (!character) return;
@@ -915,6 +918,7 @@ function showScenesView() {
   renderCharacterList();
   hideStudioView();
   hideAudioView();
+  hideVideoView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -1073,6 +1077,7 @@ function showStudioView() {
   renderCharacterList();
   hideScenesView();
   hideAudioView();
+  hideVideoView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
@@ -1278,6 +1283,7 @@ function showAudioView() {
   renderCharacterList();
   hideScenesView();
   hideStudioView();
+  hideVideoView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("audio-view").hidden = false;
@@ -1449,6 +1455,218 @@ function renderAudio(clips) {
   }
 }
 
+/* ---------- Video: animate characters & text-to-video ---------- */
+
+function showVideoView() {
+  state.selectedId = null;
+  renderCharacterList();
+  hideScenesView();
+  hideStudioView();
+  hideAudioView();
+  el("detail-placeholder").hidden = true;
+  el("detail-content").hidden = true;
+  el("video-view").hidden = false;
+  el("open-video").classList.add("active");
+  populateVideoCharacters();
+  applyVideoModelUI();
+  loadVideos();
+}
+
+function hideVideoView() {
+  el("video-view").hidden = true;
+  el("open-video").classList.remove("active");
+}
+
+function populateVideoModels() {
+  const select = el("video-model");
+  select.innerHTML = "";
+  if (!state.videoModels.length) {
+    const opt = document.createElement("option");
+    opt.textContent = "No video models available (GMI key not configured)";
+    opt.disabled = true;
+    select.appendChild(opt);
+    return;
+  }
+  for (const model of state.videoModels) {
+    const option = document.createElement("option");
+    option.value = model.slug;
+    option.textContent = model.label;
+    select.appendChild(option);
+  }
+}
+
+function selectedVideoModel() {
+  return state.videoModels.find((m) => m.slug === el("video-model").value);
+}
+
+function applyVideoModelUI() {
+  const model = selectedVideoModel();
+  const needsImage = model ? model.needs_image : false;
+  el("video-character-row").hidden = !needsImage;
+  const hint = el("video-model-hint");
+  if (!model) { hint.hidden = true; return; }
+  hint.textContent = needsImage
+    ? "Animates the chosen character's portrait as the first frame — their identity carries into the clip."
+    : (model.audio ? "Text-to-video with a generated audio track." : "Text-to-video from your prompt — no character.");
+  hint.hidden = false;
+}
+
+function populateVideoCharacters() {
+  const select = el("video-character");
+  const withPortrait = state.characters.filter((c) => c.thumbnail_url);
+  select.innerHTML = "";
+  if (!withPortrait.length) {
+    const opt = document.createElement("option");
+    opt.textContent = "No characters with a portrait yet";
+    opt.disabled = true;
+    select.appendChild(opt);
+    return;
+  }
+  for (const character of withPortrait) {
+    const option = document.createElement("option");
+    option.value = String(character.id);
+    option.textContent = character.name;
+    select.appendChild(option);
+  }
+}
+
+function setupVideo() {
+  el("open-video").addEventListener("click", showVideoView);
+  el("video-model").addEventListener("change", applyVideoModelUI);
+  el("generate-video-button").addEventListener("click", generateVideo);
+}
+
+let videoGenerating = false;
+
+async function generateVideo() {
+  if (videoGenerating) return;
+  const model = selectedVideoModel();
+  if (!model) { toast("No video model available.", true); return; }
+  const prompt = el("video-prompt").value.trim();
+  if (!prompt) { toast("Describe the motion first.", true); el("video-prompt").focus(); return; }
+  if (!apiKey()) { openKeyDialog(); return; }
+
+  const payload = {
+    prompt,
+    model: model.slug,
+    duration: Number(el("video-duration").value),
+    aspect_ratio: el("video-aspect").value,
+  };
+  if (model.needs_image) {
+    const cid = el("video-character").value;
+    if (!cid) { toast("Pick a character with a portrait first.", true); return; }
+    payload.character_id = Number(cid);
+  }
+
+  videoGenerating = true;
+  el("generate-video-button").disabled = true;
+  const progress = el("video-progress");
+  try {
+    const job = await api("/videos", {
+      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
+    });
+    progress.hidden = false;
+    el("video-progress-label").textContent = "Rendering… 1–4 minutes.";
+    while (true) {
+      await new Promise((r) => setTimeout(r, 4000));
+      const status = await api(`/videos/${job.id}`);
+      if (["done", "error"].includes(status.status)) {
+        progress.hidden = true;
+        if (status.status === "error") toast(status.error || "Video generation failed.", true);
+        else { el("video-prompt").value = ""; toast("Video stored in the vault."); }
+        await loadVideos();
+        break;
+      }
+    }
+  } catch (err) {
+    progress.hidden = true;
+    if (err.status === 401) { openKeyDialog(); toast("Generation needs a valid API key.", true); }
+    else { toast(err.message, true); }
+  } finally {
+    videoGenerating = false;
+    el("generate-video-button").disabled = false;
+  }
+}
+
+async function loadVideos() {
+  try {
+    renderVideos(await api("/videos"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderVideos(videos) {
+  const grid = el("video-grid");
+  grid.innerHTML = "";
+  el("video-empty").hidden = videos.length > 0;
+  for (const video of videos) {
+    const card = document.createElement("div");
+    card.className = "asset-card";
+    if (video.status === "done" && video.signed_url) {
+      const player = document.createElement("video");
+      player.controls = true;
+      player.src = video.signed_url;
+      player.preload = "metadata";
+      player.playsInline = true;
+      card.appendChild(player);
+    } else {
+      const ph = document.createElement("div");
+      ph.className = "video-placeholder";
+      ph.innerHTML = video.status === "error"
+        ? '<span class="video-ph-error">✕ generation failed</span>'
+        : '<span class="spinner" aria-hidden="true"></span><span>rendering…</span>';
+      card.appendChild(ph);
+    }
+    const body = document.createElement("div");
+    body.className = "asset-body";
+    if (video.character_name) {
+      const who = document.createElement("p");
+      who.className = "scene-who";
+      who.textContent = video.character_name;
+      body.appendChild(who);
+    }
+    const prompt = document.createElement("p");
+    prompt.className = "asset-prompt";
+    prompt.textContent = video.prompt;
+    prompt.title = video.prompt;
+    body.appendChild(prompt);
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    const parts = [formatTimestamp(video.created_at)];
+    if (video.model) parts.push(video.model);
+    if (video.duration) parts.push(`${video.duration}s`);
+    if (video.aspect_ratio) parts.push(video.aspect_ratio);
+    time.textContent = parts.join(" · ");
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    if (video.status === "done" && video.signed_url) {
+      const open = document.createElement("a");
+      open.href = video.signed_url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.textContent = "Open ↗";
+      actions.appendChild(open);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this video?")) return;
+      try { await api(`/videos/${video.id}`, { method: "DELETE" }); loadVideos(); toast("Video deleted."); }
+      catch (err) { toast(err.message, true); }
+    });
+    actions.appendChild(remove);
+    meta.appendChild(actions);
+    body.appendChild(meta);
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
 function setupLightbox() {
   const lightbox = el("lightbox");
   el("lightbox-close").addEventListener("click", () => lightbox.close());
@@ -1482,6 +1700,7 @@ function init() {
   el("generate-scene-button").addEventListener("click", generateScene);
   setupStudio();
   setupAudio();
+  setupVideo();
   Promise.all([
     loadImageModels(),
     loadVoices(),

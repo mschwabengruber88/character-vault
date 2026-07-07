@@ -653,6 +653,32 @@ input[type="number"] {
 #audio-custom input[type="text"]:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 #audio-catalog, #audio-custom { display: flex; flex-direction: column; gap: 10px; }
 
+/* Video */
+.video-placeholder {
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg-inset);
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+.video-ph-error { color: var(--red); }
+.asset-card video { width: 100%; display: block; background: #000; }
+
+.batch-bar-indeterminate {
+  width: 35% !important;
+  animation: batch-slide 1.4s ease-in-out infinite;
+}
+@keyframes batch-slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .batch-bar-indeterminate { animation: none; width: 100% !important; }
+}
+
 .preview-button {
   flex: none;
   width: 36px;

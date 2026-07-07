@@ -289,6 +289,85 @@ def build_batch_prompts(mode: str, prompt: str, count: int) -> list[str]:
     return [prompt for _ in range(count)]
 
 
+# ── Video: image-to-video (character) & text-to-video ────────────────────
+# GMI Cloud video models. Image-to-video animates a stored character portrait
+# as the first frame, so the character's identity carries into the clip — the
+# same "the vault holds the identity" idea as the images. Text-to-video needs
+# no reference. Veo 3 additionally produces an audio track.
+VIDEO_MODELS = {
+    "Kling-Image2Video-V2.1-Master": {
+        "label": "Kling 2.1 — image→video (keeps character)",
+        "needs_image": True, "audio": False,
+    },
+    "pixverse-v5.6-i2v": {
+        "label": "Pixverse 5.6 — image→video (keeps character)",
+        "needs_image": True, "audio": False,
+    },
+    "Kling-Text2Video-V2.1-Master": {
+        "label": "Kling 2.1 — text→video",
+        "needs_image": False, "audio": False,
+    },
+    "pixverse-v5.6-t2v": {
+        "label": "Pixverse 5.6 — text→video",
+        "needs_image": False, "audio": False,
+    },
+    "Veo3-Fast": {
+        "label": "Google Veo 3 Fast — text→video + audio",
+        "needs_image": False, "audio": True,
+    },
+}
+DEFAULT_VIDEO_MODEL = "Kling-Image2Video-V2.1-Master"
+
+
+def available_video_models() -> list[dict]:
+    if not GMI_API_KEY:
+        return []
+    return [
+        {"slug": slug, "label": m["label"], "needs_image": m["needs_image"], "audio": m["audio"]}
+        for slug, m in VIDEO_MODELS.items()
+    ]
+
+
+def generate_video(
+    prompt: str,
+    model: str = DEFAULT_VIDEO_MODEL,
+    reference: dict | None = None,
+    duration: int = 5,
+    aspect_ratio: str = "16:9",
+) -> dict:
+    """Generate a video clip. If the model is image-to-video, `reference`
+    (a stored portrait) is used as the first frame to hold the character's
+    identity. Runs on GMI Cloud with async polling handled by the pipeline."""
+    from genblaze_gmicloud import GMICloudVideoProvider
+
+    meta = VIDEO_MODELS[model]
+    step_kwargs: dict = {"duration": duration, "aspect_ratio": aspect_ratio}
+    if meta["needs_image"]:
+        if not reference:
+            raise ValueError("This video model needs a character portrait as reference.")
+        inputs = _gmi_references([reference], limit=1)
+        if not inputs:
+            raise ValueError("Could not prepare the reference image.")
+        step_kwargs["external_inputs"] = inputs
+
+    result = (
+        Pipeline("character-video")
+        .step(
+            GMICloudVideoProvider(),
+            model=model,
+            prompt=prompt,
+            modality=Modality.VIDEO,
+            **step_kwargs,
+        )
+        .run(sink=get_storage_sink(), timeout=600)
+    )
+    asset = _asset_result(result)
+    asset["original_url"] = asset["url"]
+    asset["model"] = model
+    asset["cost_usd"] = None  # GMI video pricing is not exposed statically
+    return asset
+
+
 # ── Studio: character-less text-to-image ─────────────────────────────────
 # Two modes. "background" makes an empty environment/scene plate (no people)
 # you can later drop a character into; "photo-art" is a free artistic image

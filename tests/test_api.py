@@ -688,6 +688,91 @@ def test_audio_requires_api_key(client):
     assert resp.status_code == 401
 
 
+def _await_video(client, video_id, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        v = client.get(f"/videos/{video_id}").json()
+        if v["status"] in ("done", "error"):
+            return v
+        time.sleep(0.02)
+    return client.get(f"/videos/{video_id}").json()
+
+
+def test_video_character_mode_generates(client):
+    # give a character a portrait so identity_references finds an anchor
+    cid = client.post("/characters", json={"name": "VidChar"}).json()["id"]
+    with patch("app.main.generate_character_portrait") as mock_img:
+        mock_img.return_value = _fake_portrait("v")
+        client.post(f"/characters/{cid}/generate/image",
+                    json={"prompt": "p"}, headers={"X-API-Key": API_KEY})
+
+    with patch("app.main.available_video_models",
+               return_value=[{"slug": "Kling-Image2Video-V2.1-Master", "needs_image": True}]), \
+         patch.dict("app.main.VIDEO_MODELS",
+                    {"Kling-Image2Video-V2.1-Master": {"label": "k", "needs_image": True, "audio": False}}, clear=True), \
+         patch("app.main.generate_video") as mock_vid:
+        mock_vid.return_value = {
+            "url": "https://example.com/clip.mp4", "original_url": "https://example.com/clip.mp4",
+            "sha256": "vid1", "mime_type": "video/mp4", "manifest_verified": True, "cost_usd": None,
+        }
+        resp = client.post(
+            "/videos",
+            json={"prompt": "she smiles", "model": "Kling-Image2Video-V2.1-Master", "character_id": cid},
+            headers={"X-API-Key": API_KEY},
+        )
+        assert resp.status_code == 200
+        job = resp.json()
+        assert job["status"] == "running"
+        assert job["kind"] == "character"
+        assert job["character_name"] == "VidChar"
+        job = _await_video(client, job["id"])
+    assert job["status"] == "done"
+    assert job["url"] == "https://example.com/clip.mp4"
+    # a reference (the portrait) was passed to the pipeline
+    assert mock_vid.call_args.args[2] is not None
+
+    assert any(v["id"] == job["id"] for v in client.get("/videos").json())
+    assert client.delete(f"/videos/{job['id']}").status_code == 204
+
+
+def test_video_character_mode_requires_portrait(client):
+    cid = client.post("/characters", json={"name": "NoPortrait"}).json()["id"]
+    with patch("app.main.available_video_models",
+               return_value=[{"slug": "Kling-Image2Video-V2.1-Master", "needs_image": True}]), \
+         patch.dict("app.main.VIDEO_MODELS",
+                    {"Kling-Image2Video-V2.1-Master": {"label": "k", "needs_image": True, "audio": False}}, clear=True):
+        resp = client.post(
+            "/videos",
+            json={"prompt": "move", "model": "Kling-Image2Video-V2.1-Master", "character_id": cid},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 400
+
+
+def test_video_requires_api_key(client):
+    resp = client.post("/videos", json={"prompt": "x", "model": "Veo3-Fast"})
+    assert resp.status_code == 401
+
+
+def test_video_rejects_unavailable_model(client):
+    # GMI not configured in tests → no video models → 400
+    resp = client.post(
+        "/videos",
+        json={"prompt": "x", "model": "Kling-Text2Video-V2.1-Master"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_video_rejects_bad_duration(client):
+    resp = client.post(
+        "/videos",
+        json={"prompt": "x", "model": "Veo3-Fast", "duration": 60},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 422
+
+
 def test_assign_voice_rejects_unknown_id(client):
     char_id = client.post("/characters", json={"name": "BadVoice"}).json()["id"]
     resp = client.put(

@@ -64,6 +64,26 @@ CREATE TABLE IF NOT EXISTS studio_images (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS videos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER,
+    character_name TEXT,
+    kind TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    model TEXT,
+    duration INTEGER,
+    aspect_ratio TEXT,
+    url TEXT,
+    original_url TEXT,
+    sha256 TEXT,
+    mime_type TEXT,
+    cost_usd REAL,
+    manifest_verified INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'running',
+    error TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audio_clips (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     text TEXT NOT NULL,
@@ -381,6 +401,61 @@ def list_studio_images(kind: str | None = None) -> list[dict]:
 def delete_studio_image(image_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM studio_images WHERE id = ?", (image_id,))
+        return cur.rowcount > 0
+
+
+def create_video(
+    character_id: int | None,
+    character_name: str | None,
+    kind: str,
+    prompt: str,
+    model: str | None,
+    duration: int | None,
+    aspect_ratio: str | None,
+) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO videos
+               (character_id, character_name, kind, prompt, model, duration,
+                aspect_ratio, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (character_id, character_name, kind, prompt, model, duration,
+             aspect_ratio, now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM videos WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def get_video(video_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def finish_video(video_id: int, *, status: str, url: str | None = None,
+                 original_url: str | None = None, sha256: str | None = None,
+                 mime_type: str | None = None, cost_usd: float | None = None,
+                 manifest_verified: bool = False, error: str | None = None) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE videos SET status = ?, url = ?, original_url = ?, sha256 = ?,
+               mime_type = ?, cost_usd = ?, manifest_verified = ?, error = ?
+               WHERE id = ?""",
+            (status, url, original_url, sha256, mime_type, cost_usd,
+             int(manifest_verified), error, video_id),
+        )
+
+
+def list_videos() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM videos ORDER BY id DESC").fetchall()
+        return [dict(row) for row in rows]
+
+
+def delete_video(video_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
         return cur.rowcount > 0
 
 

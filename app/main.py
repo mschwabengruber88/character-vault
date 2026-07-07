@@ -19,12 +19,16 @@ from app.pipelines import (
     MODE_MAX,
     available_image_models,
     available_voices,
+    DEFAULT_VIDEO_MODEL,
+    VIDEO_MODELS,
+    available_video_models,
     build_batch_prompts,
     generate_audio,
     generate_character_portrait,
     generate_character_voice_line,
     generate_scene,
     generate_studio_image,
+    generate_video,
 )
 from app.storage import presign_asset_url, upload_reference_image, with_signed_url
 
@@ -189,7 +193,10 @@ def health():
 
 @app.get("/capabilities")
 def capabilities():
-    return {"image_models": available_image_models()}
+    return {
+        "image_models": available_image_models(),
+        "video_models": available_video_models(),
+    }
 
 
 @app.get("/voices")
@@ -613,3 +620,100 @@ def create_audio(body: AudioRequest):
 def delete_audio(clip_id: int):
     if not db.delete_audio_clip(clip_id):
         raise HTTPException(status_code=404, detail="Audio clip not found")
+
+
+class VideoRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=1000)
+    model: str = DEFAULT_VIDEO_MODEL
+    character_id: int | None = None
+    duration: int = Field(default=5, ge=3, le=10)
+    aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+
+
+def _run_video(video_id: int, prompt: str, model: str, reference: dict | None,
+               duration: int, aspect_ratio: str) -> None:
+    """Background worker — video generation takes minutes, so it runs off the
+    request thread and the row's status is polled by the client."""
+    try:
+        result = generate_video(prompt, model, reference, duration, aspect_ratio)
+        db.finish_video(
+            video_id, status="done", url=result["url"],
+            original_url=result.get("original_url"), sha256=result["sha256"],
+            mime_type=result["mime_type"], cost_usd=result.get("cost_usd"),
+            manifest_verified=result["manifest_verified"],
+        )
+    except Exception as exc:
+        logger.exception("Video %s failed", video_id)
+        db.finish_video(video_id, status="error", error="Video generation failed. Please try again.")
+    finally:
+        _release_slot(0, "video")
+
+
+def _video_with_signed_url(video: dict) -> dict:
+    try:
+        video["signed_url"] = presign_asset_url(video["url"]) if video.get("url") else None
+    except Exception:
+        video["signed_url"] = None
+    return video
+
+
+@app.get("/videos")
+def list_videos():
+    return [_video_with_signed_url(v) for v in db.list_videos()]
+
+
+@app.get("/videos/{video_id}")
+def get_video(video_id: int):
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return _video_with_signed_url(video)
+
+
+@app.post("/videos", dependencies=[Depends(require_api_key)])
+def create_video(body: VideoRequest):
+    if body.model not in {m["slug"] for m in available_video_models()}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video model '{body.model}' is not available (GMI_API_KEY not configured?).",
+        )
+    meta = VIDEO_MODELS[body.model]
+    reference, character_id, character_name, kind = None, None, None, "text"
+    if meta["needs_image"]:
+        if body.character_id is None:
+            raise HTTPException(status_code=400, detail="This model animates a character — pick one.")
+        character = db.get_character(body.character_id)
+        if character is None:
+            raise HTTPException(status_code=404, detail="Character not found")
+        refs = identity_references(character)
+        if not refs:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{character['name']}' has no portrait to animate. Generate one first.",
+            )
+        reference = refs[0]
+        character_id, character_name, kind = character["id"], character["name"], "character"
+
+    _acquire_slot(0, "video")
+    try:
+        video = db.create_video(
+            character_id=character_id, character_name=character_name, kind=kind,
+            prompt=body.prompt, model=body.model, duration=body.duration,
+            aspect_ratio=body.aspect_ratio,
+        )
+    except Exception:
+        _release_slot(0, "video")
+        raise
+    thread = threading.Thread(
+        target=_run_video,
+        args=(video["id"], body.prompt, body.model, reference, body.duration, body.aspect_ratio),
+        daemon=True,
+    )
+    thread.start()
+    return _video_with_signed_url(video)
+
+
+@app.delete("/videos/{video_id}", status_code=204)
+def delete_video(video_id: int):
+    if not db.delete_video(video_id):
+        raise HTTPException(status_code=404, detail="Video not found")
