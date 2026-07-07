@@ -409,51 +409,98 @@ def _dig(obj, *keys):
     return None
 
 
-def generate_lipsync(video_url: str, audio_url: str) -> dict:
-    """Lip-sync a face video to an audio track via GMI kling-lip-sync. Returns
-    {url, sha256, mime_type} of the result stored in B2. Raises on any failure
-    so the caller can fall back to the plain mux."""
+IDENTIFY_FACE_MODEL = "kling-identify-face"
+
+
+def _gmi_submit_poll(client, model: str, payload: dict, headers: dict, timeout: int = 600) -> dict:
+    """Submit one GMI request-queue job and poll it to completion. Returns the
+    final status dict. Raises with the response body on any error."""
     import time as _time
+
+    resp = client.post(_GMI_QUEUE, json={"model": model, "payload": payload}, headers=headers)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"{model} submit {resp.status_code}: {resp.text[:500]}")
+    submitted = resp.json()
+    rid = (_dig(submitted, "request_id", "id", "requestId")
+           or _dig(_dig(submitted, "data") or {}, "request_id", "id"))
+    if not rid:
+        raise RuntimeError(f"{model} submit returned no request id: {str(submitted)[:400]}")
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        _time.sleep(6)
+        st = client.get(f"{_GMI_QUEUE}/{rid}", headers=headers).json()
+        status = str(_dig(st, "status") or "").lower()
+        if status in ("success", "succeeded", "completed", "done"):
+            return st
+        if status in ("failed", "error", "cancelled"):
+            raise RuntimeError(f"{model} failed: {str(_dig(st, 'error') or st)[:400]}")
+    raise TimeoutError(f"{model} timed out")
+
+
+def _audio_ms(url: str) -> int:
+    """Audio duration in ms via ffprobe (reads the URL directly)."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", url],
+            capture_output=True, text=True, timeout=40,
+        ).stdout.strip()
+        return max(2000, int(float(out) * 1000))
+    except Exception:
+        return 8000
+
+
+def generate_lipsync(video_url: str, audio_url: str) -> dict:
+    """Real audio-driven lip-sync via GMI's two-step Kling flow: identify the
+    face in the motion clip, then re-render its mouth to the audio. Returns
+    {url, sha256, mime_type} stored in B2. Raises on any failure so the caller
+    can fall back to the plain mux."""
     import uuid as _uuid
 
     import httpx
 
-    from app.storage import download_bytes, presign_asset_url, upload_bytes
+    from app.storage import presign_asset_url, upload_bytes
 
     if not GMI_API_KEY:
         raise RuntimeError("GMI_API_KEY not configured")
-    # The model fetches the inputs itself, so they must be publicly reachable.
     v = presign_asset_url(video_url) or video_url
     a = presign_asset_url(audio_url) or audio_url
     headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
-    body = {"model": LIPSYNC_MODEL, "payload": {"video_url": v, "audio_url": a}}
 
     with httpx.Client(timeout=60) as client:
-        resp = client.post(_GMI_QUEUE, json=body, headers=headers)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"lip-sync submit {resp.status_code}: {resp.text[:500]}")
-        submitted = resp.json()
-        rid = _dig(submitted, "request_id", "id", "requestId") or _dig(_dig(submitted, "data") or {}, "request_id", "id")
-        if not rid:
-            raise RuntimeError(f"lip-sync submit returned no request id: {str(submitted)[:400]}")
+        # Step 1 — detect the face(s) and open a session.
+        ident = _gmi_submit_poll(client, IDENTIFY_FACE_MODEL, {"video_url": v}, headers, timeout=300)
+        outcome = _dig(ident, "outcome") or ident
+        session_id = (_dig(outcome, "session_id", "sessionId")
+                      or _dig(ident, "session_id", "sessionId"))
+        faces = (_dig(outcome, "face_id", "face_ids", "faces")
+                 or _dig(ident, "face_id", "face_ids", "faces"))
+        if not session_id:
+            raise RuntimeError(f"identify-face returned no session_id: {str(ident)[:400]}")
+        face0 = faces[0] if isinstance(faces, list) and faces else "0"
+        if isinstance(face0, dict):
+            face0 = _dig(face0, "face_id", "id") or "0"
 
-        deadline = _time.time() + 600
-        out_url = None
-        while _time.time() < deadline:
-            _time.sleep(6)
-            st = client.get(f"{_GMI_QUEUE}/{rid}", headers=headers).json()
-            status = str(_dig(st, "status") or "").lower()
-            if status in ("success", "succeeded", "completed", "done"):
-                outcome = _dig(st, "outcome") or st
-                urls = _dig(outcome, "media_urls", "mediaUrls", "outputs", "output")
-                out_url = urls[0] if isinstance(urls, list) and urls else (urls if isinstance(urls, str) else None)
-                if not out_url:
-                    raise RuntimeError(f"lip-sync finished without a media url: {st}")
-                break
-            if status in ("failed", "error", "cancelled"):
-                raise RuntimeError(f"lip-sync failed: {_dig(st, 'error') or st}")
+        # Step 2 — lip-sync the chosen face to the audio (audio at the start).
+        payload = {
+            "session_id": session_id,
+            "face_choose": [{
+                "face_id": str(face0),
+                "sound_file": a,
+                "sound_insert_time": 0,
+                "sound_start_time": 0,
+                "sound_end_time": _audio_ms(a),
+                "sound_volume": 1,
+                "original_audio_volume": 0,
+            }],
+        }
+        st = _gmi_submit_poll(client, LIPSYNC_MODEL, payload, headers, timeout=600)
+        out = _dig(st, "outcome") or st
+        urls = _dig(out, "media_urls", "mediaUrls", "outputs", "output")
+        out_url = urls[0] if isinstance(urls, list) and urls else (urls if isinstance(urls, str) else None)
         if not out_url:
-            raise TimeoutError("lip-sync timed out")
+            raise RuntimeError(f"lip-sync finished without a media url: {str(st)[:400]}")
 
     data = httpx.get(out_url, timeout=180).content
     url, sha = upload_bytes(f"videos/lipsync/{_uuid.uuid4().hex}.mp4", data, "video/mp4")
