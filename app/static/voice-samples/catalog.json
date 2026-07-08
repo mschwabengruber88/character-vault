@@ -79,6 +79,22 @@
       "gender": "female",
       "age": "young",
       "style": "light"
+    },
+    {
+      "id": "shimmer-child",
+      "name": "Shimmer (Kid)",
+      "provider": "openai",
+      "gender": "female",
+      "age": "child",
+      "style": "pitched-up, bright"
+    },
+    {
+      "id": "ballad-child",
+      "name": "Ballad (Kid)",
+      "provider": "openai",
+      "gender": "male",
+      "age": "child",
+      "style": "pitched-up, soft"
     }
   ],
   "elevenlabs": [

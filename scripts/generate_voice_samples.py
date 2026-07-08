@@ -71,14 +71,43 @@ def gen_openai():
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     kept = []
+    raw = {}
     for vid, name, gender, age, style in OPENAI:
         try:
             resp = client.audio.speech.create(model="gpt-4o-mini-tts", voice=vid, input=PHRASE)
+            raw[vid] = resp.content
             (OUT / f"openai-{vid}.mp3").write_bytes(resp.content)
             kept.append(entry("openai", vid, name, gender, age, style))
             print("openai", vid, "ok")
         except Exception as e:
             print("openai", vid, "FAILED", str(e)[:100])
+    kept += gen_openai_child_variants(raw)
+    return kept
+
+
+# Neither provider ships a genuinely childlike voice on a free plan (see
+# app.pipelines._CHILD_VOICE_BASE for why). These pitch an existing base
+# clip up a few semitones instead — reuses app.pipelines so the sample
+# clips and the live generation path can never drift apart.
+def gen_openai_child_variants(raw: dict) -> list:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from app.pipelines import _CHILD_VOICE_BASE, _pitch_shift
+
+    kept = []
+    for label, (base_voice, semitones) in _CHILD_VOICE_BASE.items():
+        if base_voice not in raw:
+            continue
+        try:
+            shifted = _pitch_shift(raw[base_voice], semitones)
+            (OUT / f"openai-{label}.mp3").write_bytes(shifted)
+            base = next(e for e in OPENAI if e[0] == base_voice)
+            kept.append(entry("openai", label, f"{base[1]} (Kid)", base[2], "child",
+                               f"pitched-up, {base[4]}"))
+            print("openai", label, "ok (pitch-shifted from", base_voice, ")")
+        except Exception as e:
+            print("openai", label, "FAILED", str(e)[:100])
     return kept
 
 

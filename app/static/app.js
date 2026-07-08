@@ -133,6 +133,7 @@ const TRANSLATIONS = {
     filterMale: "Male",
     filterNeutral: "Neutral",
     filterAnyAge: "Any age",
+    filterChild: "Child",
     filterYoung: "Young / teen",
     filterAdult: "Adult",
     filterMature: "Mature",
@@ -210,6 +211,7 @@ const TRANSLATIONS = {
     generatingAudio: "Generating audio… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.",
     voicePickLabel: "Voice (fixed on the character)",
     voiceNone: "No voice yet — pick one",
+    voiceNoneMatch: "No voices match these filters",
     voiceFixedNote: "Set at creation · change only in the profile",
     videoSpeechLabel: "✦ Let them speak (optional) — uses the character’s fixed voice",
     videoSpeechPh: "e.g. 'Hi. Nice to meet you.'",
@@ -339,6 +341,7 @@ const TRANSLATIONS = {
     filterMale: "Männlich",
     filterNeutral: "Neutral",
     filterAnyAge: "Beliebiges Alter",
+    filterChild: "Kind",
     filterYoung: "Jung / Teenager",
     filterAdult: "Erwachsen",
     filterMature: "Reif",
@@ -416,6 +419,7 @@ const TRANSLATIONS = {
     generatingAudio: "Audio wird generiert … 15–60 Sekunden. Auf Backblaze B2 mit Herkunftsnachweis gespeichert.",
     voicePickLabel: "Stimme (fest am Charakter)",
     voiceNone: "Noch keine Stimme – wähle eine",
+    voiceNoneMatch: "Keine Stimme passt zu diesen Filtern",
     voiceFixedNote: "Bei Erstellung gesetzt · nur im Profil änderbar",
     videoSpeechLabel: "✦ Lass sie sprechen (optional) – nutzt die feste Stimme des Charakters",
     videoSpeechPh: "z. B. 'Hi. Nice to meet you.'",
@@ -694,10 +698,10 @@ function voiceLabelFor(provider, voiceId) {
 
 // Fill a <select> with voices (grouped) plus a "none" option — used by the
 // create and profile forms, the only places a voice can be chosen/changed.
-// `filters` narrows by gender/age so picking a voice doesn't mean previewing
-// every single one; the currently selected value is kept even if it no
-// longer matches the filter, so switching filters never silently discards
-// an already-chosen voice.
+// `filters` narrows by gender/age. This is a plain filter with no
+// exceptions: if the previously selected voice doesn't match, it drops out
+// and the select falls back to "none" — anything else (e.g. quietly
+// keeping a stale selection alive) makes the filter look broken.
 function buildVoicePicker(select, currentValue, filters) {
   if (!select) return;
   const gender = filters && filters.gender;
@@ -707,10 +711,10 @@ function buildVoicePicker(select, currentValue, filters) {
   none.value = "";
   none.textContent = t("voiceNone");
   select.appendChild(none);
+  let shown = 0;
   for (const [provider, voices] of Object.entries(state.voices || {})) {
     const filtered = voices.filter((v) =>
-      (!gender || v.gender === gender) && (!age || v.age === age) ||
-      currentValue === `${provider}:${v.id}`);
+      (!gender || v.gender === gender) && (!age || v.age === age));
     if (!filtered.length) continue;
     const group = document.createElement("optgroup");
     group.label = PROVIDER_LABEL[provider] || provider;
@@ -719,14 +723,22 @@ function buildVoicePicker(select, currentValue, filters) {
       o.value = `${provider}:${voice.id}`;
       o.textContent = voiceOptionLabel(voice);
       group.appendChild(o);
+      shown += 1;
     }
     select.appendChild(group);
   }
-  select.value = currentValue || "";
+  if (!shown && (gender || age)) {
+    const opt = document.createElement("option");
+    opt.textContent = t("voiceNoneMatch");
+    opt.disabled = true;
+    select.appendChild(opt);
+  }
+  const hasCurrent = currentValue && [...select.options].some((o) => o.value === currentValue);
+  select.value = hasCurrent ? currentValue : "";
 }
 
-// Re-render a voice picker from its paired gender/age filter selects,
-// preserving whatever is currently chosen.
+// Re-render a voice picker from its paired gender/age filter selects. Keeps
+// the selection only if it still matches the new filter.
 function refreshVoicePicker(prefix) {
   const select = el(`${prefix}-voice`);
   if (!select) return;

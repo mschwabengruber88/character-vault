@@ -691,6 +691,56 @@ def _default_openai_voice(character_id: int) -> str:
     return OPENAI_VOICES[character_id % len(OPENAI_VOICES)]["id"]
 
 
+# Neither provider ships a genuinely childlike voice on a free plan — OpenAI's
+# catalog has none, and ElevenLabs' child-style voices live in the paid
+# shared library (confirmed: "payment_required" on this account). As a
+# stand-in, these pitch an existing OpenAI voice up a few semitones after
+# generation — same line, higher register. Catalog entries with these ids
+# carry age="child".
+_CHILD_VOICE_BASE = {
+    "shimmer-child": ("shimmer", 5),
+    "ballad-child": ("ballad", 4),
+}
+
+
+def _pitch_shift(data: bytes, semitones: float) -> bytes:
+    """Raise pitch by `semitones` while keeping duration roughly constant
+    (asetrate for the pitch shift, atempo to undo the resulting speed-up).
+    Must resample at the source's actual rate, not a guessed constant —
+    OpenAI TTS outputs 24kHz, and using the wrong base rate compounds with
+    the pitch ratio and badly distorts duration."""
+    import subprocess
+
+    ratio = 2 ** (semitones / 12)
+    with tempfile.TemporaryDirectory() as d:
+        ip, op = f"{d}/in.mp3", f"{d}/out.mp3"
+        Path(ip).write_bytes(data)
+        sr = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=sample_rate", "-of", "default=nw=1:nk=1", ip],
+            capture_output=True, text=True, timeout=20,
+        ).stdout.strip()
+        sr = int(sr) if sr.isdigit() else 24000
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", ip, "-filter:a",
+             f"asetrate={sr}*{ratio},aresample={sr},atempo={1 / ratio}", op],
+            check=True, capture_output=True, timeout=60,
+        )
+        return Path(op).read_bytes()
+
+
+def _openai_voice_line_pitched(character_id: int, text: str, label: str) -> dict:
+    import uuid as _uuid
+
+    from app.storage import download_bytes, upload_bytes
+
+    base_voice, semitones = _CHILD_VOICE_BASE[label]
+    base = _openai_voice_line(character_id, text, base_voice)
+    shifted = _pitch_shift(download_bytes(base["url"]), semitones)
+    url, sha = upload_bytes(f"audio/voice-lines/{_uuid.uuid4().hex}.mp3", shifted, "audio/mpeg")
+    return {**base, "url": url, "sha256": sha, "voice": f"openai:{label}"}
+
+
 def _openai_voice_line(character_id: int, text: str, voice: str) -> dict:
     result = (
         Pipeline(f"character-{character_id}-voice-line-openai")
@@ -751,6 +801,9 @@ def generate_character_voice_line(
                 "ElevenLabs voice %s unavailable, falling back to OpenAI: %s",
                 voice_id, exc,
             )
+
+    if voice_provider == "openai" and voice_id in _CHILD_VOICE_BASE:
+        return _openai_voice_line_pitched(character_id, text, voice_id)
 
     if voice_provider == "openai" and voice_id in _OPENAI_VOICE_IDS:
         voice = voice_id
