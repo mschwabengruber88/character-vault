@@ -36,12 +36,23 @@ const TRANSLATIONS = {
     charactersHeading: "Characters",
     new: "New",
     noCharacters: "No characters yet. Create your first one.",
-    navScenes: "Scenes / Story",
+    navScenes: "Images",
     navStudio: "Studio — backgrounds & photo art",
     navAudio: "Audio — narration & voiceover",
     navVideo: "Video — animate characters",
-    scenesTitle: "Scenes & Storytelling",
-    scenesDesc: "Bring two or more of your characters together in one image — manga panels, picture-book pages. Each keeps their own look via Nano Banana multi-character composition.",
+    imagesTitle: "Images",
+    imagesDesc: "Generate portraits, variation sets, photoshoots or story panels for one character — or bring several together in one scene. Pick who's in the frame below.",
+    imagesPick: "Pick the character(s):",
+    optScene: "Scene — multiple characters together",
+    phScenePrompt: "Describe the scene, e.g. 'the two of them talking by the classroom window, manga panel'",
+    hintScene: "Nano Banana multi-character composition — pick 2–4 characters above.",
+    needPortraitForImages: "Create at least one character with a portrait first.",
+    toastPickCharacterFirst: "Pick a character first.",
+    toastPickTwoCharacters: "Pick at least two characters.",
+    toastPickAtMostFour: "Pick at most four characters.",
+    toastDescribeSceneFirst: "Describe the scene first.",
+    generatingScene: "Composing the scene with Nano Banana… 20–60 seconds.",
+    assetsEmptyImages: "No assets yet — generate a portrait above.",
     studioTitle: "Studio",
     studioDesc: "Generate images without a character — free artistic photo art like Midjourney, or empty background/scene plates. Same prompt builder, no identity lock.",
     audioTitle: "Audio",
@@ -100,7 +111,6 @@ const TRANSLATIONS = {
     uploadPhoto: "Upload photo",
     editProfile: "Edit profile",
     delete: "Delete",
-    imgGenTitle: "Image generation",
     imgGenHint: "Genblaze → Backblaze B2 · identity, personality & seed from the profile carry into every frame",
     modeLabel: "Mode",
     optSingle: "Single image",
@@ -121,13 +131,10 @@ const TRANSLATIONS = {
     disclInvisible: "<b>Invisible</b> — provenance manifest embedded in the file",
     disclVisible: "<b>Visible</b> — “✦ AI” watermark badge on the image",
     stop: "Stop",
-    voiceTitle: "Voice line",
     ttsHint: "Genblaze TTS → Backblaze B2",
-    phVoiceText: "What should the character say?",
     voiceLabel: "Voice",
-    genVoiceBtn: "Generate voice line",
     assetsHeading: "Assets",
-    assetsEmpty: "No assets yet — generate a portrait or voice line above.",
+    assetsEmpty: "No assets yet — generate one in the Images tab.",
     filterAnyGender: "Any gender",
     filterFemale: "Female",
     filterMale: "Male",
@@ -137,9 +144,6 @@ const TRANSLATIONS = {
     filterYoung: "Young / teen",
     filterAdult: "Adult",
     filterMature: "Mature",
-    newScene: "New scene",
-    sceneHint: "Nano Banana multi-character composition → Backblaze B2",
-    scenePick: "Pick the characters in the scene (2–4):",
     genSceneBtn: "Generate scene",
     yourScenes: "Your scenes",
     scenesEmpty: "No scenes yet — pick characters and describe a scene above.",
@@ -198,7 +202,6 @@ const TRANSLATIONS = {
     videoHintText: "No character needed — describe the whole shot.",
     videoRendering: "Rendering… 1–4 minutes.",
     toastPortraitSaved: "Portrait stored in the vault.",
-    toastVoiceSaved: "Voice line stored in the vault.",
     toastImageSaved: "Image stored in the vault.",
     toastAudioSaved: "Audio stored in the vault.",
     toastVideoSaved: "Video stored in the vault.",
@@ -207,7 +210,6 @@ const TRANSLATIONS = {
     toastNeedKey: "Generation needs a valid API key.",
     toastDescribeFirst: "Describe the character first.",
     generatingImage: "Generating portrait… this usually takes 15–60 seconds. The asset is uploaded to Backblaze B2 with a provenance manifest.",
-    generatingVoice: "Generating voice line… this usually takes 15–60 seconds.",
     generatingAudio: "Generating audio… 15–60 seconds. Stored on Backblaze B2 with a provenance manifest.",
     voicePickLabel: "Voice (fixed on the character)",
     voiceNone: "No voice yet — pick one",
@@ -244,12 +246,23 @@ const TRANSLATIONS = {
     charactersHeading: "Charaktere",
     new: "Neu",
     noCharacters: "Noch keine Charaktere. Erstelle deinen ersten.",
-    navScenes: "Szenen / Story",
+    navScenes: "Bilder",
     navStudio: "Studio – Hintergründe & Foto-Art",
     navAudio: "Audio – Erzählung & Voiceover",
     navVideo: "Video – Charaktere animieren",
-    scenesTitle: "Szenen & Storytelling",
-    scenesDesc: "Bring zwei oder mehr Charaktere in einem Bild zusammen – Manga-Panels, Bilderbuchseiten. Jeder behält sein Aussehen dank Nano-Banana-Multi-Charakter-Komposition.",
+    imagesTitle: "Bilder",
+    imagesDesc: "Porträts, Variationssets, Fotoshootings oder Story-Panels für einen Charakter generieren – oder mehrere in einer Szene zusammenbringen. Wähle unten, wer im Bild ist.",
+    imagesPick: "Wähle den/die Charakter(e):",
+    optScene: "Szene — mehrere Charaktere zusammen",
+    phScenePrompt: "Beschreibe die Szene, z. B. 'die beiden unterhalten sich am Klassenzimmerfenster, Manga-Panel'",
+    hintScene: "Nano-Banana-Multi-Charakter-Komposition — wähle oben 2–4 Charaktere.",
+    needPortraitForImages: "Erstelle zuerst mindestens einen Charakter mit einem Porträt.",
+    toastPickCharacterFirst: "Wähle zuerst einen Charakter.",
+    toastPickTwoCharacters: "Wähle mindestens zwei Charaktere.",
+    toastPickAtMostFour: "Wähle höchstens vier Charaktere.",
+    toastDescribeSceneFirst: "Beschreibe zuerst die Szene.",
+    generatingScene: "Szene wird mit Nano Banana komponiert … 20–60 Sekunden.",
+    assetsEmptyImages: "Noch keine Assets – generiere oben ein Porträt.",
     studioTitle: "Studio",
     studioDesc: "Bilder ohne Charakter generieren – freie künstlerische Foto-Art wie bei Midjourney oder leere Hintergrund-/Szenen-Plates. Derselbe Prompt-Baukasten, ohne Identitäts-Lock.",
     audioTitle: "Audio",
@@ -308,7 +321,6 @@ const TRANSLATIONS = {
     uploadPhoto: "Foto hochladen",
     editProfile: "Profil bearbeiten",
     delete: "Löschen",
-    imgGenTitle: "Bildgenerierung",
     imgGenHint: "Genblaze → Backblaze B2 · Identität, Persönlichkeit & Seed aus dem Profil fließen in jedes Bild",
     modeLabel: "Modus",
     optSingle: "Einzelbild",
@@ -329,13 +341,10 @@ const TRANSLATIONS = {
     disclInvisible: "<b>Unsichtbar</b> – Herkunftsnachweis in der Datei eingebettet",
     disclVisible: "<b>Sichtbar</b> – „✦ AI“-Wasserzeichen auf dem Bild",
     stop: "Stopp",
-    voiceTitle: "Sprachzeile",
     ttsHint: "Genblaze TTS → Backblaze B2",
-    phVoiceText: "Was soll der Charakter sagen?",
     voiceLabel: "Stimme",
-    genVoiceBtn: "Sprachzeile generieren",
     assetsHeading: "Assets",
-    assetsEmpty: "Noch keine Assets – generiere oben ein Porträt oder eine Sprachzeile.",
+    assetsEmpty: "Noch keine Assets – generiere eins im Bilder-Reiter.",
     filterAnyGender: "Beliebiges Geschlecht",
     filterFemale: "Weiblich",
     filterMale: "Männlich",
@@ -345,9 +354,6 @@ const TRANSLATIONS = {
     filterYoung: "Jung / Teenager",
     filterAdult: "Erwachsen",
     filterMature: "Reif",
-    newScene: "Neue Szene",
-    sceneHint: "Nano-Banana-Multi-Charakter-Komposition → Backblaze B2",
-    scenePick: "Wähle die Charaktere der Szene (2–4):",
     genSceneBtn: "Szene generieren",
     yourScenes: "Deine Szenen",
     scenesEmpty: "Noch keine Szenen – wähle Charaktere und beschreibe oben eine Szene.",
@@ -406,7 +412,6 @@ const TRANSLATIONS = {
     videoHintText: "Kein Charakter nötig – beschreibe die ganze Aufnahme.",
     videoRendering: "Rendern … 1–4 Minuten.",
     toastPortraitSaved: "Porträt im Vault gespeichert.",
-    toastVoiceSaved: "Sprachzeile im Vault gespeichert.",
     toastImageSaved: "Bild im Vault gespeichert.",
     toastAudioSaved: "Audio im Vault gespeichert.",
     toastVideoSaved: "Video im Vault gespeichert.",
@@ -415,7 +420,6 @@ const TRANSLATIONS = {
     toastNeedKey: "Generierung braucht einen gültigen API-Schlüssel.",
     toastDescribeFirst: "Beschreibe zuerst den Charakter.",
     generatingImage: "Porträt wird generiert … dauert meist 15–60 Sekunden. Das Asset wird mit Herkunftsnachweis auf Backblaze B2 hochgeladen.",
-    generatingVoice: "Sprachzeile wird generiert … dauert meist 15–60 Sekunden.",
     generatingAudio: "Audio wird generiert … 15–60 Sekunden. Auf Backblaze B2 mit Herkunftsnachweis gespeichert.",
     voicePickLabel: "Stimme (fest am Charakter)",
     voiceNone: "Noch keine Stimme – wähle eine",
@@ -919,10 +923,6 @@ function renderDetail(character) {
     profile.append(dt, dd);
   }
 
-  const imageCount = character.assets.filter((a) => a.kind === "image").length;
-  el("identity-row").hidden = imageCount === 0;
-  el("identity-count").textContent = String(Math.min(imageCount, 3));
-
   const spend = character.assets.reduce((sum, a) => sum + (a.cost_usd || 0), 0);
   el("detail-spend").hidden = spend === 0;
   el("detail-spend").textContent = `Generation spend so far: $${spend.toFixed(2)}`;
@@ -1327,6 +1327,7 @@ const MODE_META = {
   variation: { counted: true, buttonKey: "modeVariationBtn", phKey: "phVariationPrompt", hintKey: "hintVariation" },
   photoshoot: { counted: true, buttonKey: "modePhotoshootBtn", phKey: "phPhotoshootPrompt", hintKey: "hintPhotoshoot" },
   story: { counted: false, buttonKey: "modeStoryBtn", phKey: "phStoryPrompt", hintKey: "hintStory" },
+  scene: { counted: false, buttonKey: "genSceneBtn", phKey: "phScenePrompt", hintKey: "hintScene" },
 };
 
 function currentMode() {
@@ -1355,6 +1356,7 @@ function unitCost() {
 
 function updateCostEstimate() {
   const box = el("cost-estimate");
+  if (currentMode() === "scene") { box.hidden = true; return; }
   const unit = unitCost();
   const count = plannedCount();
   if (unit == null) { box.hidden = true; return; }
@@ -1366,21 +1368,33 @@ function updateCostEstimate() {
   box.hidden = false;
 }
 
+function toggleGalleryPanels() {
+  const isScene = currentMode() === "scene";
+  el("single-gallery").hidden = isScene;
+  el("scene-gallery").hidden = !isScene;
+  if (isScene) loadScenes();
+}
+
 function updateModeUI() {
-  const meta = MODE_META[currentMode()];
+  const mode = currentMode();
+  const meta = MODE_META[mode];
+  const isScene = mode === "scene";
   el("count-row").hidden = !meta.counted;
   el("image-prompt").placeholder = t(meta.phKey);
-  el("image-prompt").rows = currentMode() === "story" ? 5 : 2;
+  el("image-prompt").rows = mode === "story" ? 5 : 2;
   el("mode-hint").textContent = meta.hintKey ? t(meta.hintKey) : "";
   el("mode-hint").hidden = !meta.hintKey;
   el("generate-image-button").textContent = t(meta.buttonKey);
+  el("image-model-row").hidden = isScene;
+  el("quality-choice").hidden = isScene;
+  renderImageParticipants();
+  toggleGalleryPanels();
   updateCostEstimate();
 }
 
 function setGenerating(active, message = "", isError = false) {
   state.generating = active;
   el("generate-image-button").disabled = active;
-  el("generate-voice-button").disabled = active;
   const status = el("generation-status");
   status.classList.toggle("error", isError);
   if (active) {
@@ -1395,12 +1409,22 @@ function setGenerating(active, message = "", isError = false) {
 }
 
 async function generateImage() {
-  if (state.generating || !state.selectedId) return;
+  if (state.generating) return;
+  const mode = currentMode();
+  const ids = pickedImageIds();
+
+  if (mode === "scene") {
+    await generateSceneImage(ids);
+    return;
+  }
+
+  const pickedId = ids[0];
+  if (!pickedId) { toast(t("toastPickCharacterFirst"), true); return; }
+
   const input = el("image-prompt");
   const value = input.value.trim();
   if (!value) { toast(t("toastDescribeFirst"), true); input.focus(); return; }
 
-  const mode = currentMode();
   const mods = imageComposer ? imageComposer.modifiers() : "";
   // Story splits per line server-side, so the builder fields must ride on
   // every line — not just the tail — to style each panel equally.
@@ -1418,12 +1442,12 @@ async function generateImage() {
   if (mode === "single") {
     setGenerating(true, t("generatingImage"));
     try {
-      await api(`/characters/${state.selectedId}/generate/image`, {
+      await api(`/characters/${pickedId}/generate/image`, {
         method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
       });
       input.value = "";
       setGenerating(false);
-      await selectCharacter(state.selectedId);
+      await refreshSingleCharacterPanel(pickedId);
       toast(t("toastPortraitSaved"));
     } catch (err) {
       if (err.status === 401) { setGenerating(false); openKeyDialog(); toast(t("toastNeedKey"), true); }
@@ -1432,16 +1456,16 @@ async function generateImage() {
     return;
   }
 
-  await runBatch({ ...payload, mode, count: plannedCount() });
+  await runBatch({ ...payload, mode, count: plannedCount() }, pickedId);
 }
 
 let batchCancelId = null;
 
-async function runBatch(payload) {
+async function runBatch(payload, pickedId) {
   setGenerating(true, "Starting the batch…");
   const progress = el("batch-progress");
   try {
-    const job = await api(`/characters/${state.selectedId}/generate/batch`, {
+    const job = await api(`/characters/${pickedId}/generate/batch`, {
       method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
     });
     batchCancelId = job.id;
@@ -1453,7 +1477,7 @@ async function runBatch(payload) {
       await new Promise((r) => setTimeout(r, 1500));
       const status = await api(`/batches/${job.id}`);
       updateBatchProgress(status);
-      await selectCharacter(state.selectedId);  // stream new frames into the gallery
+      await refreshSingleCharacterPanel(pickedId);  // stream new frames into the gallery
       if (["done", "error", "cancelled"].includes(status.status)) {
         finishBatch(status);
         break;
@@ -1497,24 +1521,20 @@ async function cancelBatch() {
   finally { el("batch-cancel").disabled = false; }
 }
 
-async function generateVoice() {
-  if (state.generating || !state.selectedId) return;
-  const input = el("voice-text");
-  const value = input.value.trim();
-  if (!value) { toast("Enter a line for the character to say.", true); input.focus(); return; }
-
-  setGenerating(true, t("generatingVoice"));
+// The picked character's own asset gallery, shown inside the Images tab
+// (separate id from the read-only #asset-grid on the profile page).
+async function refreshSingleCharacterPanel(id) {
   try {
-    await api(`/characters/${state.selectedId}/generate/voice`, {
-      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify({ text: value }),
-    });
-    input.value = "";
-    setGenerating(false);
-    await selectCharacter(state.selectedId);
-    toast(t("toastVoiceSaved"));
+    const character = await api(`/characters/${id}`);
+    const imageCount = character.assets.filter((a) => a.kind === "image").length;
+    el("identity-row").hidden = imageCount === 0;
+    el("identity-count").textContent = String(Math.min(imageCount, 3));
+    const grid = el("images-asset-grid");
+    grid.innerHTML = "";
+    el("images-asset-empty").hidden = character.assets.length > 0;
+    for (const asset of [...character.assets].reverse()) grid.appendChild(renderAssetCard(asset));
   } catch (err) {
-    if (err.status === 401) { setGenerating(false); openKeyDialog(); toast(t("toastNeedKey"), true); }
-    else { setGenerating(false, err.message, true); }
+    toast(err.message, true);
   }
 }
 
@@ -1559,8 +1579,7 @@ function showScenesView() {
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
   el("open-scenes").classList.add("active");
-  renderSceneParticipants();
-  loadScenes();
+  updateModeUI();
 }
 
 function hideScenesView() {
@@ -1568,20 +1587,43 @@ function hideScenesView() {
   el("open-scenes").classList.remove("active");
 }
 
-function renderSceneParticipants() {
-  const box = el("scene-participants");
+// Shared picker for the Images tab: a single active radio for modes that
+// generate for one character, or 2-4 checkboxes for "scene" mode — same
+// DOM, the input type switches with the mode so exclusivity comes free
+// from the browser instead of hand-rolled JS.
+function pickedImageIds() {
+  return [...document.querySelectorAll("#image-participants input:checked")].map((c) => Number(c.value));
+}
+
+function onImageParticipantsChange() {
+  const ids = pickedImageIds();
+  if (currentMode() !== "scene" && ids.length === 1) {
+    refreshSingleCharacterPanel(ids[0]);
+  } else {
+    el("identity-row").hidden = true;
+  }
+  updateCostEstimate();
+}
+
+function renderImageParticipants() {
+  const box = el("image-participants");
+  const isScene = currentMode() === "scene";
+  const prevChecked = new Set([...box.querySelectorAll("input:checked")].map((c) => c.value));
   box.innerHTML = "";
   const withPortrait = state.characters.filter((c) => c.thumbnail_url);
   if (!withPortrait.length) {
-    box.innerHTML = '<p class="empty-note">Create at least two characters with a portrait first.</p>';
+    box.innerHTML = `<p class="empty-note">${t("needPortraitForImages")}</p>`;
     return;
   }
-  for (const character of withPortrait) {
+  withPortrait.forEach((character, idx) => {
     const label = document.createElement("label");
     label.className = "participant";
     const cb = document.createElement("input");
-    cb.type = "checkbox";
+    cb.type = isScene ? "checkbox" : "radio";
+    if (!isScene) cb.name = "image-participant";
     cb.value = String(character.id);
+    cb.checked = prevChecked.has(String(character.id)) || (!isScene && !prevChecked.size && idx === 0);
+    cb.addEventListener("change", onImageParticipantsChange);
     const avatar = document.createElement("span");
     avatar.className = "avatar";
     const img = document.createElement("img");
@@ -1592,7 +1634,8 @@ function renderSceneParticipants() {
     name.textContent = character.name;
     label.append(cb, avatar, name);
     box.appendChild(label);
-  }
+  });
+  onImageParticipantsChange();
 }
 
 async function loadScenes() {
@@ -1662,38 +1705,30 @@ function renderScenes(scenes) {
   }
 }
 
-let sceneGenerating = false;
+async function generateSceneImage(ids) {
+  const prompt = el("image-prompt").value.trim();
+  if (ids.length < 2) { toast(t("toastPickTwoCharacters"), true); return; }
+  if (ids.length > 4) { toast(t("toastPickAtMostFour"), true); return; }
+  if (!prompt) { toast(t("toastDescribeSceneFirst"), true); el("image-prompt").focus(); return; }
 
-async function generateScene() {
-  if (sceneGenerating) return;
-  const ids = [...document.querySelectorAll("#scene-participants input:checked")].map((c) => Number(c.value));
-  const prompt = el("scene-prompt").value.trim();
-  if (ids.length < 2) { toast("Pick at least two characters.", true); return; }
-  if (ids.length > 4) { toast("Pick at most four characters.", true); return; }
-  if (!prompt) { toast("Describe the scene first.", true); el("scene-prompt").focus(); return; }
-
-  sceneGenerating = true;
-  el("generate-scene-button").disabled = true;
-  const status = el("scene-status");
-  status.classList.remove("error");
-  status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Composing the scene with Nano Banana… 20–60 seconds.';
-  status.hidden = false;
+  setGenerating(true, t("generatingScene"));
   try {
     await api("/scenes", {
       method: "POST",
       headers: { "X-API-Key": apiKey() },
-      body: JSON.stringify({ character_ids: ids, prompt }),
+      body: JSON.stringify({
+        character_ids: ids,
+        prompt,
+        disclosure: document.querySelector('input[name="disclosure"]:checked').value,
+      }),
     });
-    el("scene-prompt").value = "";
-    status.hidden = true;
+    el("image-prompt").value = "";
+    setGenerating(false);
     await loadScenes();
     toast(t("toastSceneCreated"));
   } catch (err) {
-    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast("Scene generation needs a valid API key.", true); }
-    else { status.classList.add("error"); status.textContent = err.message; }
-  } finally {
-    sceneGenerating = false;
-    el("generate-scene-button").disabled = false;
+    if (err.status === 401) { setGenerating(false); openKeyDialog(); toast(t("toastNeedKey"), true); }
+    else { setGenerating(false, err.message, true); }
   }
 }
 
@@ -2486,7 +2521,6 @@ function init() {
   setupLightbox();
   refreshKeyButton();
   el("generate-image-button").addEventListener("click", generateImage);
-  el("generate-voice-button").addEventListener("click", generateVoice);
   setupImageComposer();
   el("gen-mode").addEventListener("change", updateModeUI);
   el("gen-count").addEventListener("input", updateCostEstimate);
@@ -2497,7 +2531,6 @@ function init() {
   el("create-voice-preview").addEventListener("click", () => previewPickerVoice("create-voice", "create-voice-preview"));
   el("edit-voice-preview").addEventListener("click", () => previewPickerVoice("edit-voice", "edit-voice-preview"));
   el("open-scenes").addEventListener("click", showScenesView);
-  el("generate-scene-button").addEventListener("click", generateScene);
   setupStudio();
   setupAudio();
   setupVideo();

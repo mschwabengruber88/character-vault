@@ -71,7 +71,7 @@
       <ul id="character-list" class="character-list"></ul>
       <p id="character-empty" class="empty-note" hidden data-i18n="noCharacters">No characters yet. Create your first one.</p>
 
-      <button id="open-scenes" class="scenes-nav"><span class="nav-glyph">▦</span><span data-i18n="navScenes">Scenes / Story</span></button>
+      <button id="open-scenes" class="scenes-nav"><span class="nav-glyph">▦</span><span data-i18n="navScenes">Images</span></button>
       <button id="open-studio" class="scenes-nav"><span class="nav-glyph">◈</span><span data-i18n="navStudio">Studio — backgrounds &amp; photo art</span></button>
       <button id="open-audio" class="scenes-nav"><span class="nav-glyph">♪</span><span data-i18n="navAudio">Audio — narration &amp; voiceover</span></button>
       <button id="open-video" class="scenes-nav"><span class="nav-glyph">▷</span><span data-i18n="navVideo">Video — animate characters</span></button>
@@ -138,6 +138,8 @@
             <h2 id="detail-name"></h2>
             <p id="detail-description" class="detail-description"></p>
             <dl id="detail-profile" class="detail-profile"></dl>
+            <p class="detail-voice-row"><span data-i18n="voiceLabel">Voice</span>: <span id="voice-fixed" class="voice-fixed"></span></p>
+            <p id="voice-note" class="generate-hint" hidden></p>
             <p id="detail-spend" class="detail-spend" hidden></p>
           </div>
           <div class="detail-actions">
@@ -184,117 +186,104 @@
           </div>
         </form>
 
-        <div class="generate-panel">
-          <div class="generate-card">
-            <h3 data-i18n="imgGenTitle">Image generation</h3>
-            <p class="generate-hint" data-i18n="imgGenHint">Genblaze → Backblaze B2 · identity, personality &amp; seed from the profile carry into every frame</p>
-            <div class="mode-grid">
-              <label class="model-row">
-                <span class="model-label" data-i18n="modeLabel">Mode</span>
-                <select id="gen-mode">
-                  <option value="single" data-i18n="optSingle">Single image</option>
-                  <option value="variation" data-i18n="optVariation">Variation set — different outfits/poses/backgrounds</option>
-                  <option value="photoshoot" data-i18n="optPhotoshoot">Photoshoot — same outfit &amp; setting, many shots</option>
-                  <option value="story" data-i18n="optStory">Story series — one panel per script line</option>
-                </select>
-              </label>
-              <label class="model-row" id="count-row" hidden>
-                <span class="model-label" data-i18n="howMany">How many</span>
-                <input id="gen-count" type="number" min="1" max="100" value="10">
-              </label>
-            </div>
-            <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="4000" rows="2"></textarea>
-            <p id="mode-hint" class="generate-hint" hidden></p>
-            <details class="composer">
-              <summary><span data-i18n="composerTitle">Prompt builder</span> <span class="composer-sub" data-i18n="composerSub">optional — style, light, angle…</span></summary>
-              <div id="prompt-composer" class="composer-grid"></div>
-              <div class="composer-foot">
-                <button type="button" id="composer-reset" class="button small" data-i18n="clearFields">Clear fields</button>
-              </div>
-            </details>
-            <p id="prompt-preview" class="prompt-preview" hidden></p>
-            <label class="model-row">
-              <span class="model-label" data-i18n="modelLabel">Model</span>
-              <select id="image-model"></select>
-            </label>
-            <label id="identity-row" class="identity-row" hidden>
-              <input type="checkbox" id="use-identity" checked>
-              <span><b data-i18n="identityKeep">Keep character identity</b> — <span id="identity-count"></span><span data-i18n="identityRefNote"> stored portrait(s) used as reference · </span><span id="identity-hint"></span></span>
-            </label>
-            <fieldset id="quality-choice" class="disclosure-choice">
-              <legend data-i18n="qualityLegend">Quality</legend>
-              <label>
-                <input type="radio" name="quality" value="draft" checked>
-                <span data-i18n-html="qualityDraft"><b>Draft</b> — ~$0.01 per image, for finding the right motif</span>
-              </label>
-              <label>
-                <input type="radio" name="quality" value="final">
-                <span data-i18n-html="qualityFinal"><b>Final</b> — ~$0.17 per image, full quality for the keeper</span>
-              </label>
-            </fieldset>
-            <fieldset class="disclosure-choice">
-              <legend data-i18n="disclosureLegend">AI disclosure</legend>
-              <label>
-                <input type="radio" name="disclosure" value="invisible" checked>
-                <span data-i18n-html="disclInvisible"><b>Invisible</b> — provenance manifest embedded in the file</span>
-              </label>
-              <label>
-                <input type="radio" name="disclosure" value="visible">
-                <span data-i18n-html="disclVisible"><b>Visible</b> — “✦ AI” watermark badge on the image</span>
-              </label>
-            </fieldset>
-            <p id="cost-estimate" class="cost-estimate" hidden></p>
-            <button id="generate-image-button" class="button primary">Generate portrait</button>
-            <div id="batch-progress" class="batch-progress" hidden>
-              <div class="batch-bar"><div id="batch-bar-fill" class="batch-bar-fill"></div></div>
-              <div class="batch-progress-row">
-                <span id="batch-progress-label"></span>
-                <button type="button" id="batch-cancel" class="button danger small" data-i18n="stop">Stop</button>
-              </div>
-            </div>
-          </div>
-          <div class="generate-card">
-            <h3 data-i18n="voiceTitle">Voice line</h3>
-            <p class="generate-hint" data-i18n="ttsHint">Genblaze TTS → Backblaze B2</p>
-            <textarea id="voice-text" data-i18n-ph="phVoiceText" placeholder="What should the character say?" maxlength="500" rows="2"></textarea>
-            <label class="model-row">
-              <span class="model-label" data-i18n="voiceLabel">Voice</span>
-              <span id="voice-fixed" class="voice-fixed"></span>
-            </label>
-            <p id="voice-note" class="generate-hint" hidden></p>
-            <button id="generate-voice-button" class="button primary" data-i18n="genVoiceBtn">Generate voice line</button>
-          </div>
-        </div>
-
-        <div id="generation-status" class="generation-status" hidden></div>
-
         <h3 class="assets-heading" data-i18n="assetsHeading">Assets</h3>
         <div id="asset-grid" class="asset-grid"></div>
-        <p id="asset-empty" class="empty-note" hidden data-i18n="assetsEmpty">No assets yet — generate a portrait or voice line above.</p>
+        <p id="asset-empty" class="empty-note" hidden data-i18n="assetsEmpty">No assets yet — generate one in the Images tab.</p>
       </div>
 
       <div id="scenes-view" hidden>
         <div class="detail-head">
           <div>
-            <h2 data-i18n="scenesTitle">Scenes &amp; Storytelling</h2>
-            <p class="detail-description" data-i18n="scenesDesc">Bring two or more of your characters together in one image — manga panels, picture-book pages. Each keeps their own look via Nano Banana multi-character composition.</p>
+            <h2 data-i18n="imagesTitle">Images</h2>
+            <p class="detail-description" data-i18n="imagesDesc">Generate portraits, variation sets, photoshoots or story panels for one character — or bring several together in one scene. Pick who's in the frame below.</p>
           </div>
         </div>
 
-        <div class="generate-card scene-composer">
-          <h3 data-i18n="newScene">New scene</h3>
-          <p class="generate-hint" data-i18n="sceneHint">Nano Banana multi-character composition → Backblaze B2</p>
-          <p class="scene-sub" data-i18n="scenePick">Pick the characters in the scene (2–4):</p>
-          <div id="scene-participants" class="scene-participants"></div>
-          <textarea id="scene-prompt" placeholder="Describe the scene, e.g. 'the two of them talking by the classroom window, manga panel'" maxlength="500" rows="2"></textarea>
-          <button id="generate-scene-button" class="button primary" data-i18n="genSceneBtn">Generate scene</button>
+        <div class="generate-card">
+          <p class="scene-sub" data-i18n="imagesPick">Pick the character(s):</p>
+          <div id="image-participants" class="scene-participants"></div>
+
+          <div class="mode-grid">
+            <label class="model-row">
+              <span class="model-label" data-i18n="modeLabel">Mode</span>
+              <select id="gen-mode">
+                <option value="single" data-i18n="optSingle">Single image</option>
+                <option value="variation" data-i18n="optVariation">Variation set — different outfits/poses/backgrounds</option>
+                <option value="photoshoot" data-i18n="optPhotoshoot">Photoshoot — same outfit &amp; setting, many shots</option>
+                <option value="story" data-i18n="optStory">Story series — one panel per script line</option>
+                <option value="scene" data-i18n="optScene">Scene — multiple characters together</option>
+              </select>
+            </label>
+            <label class="model-row" id="count-row" hidden>
+              <span class="model-label" data-i18n="howMany">How many</span>
+              <input id="gen-count" type="number" min="1" max="100" value="10">
+            </label>
+          </div>
+          <p class="generate-hint" data-i18n="imgGenHint">Genblaze → Backblaze B2 · identity, personality &amp; seed from the profile carry into every frame</p>
+          <textarea id="image-prompt" placeholder="Describe the portrait, e.g. 'a weathered sea captain, oil painting style'" maxlength="4000" rows="2"></textarea>
+          <p id="mode-hint" class="generate-hint" hidden></p>
+          <details class="composer">
+            <summary><span data-i18n="composerTitle">Prompt builder</span> <span class="composer-sub" data-i18n="composerSub">optional — style, light, angle…</span></summary>
+            <div id="prompt-composer" class="composer-grid"></div>
+            <div class="composer-foot">
+              <button type="button" id="composer-reset" class="button small" data-i18n="clearFields">Clear fields</button>
+            </div>
+          </details>
+          <p id="prompt-preview" class="prompt-preview" hidden></p>
+          <label class="model-row" id="image-model-row">
+            <span class="model-label" data-i18n="modelLabel">Model</span>
+            <select id="image-model"></select>
+          </label>
+          <label id="identity-row" class="identity-row" hidden>
+            <input type="checkbox" id="use-identity" checked>
+            <span><b data-i18n="identityKeep">Keep character identity</b> — <span id="identity-count"></span><span data-i18n="identityRefNote"> stored portrait(s) used as reference · </span><span id="identity-hint"></span></span>
+          </label>
+          <fieldset id="quality-choice" class="disclosure-choice">
+            <legend data-i18n="qualityLegend">Quality</legend>
+            <label>
+              <input type="radio" name="quality" value="draft" checked>
+              <span data-i18n-html="qualityDraft"><b>Draft</b> — ~$0.01 per image, for finding the right motif</span>
+            </label>
+            <label>
+              <input type="radio" name="quality" value="final">
+              <span data-i18n-html="qualityFinal"><b>Final</b> — ~$0.17 per image, full quality for the keeper</span>
+            </label>
+          </fieldset>
+          <fieldset class="disclosure-choice">
+            <legend data-i18n="disclosureLegend">AI disclosure</legend>
+            <label>
+              <input type="radio" name="disclosure" value="invisible" checked>
+              <span data-i18n-html="disclInvisible"><b>Invisible</b> — provenance manifest embedded in the file</span>
+            </label>
+            <label>
+              <input type="radio" name="disclosure" value="visible">
+              <span data-i18n-html="disclVisible"><b>Visible</b> — “✦ AI” watermark badge on the image</span>
+            </label>
+          </fieldset>
+          <p id="cost-estimate" class="cost-estimate" hidden></p>
+          <button id="generate-image-button" class="button primary">Generate portrait</button>
+          <div id="batch-progress" class="batch-progress" hidden>
+            <div class="batch-bar"><div id="batch-bar-fill" class="batch-bar-fill"></div></div>
+            <div class="batch-progress-row">
+              <span id="batch-progress-label"></span>
+              <button type="button" id="batch-cancel" class="button danger small" data-i18n="stop">Stop</button>
+            </div>
+          </div>
         </div>
 
-        <div id="scene-status" class="generation-status" hidden></div>
+        <div id="generation-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading" data-i18n="yourScenes">Your scenes</h3>
-        <div id="scene-grid" class="asset-grid"></div>
-        <p id="scene-empty" class="empty-note" hidden data-i18n="scenesEmpty">No scenes yet — pick characters and describe a scene above.</p>
+        <div id="single-gallery">
+          <h3 class="assets-heading" data-i18n="assetsHeading">Assets</h3>
+          <div id="images-asset-grid" class="asset-grid"></div>
+          <p id="images-asset-empty" class="empty-note" hidden data-i18n="assetsEmptyImages">No assets yet — generate a portrait above.</p>
+        </div>
+
+        <div id="scene-gallery" hidden>
+          <h3 class="assets-heading" data-i18n="yourScenes">Your scenes</h3>
+          <div id="scene-grid" class="asset-grid"></div>
+          <p id="scene-empty" class="empty-note" hidden data-i18n="scenesEmpty">No scenes yet — pick characters and describe a scene above.</p>
+        </div>
       </div>
 
       <div id="studio-view" hidden>

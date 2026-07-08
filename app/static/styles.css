@@ -379,14 +379,13 @@ input[type="number"] {
   color: var(--brass);
 }
 
-/* ---------- Generate panel ---------- */
-
-.generate-panel {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 20px;
+.detail-voice-row {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
 }
+
+/* ---------- Generate panel ---------- */
 
 .generate-card {
   background: var(--bg-raised);
