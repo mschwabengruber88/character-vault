@@ -936,6 +936,25 @@ def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
         raise HTTPException(status_code=404, detail="Video not found")
 
 
+@app.post("/debug/gmi_raw", include_in_schema=False)
+def debug_gmi_raw(body: dict, workspace: str = Depends(require_workspace)):
+    """TEMPORARY: POST an arbitrary {model, payload} straight to GMI's request
+    queue to reverse-engineer a model's real param contract. No polling —
+    just the immediate submit response (400s return instantly)."""
+    import httpx
+    from app.config import GMI_API_KEY
+
+    if not GMI_API_KEY:
+        return {"ok": False, "error": "GMI_API_KEY not configured"}
+    headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
+    with httpx.Client(timeout=30) as client:
+        resp = client.post(
+            "https://console.gmicloud.ai/api/v1/ie/requestqueue/apikey/requests",
+            json=body, headers=headers,
+        )
+    return {"status": resp.status_code, "body": resp.text[:2000]}
+
+
 class ScriptRequest(BaseModel):
     idea: str = Field(min_length=1, max_length=2000)
     format: Literal["story", "video", "manga", "dialogue"] = "story"
