@@ -36,6 +36,7 @@ from app.pipelines import (
     generate_audio,
     generate_character_portrait,
     generate_character_voice_line,
+    generate_dialogue_audio,
     generate_scene,
     generate_script,
     generate_studio_image,
@@ -787,6 +788,92 @@ def create_audio(body: AudioRequest, workspace: str = Depends(require_workspace)
 def delete_audio(clip_id: int, workspace: str = Depends(require_workspace)):
     if not db.delete_audio_clip(workspace, clip_id):
         raise HTTPException(status_code=404, detail="Audio clip not found")
+
+
+class DialogueTurn(BaseModel):
+    character_id: int
+    text: str = Field(min_length=1, max_length=500)
+
+
+class DialogueRequest(BaseModel):
+    # Ordered speaking turns — a character can appear more than once (a
+    # back-and-forth conversation), so this isn't just "pick N characters",
+    # it's the actual script.
+    turns: list[DialogueTurn] = Field(min_length=2, max_length=20)
+
+
+@app.get("/audio/dialogue")
+def list_dialogues(workspace: str = Depends(require_workspace)):
+    return [_scene_with_signed_url(d) for d in db.list_dialogues(workspace)]
+
+
+@app.post("/audio/dialogue")
+def create_dialogue(body: DialogueRequest, request: Request,
+                    workspace: str = Depends(require_workspace),
+                    x_api_key: str = Header(default="")):
+    ids = list(dict.fromkeys(t.character_id for t in body.turns))  # first-appearance order
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="A dialogue needs at least two characters.")
+    if len(ids) > 6:
+        raise HTTPException(status_code=400, detail="Pick at most six characters.")
+    if not _is_owner(x_api_key) and len(body.turns) > MAX_KEYLESS_BATCH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Keyless dialogues are capped at {MAX_KEYLESS_BATCH} lines — shorten the script "
+                   "or add the owner API key.",
+        )
+
+    characters = {}
+    for cid in ids:
+        character = db.get_character(workspace, cid)
+        if character is None:
+            raise HTTPException(status_code=404, detail=f"Character {cid} not found")
+        if not character.get("voice_id"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{character['name']}' has no voice set — give it one in the profile first.",
+            )
+        characters[cid] = character
+
+    enforce_rate(request, x_api_key, "voice", units=len(body.turns))
+
+    turns = [
+        {
+            "character_id": t.character_id,
+            "character_name": characters[t.character_id]["name"],
+            "voice_provider": characters[t.character_id].get("voice_provider"),
+            "voice_id": characters[t.character_id].get("voice_id"),
+            "text": t.text,
+        }
+        for t in body.turns
+    ]
+
+    with generation_slot(workspace, "dialogue"):
+        try:
+            result = generate_dialogue_audio(turns)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Dialogue generation failed")
+            raise HTTPException(status_code=502, detail="Dialogue generation failed. Please try again.")
+
+    return _scene_with_signed_url(db.create_dialogue(
+        workspace_id=workspace,
+        script=result["script"],
+        url=result["url"],
+        sha256=result["sha256"],
+        mime_type=result["mime_type"],
+        cost_usd=result.get("cost_usd"),
+        manifest_verified=result["manifest_verified"],
+        participant_ids=ids,
+        participant_names=[characters[cid]["name"] for cid in ids],
+    ))
+
+
+@app.delete("/audio/dialogue/{dialogue_id}", status_code=204)
+def delete_dialogue(dialogue_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_dialogue(workspace, dialogue_id):
+        raise HTTPException(status_code=404, detail="Dialogue not found")
 
 
 class VideoRequest(BaseModel):

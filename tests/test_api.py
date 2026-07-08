@@ -539,6 +539,74 @@ def test_scene_generation_stores_participants(client):
     assert any(s["id"] == scene["id"] for s in client.get("/scenes").json())
 
 
+def test_dialogue_requires_two_distinct_characters(client):
+    a = client.post("/characters", json={
+        "name": "Solo", "voice_provider": "openai", "voice_id": "nova",
+    }).json()["id"]
+    # both turns are the same speaker → only one distinct character
+    resp = client.post(
+        "/audio/dialogue",
+        json={"turns": [{"character_id": a, "text": "hi"}, {"character_id": a, "text": "hi again"}]},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_dialogue_requires_voice_on_each_character(client):
+    a = client.post("/characters", json={
+        "name": "HasVoice", "voice_provider": "openai", "voice_id": "nova",
+    }).json()["id"]
+    b = client.post("/characters", json={"name": "NoVoice"}).json()["id"]
+    resp = client.post(
+        "/audio/dialogue",
+        json={"turns": [{"character_id": a, "text": "hi"}, {"character_id": b, "text": "hi back"}]},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_dialogue_generation_stores_script_and_participants(client):
+    a = client.post("/characters", json={
+        "name": "Kaede", "voice_provider": "elevenlabs", "voice_id": "abc123",
+    }).json()["id"]
+    b = client.post("/characters", json={
+        "name": "Ren", "voice_provider": "openai", "voice_id": "nova",
+    }).json()["id"]
+
+    with patch("app.main.generate_dialogue_audio") as mock_dlg:
+        mock_dlg.return_value = {
+            "url": "https://example.com/dialogue.mp3", "sha256": "dlgsha",
+            "mime_type": "audio/mpeg", "manifest_verified": True, "cost_usd": 0.002,
+            "script": [
+                {"character_id": a, "character_name": "Kaede", "text": "Hey Ren!"},
+                {"character_id": b, "character_name": "Ren", "text": "Hey Kaede."},
+                {"character_id": a, "character_name": "Kaede", "text": "How's it going?"},
+            ],
+        }
+        resp = client.post(
+            "/audio/dialogue",
+            json={"turns": [
+                {"character_id": a, "text": "Hey Ren!"},
+                {"character_id": b, "text": "Hey Kaede."},
+                {"character_id": a, "text": "How's it going?"},
+            ]},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    dialogue = resp.json()
+    # participant order = first appearance, deduped (Kaede speaks twice)
+    assert dialogue["participant_ids"] == [a, b]
+    assert dialogue["participant_names"] == ["Kaede", "Ren"]
+    assert len(dialogue["script"]) == 3
+    passed_turns = mock_dlg.call_args.args[0]
+    assert len(passed_turns) == 3
+    assert passed_turns[0]["voice_provider"] == "elevenlabs" and passed_turns[0]["voice_id"] == "abc123"
+
+    assert any(d["id"] == dialogue["id"] for d in client.get("/audio/dialogue").json())
+    assert client.delete(f"/audio/dialogue/{dialogue['id']}").status_code == 204
+    assert client.delete(f"/audio/dialogue/{dialogue['id']}").status_code == 404
+
+
 def test_build_batch_prompts_strategies():
     from app.pipelines import build_batch_prompts
 

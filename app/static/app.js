@@ -165,6 +165,21 @@ const TRANSLATIONS = {
     genAudioBtn: "Generate audio",
     yourAudio: "Your audio",
     audioEmpty: "Nothing here yet — write a line and generate.",
+    audioModeSingle: "Single voice",
+    audioModeDialogue: "Dialogue — multiple characters",
+    dialoguePick: "Pick the characters (2–6) — each speaks in their own fixed voice:",
+    phDialogueScript: "Kaede: Hey Ren, can you help me with English?\nRen: Sure, let's start with this chapter.",
+    dialogueHint: "One line per turn, format \"Name: line\" — spoken in order, each in the named character's fixed voice.",
+    genDialogueBtn: "Generate dialogue",
+    yourDialogues: "Your dialogues",
+    dialogueEmpty: "No dialogues yet — pick characters and write a script above.",
+    needVoiceForDialogue: "Give at least two characters a voice in their profile first.",
+    dialogueLineFormat: "Couldn't read this line — use \"Name: line\": {line}",
+    dialogueUnknownSpeaker: "\"{name}\" isn't one of the picked characters — check the spelling.",
+    toastPickAtMostSix: "Pick at most six characters.",
+    toastWriteScriptFirst: "Write the script first.",
+    generatingDialogue: "Generating the dialogue… each line renders in its speaker's voice, then they're combined.",
+    toastDialogueCreated: "Dialogue created.",
     characterLabel: "Character",
     videoSourceLabel: "Reference",
     videoSourceCharacter: "Single character",
@@ -382,6 +397,21 @@ const TRANSLATIONS = {
     genAudioBtn: "Audio generieren",
     yourAudio: "Deine Audios",
     audioEmpty: "Noch nichts hier – schreibe eine Zeile und generiere.",
+    audioModeSingle: "Einzelstimme",
+    audioModeDialogue: "Dialog — mehrere Charaktere",
+    dialoguePick: "Wähle die Charaktere (2–6) — jeder spricht in seiner festen Stimme:",
+    phDialogueScript: "Kaede: Hey Ren, kannst du mir bei Englisch helfen?\nRen: Klar, fangen wir mit diesem Kapitel an.",
+    dialogueHint: "Eine Zeile pro Sprecher, Format \"Name: Zeile\" — wird der Reihe nach in der festen Stimme des jeweiligen Charakters gesprochen.",
+    genDialogueBtn: "Dialog generieren",
+    yourDialogues: "Deine Dialoge",
+    dialogueEmpty: "Noch keine Dialoge – wähle Charaktere und schreibe oben ein Skript.",
+    needVoiceForDialogue: "Gib zuerst mindestens zwei Charakteren im Profil eine Stimme.",
+    dialogueLineFormat: "Diese Zeile konnte ich nicht lesen – nutze \"Name: Zeile\": {line}",
+    dialogueUnknownSpeaker: "\"{name}\" ist keiner der ausgewählten Charaktere – prüfe die Schreibweise.",
+    toastPickAtMostSix: "Wähle höchstens sechs Charaktere.",
+    toastWriteScriptFirst: "Schreibe zuerst das Skript.",
+    generatingDialogue: "Dialog wird generiert … jede Zeile entsteht in der Stimme ihres Sprechers, dann werden sie zusammengefügt.",
+    toastDialogueCreated: "Dialog erstellt.",
     characterLabel: "Charakter",
     videoSourceLabel: "Referenz",
     videoSourceCharacter: "Einzelner Charakter",
@@ -1977,6 +2007,8 @@ function showAudioView() {
   el("open-audio").classList.add("active");
   renderAudioVoices();
   loadAudio();
+  renderDialogueParticipants();
+  loadDialogues();
 }
 
 function hideAudioView() {
@@ -2015,10 +2047,22 @@ function renderAudioVoices() {
 
 function setAudioSource(source) {
   audioSource = source;
-  document.querySelectorAll(".audio-source-btn").forEach((b) =>
+  document.querySelectorAll(".audio-source-btn[data-source]").forEach((b) =>
     b.classList.toggle("active", b.dataset.source === source));
   el("audio-catalog").hidden = source !== "catalog";
   el("audio-custom").hidden = source !== "custom";
+}
+
+let audioMode = "single";
+
+function setAudioMode(mode) {
+  audioMode = mode;
+  document.querySelectorAll(".audio-source-btn[data-audio-mode]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.audioMode === mode));
+  el("audio-single-panel").hidden = mode !== "single";
+  el("audio-dialogue-panel").hidden = mode !== "dialogue";
+  el("audio-single-gallery").hidden = mode !== "single";
+  el("audio-dialogue-gallery").hidden = mode !== "dialogue";
 }
 
 function setupAudio() {
@@ -2027,9 +2071,13 @@ function setupAudio() {
   el("audio-filter-gender").addEventListener("change", renderAudioVoices);
   el("audio-filter-age").addEventListener("change", renderAudioVoices);
   el("audio-voice-preview").addEventListener("click", () => previewVoice("audio-voice-select", "audio-voice-preview"));
-  document.querySelectorAll(".audio-source-btn").forEach((b) =>
+  document.querySelectorAll(".audio-source-btn[data-source]").forEach((b) =>
     b.addEventListener("click", () => setAudioSource(b.dataset.source)));
   setAudioSource("catalog");
+  document.querySelectorAll(".audio-source-btn[data-audio-mode]").forEach((b) =>
+    b.addEventListener("click", () => setAudioMode(b.dataset.audioMode)));
+  setAudioMode("single");
+  el("generate-dialogue-button").addEventListener("click", generateDialogue);
 }
 
 let audioGenerating = false;
@@ -2131,6 +2179,165 @@ function renderAudio(clips) {
     remove.addEventListener("click", async () => {
       if (!confirm("Delete this audio clip?")) return;
       try { await api(`/audio/${clip.id}`, { method: "DELETE" }); loadAudio(); toast("Audio deleted."); }
+      catch (err) { toast(err.message, true); }
+    });
+    actions.appendChild(remove);
+    meta.appendChild(actions);
+    body.appendChild(meta);
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
+/* ---------- Audio: dialogue between multiple characters ---------- */
+
+function renderDialogueParticipants() {
+  const box = el("dialogue-participants");
+  const prevChecked = new Set([...box.querySelectorAll("input:checked")].map((c) => c.value));
+  box.innerHTML = "";
+  const withVoice = state.characters.filter((c) => c.voice_id);
+  if (!withVoice.length) {
+    box.innerHTML = `<p class="empty-note">${t("needVoiceForDialogue")}</p>`;
+    return;
+  }
+  for (const character of withVoice) {
+    const label = document.createElement("label");
+    label.className = "participant";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = String(character.id);
+    cb.checked = prevChecked.has(String(character.id));
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    if (character.thumbnail_url) {
+      const img = document.createElement("img");
+      img.src = character.thumbnail_url;
+      img.alt = "";
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = character.name.trim().charAt(0).toUpperCase() || "?";
+    }
+    const name = document.createElement("span");
+    name.textContent = character.name;
+    label.append(cb, avatar, name);
+    box.appendChild(label);
+  }
+}
+
+// Parses "Name: line" per line against the checked participants (case-
+// insensitive). Returns {turns} on success or {error} naming the exact
+// line that didn't match, so the user can fix it instead of guessing.
+function parseDialogueScript(text, checkedCharacters) {
+  const byName = new Map(checkedCharacters.map((c) => [c.name.toLowerCase(), c]));
+  const turns = [];
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const idx = line.indexOf(":");
+    if (idx < 0) return { error: t("dialogueLineFormat").replace("{line}", line) };
+    const name = line.slice(0, idx).trim();
+    const spoken = line.slice(idx + 1).trim();
+    const character = byName.get(name.toLowerCase());
+    if (!character) return { error: t("dialogueUnknownSpeaker").replace("{name}", name) };
+    if (!spoken) return { error: t("dialogueLineFormat").replace("{line}", line) };
+    turns.push({ character_id: character.id, text: spoken });
+  }
+  return { turns };
+}
+
+let dialogueGenerating = false;
+
+async function generateDialogue() {
+  if (dialogueGenerating) return;
+  const ids = [...document.querySelectorAll("#dialogue-participants input:checked")].map((c) => Number(c.value));
+  if (ids.length < 2) { toast(t("toastPickTwoCharacters"), true); return; }
+  if (ids.length > 6) { toast(t("toastPickAtMostSix"), true); return; }
+  const checkedCharacters = state.characters.filter((c) => ids.includes(c.id));
+  const script = el("dialogue-script").value.trim();
+  if (!script) { toast(t("toastWriteScriptFirst"), true); el("dialogue-script").focus(); return; }
+
+  const { turns, error } = parseDialogueScript(script, checkedCharacters);
+  if (error) { toast(error, true); return; }
+
+  dialogueGenerating = true;
+  el("generate-dialogue-button").disabled = true;
+  const status = el("audio-status");
+  status.classList.remove("error");
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("generatingDialogue")}`;
+  status.hidden = false;
+  try {
+    await api("/audio/dialogue", {
+      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify({ turns }),
+    });
+    el("dialogue-script").value = "";
+    status.hidden = true;
+    await loadDialogues();
+    toast(t("toastDialogueCreated"));
+  } catch (err) {
+    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast(t("toastNeedKey"), true); }
+    else { status.classList.add("error"); status.textContent = err.message; }
+  } finally {
+    dialogueGenerating = false;
+    el("generate-dialogue-button").disabled = false;
+  }
+}
+
+async function loadDialogues() {
+  try {
+    renderDialogues(await api("/audio/dialogue"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderDialogues(dialogues) {
+  const grid = el("dialogue-grid");
+  grid.innerHTML = "";
+  el("dialogue-empty").hidden = dialogues.length > 0;
+  for (const dlg of dialogues) {
+    const card = document.createElement("div");
+    card.className = "asset-card";
+    const body = document.createElement("div");
+    body.className = "asset-body";
+    if (dlg.signed_url) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = dlg.signed_url;
+      audio.preload = "none";
+      body.appendChild(audio);
+    }
+    const who = document.createElement("p");
+    who.className = "scene-who";
+    who.textContent = (dlg.participant_names || []).join(" + ");
+    body.appendChild(who);
+    const transcript = document.createElement("p");
+    transcript.className = "asset-prompt";
+    transcript.textContent = (dlg.script || []).map((t) => `${t.character_name}: ${t.text}`).join("  ·  ");
+    transcript.title = transcript.textContent;
+    body.appendChild(transcript);
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    const parts = [formatTimestamp(dlg.created_at)];
+    if (typeof dlg.cost_usd === "number") parts.push(`$${dlg.cost_usd.toFixed(4)}`);
+    time.textContent = parts.join(" · ");
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    if (dlg.signed_url) {
+      const open = document.createElement("a");
+      open.href = dlg.signed_url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.textContent = "Open ↗";
+      actions.appendChild(open);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this dialogue?")) return;
+      try { await api(`/audio/dialogue/${dlg.id}`, { method: "DELETE" }); loadDialogues(); toast("Dialogue deleted."); }
       catch (err) { toast(err.message, true); }
     });
     actions.appendChild(remove);

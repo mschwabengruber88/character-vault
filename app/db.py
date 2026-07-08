@@ -114,6 +114,20 @@ CREATE TABLE IF NOT EXISTS audio_clips (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS dialogues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    script TEXT NOT NULL,
+    url TEXT NOT NULL,
+    sha256 TEXT,
+    mime_type TEXT,
+    cost_usd REAL,
+    manifest_verified INTEGER NOT NULL DEFAULT 0,
+    participant_ids TEXT NOT NULL,
+    participant_names TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS scripts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id TEXT NOT NULL DEFAULT 'default',
@@ -435,6 +449,69 @@ def delete_scene(workspace_id: str, scene_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute(
             "DELETE FROM scenes WHERE id = ? AND workspace_id = ?", (scene_id, workspace_id)
+        )
+        return cur.rowcount > 0
+
+
+def create_dialogue(
+    workspace_id: str,
+    script: list[dict],
+    url: str,
+    sha256: str | None,
+    mime_type: str | None,
+    cost_usd: float | None,
+    manifest_verified: bool,
+    participant_ids: list[int],
+    participant_names: list[str],
+) -> dict:
+    import json
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO dialogues
+               (workspace_id, script, url, sha256, mime_type, cost_usd,
+                manifest_verified, participant_ids, participant_names, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                workspace_id, json.dumps(script), url, sha256, mime_type, cost_usd,
+                int(manifest_verified), json.dumps(participant_ids),
+                json.dumps(participant_names), now(),
+            ),
+        )
+        return _dialogue_row(conn, cur.lastrowid)
+
+
+def _dialogue_row(conn, dialogue_id: int) -> dict:
+    import json
+
+    row = dict(conn.execute("SELECT * FROM dialogues WHERE id = ?", (dialogue_id,)).fetchone())
+    row["script"] = json.loads(row["script"])
+    row["participant_ids"] = json.loads(row["participant_ids"])
+    row["participant_names"] = json.loads(row["participant_names"])
+    return row
+
+
+def list_dialogues(workspace_id: str) -> list[dict]:
+    import json
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM dialogues WHERE workspace_id = ? ORDER BY id DESC", (workspace_id,)
+        ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["script"] = json.loads(d["script"])
+            d["participant_ids"] = json.loads(d["participant_ids"])
+            d["participant_names"] = json.loads(d["participant_names"])
+            out.append(d)
+        return out
+
+
+def delete_dialogue(workspace_id: str, dialogue_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM dialogues WHERE id = ? AND workspace_id = ?", (dialogue_id, workspace_id)
         )
         return cur.rowcount > 0
 

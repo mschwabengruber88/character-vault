@@ -870,3 +870,59 @@ def generate_character_voice_line(
     else:
         voice = _default_openai_voice(character_id)
     return _openai_voice_line(character_id, text, voice)
+
+
+def generate_dialogue_audio(turns: list[dict]) -> dict:
+    """Turn a multi-character script into one combined clip: each turn speaks
+    in its own character's fixed voice (reusing generate_character_voice_line
+    as-is — no new voice logic), the resulting lines are concatenated in
+    order with ffmpeg, and the combined clip is uploaded once.
+
+    `turns`: [{"character_id", "character_name", "voice_provider",
+    "voice_id", "text"}, ...] — one entry per line, in speaking order.
+    Returns {url, sha256, mime_type, manifest_verified, cost_usd, script}
+    where `script` echoes each turn's character_name/text for display."""
+    import subprocess
+    import uuid as _uuid
+
+    from app.storage import download_bytes, upload_bytes
+
+    lines = []
+    for turn in turns:
+        asset = generate_character_voice_line(
+            turn["character_id"], turn["text"], turn.get("voice_provider"), turn.get("voice_id"),
+        )
+        lines.append({**turn, "asset": asset})
+
+    with tempfile.TemporaryDirectory() as d:
+        clip_paths = []
+        for i, line in enumerate(lines):
+            path = Path(d) / f"line{i}.mp3"
+            path.write_bytes(download_bytes(line["asset"]["url"]))
+            clip_paths.append(path)
+
+        inputs = []
+        for p in clip_paths:
+            inputs += ["-i", str(p)]
+        filter_inputs = "".join(f"[{i}:a]" for i in range(len(clip_paths)))
+        op = Path(d) / "dialogue.mp3"
+        subprocess.run(
+            ["ffmpeg", "-y", *inputs, "-filter_complex",
+             f"{filter_inputs}concat=n={len(clip_paths)}:v=0:a=1[out]", "-map", "[out]", str(op)],
+            check=True, capture_output=True, timeout=120,
+        )
+        out = op.read_bytes()
+
+    url, sha = upload_bytes(f"audio/dialogues/{_uuid.uuid4().hex}.mp3", out, "audio/mpeg")
+    costs = [line["asset"].get("cost_usd") for line in lines if line["asset"].get("cost_usd") is not None]
+    return {
+        "url": url,
+        "sha256": sha,
+        "mime_type": "audio/mpeg",
+        "manifest_verified": all(line["asset"].get("manifest_verified") for line in lines),
+        "cost_usd": sum(costs) if costs else None,
+        "script": [
+            {"character_id": l["character_id"], "character_name": l["character_name"], "text": l["text"]}
+            for l in lines
+        ],
+    }

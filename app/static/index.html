@@ -354,7 +354,12 @@
           </div>
         </div>
 
-        <div class="generate-card">
+        <div class="studio-modes">
+          <button type="button" class="audio-source-btn active" data-audio-mode="single" data-i18n="audioModeSingle">Single voice</button>
+          <button type="button" class="audio-source-btn" data-audio-mode="dialogue" data-i18n="audioModeDialogue">Dialogue — multiple characters</button>
+        </div>
+
+        <div id="audio-single-panel" class="generate-card">
           <p class="generate-hint" data-i18n="ttsHint">Genblaze TTS → Backblaze B2</p>
           <textarea id="audio-text" data-i18n-ph="phAudioText" placeholder="What should be spoken? e.g. 'In a world long forgotten, one traveller set out at dawn…'" maxlength="4000" rows="4"></textarea>
           <div class="studio-modes">
@@ -394,11 +399,28 @@
           <button id="generate-audio-button" class="button primary" data-i18n="genAudioBtn">Generate audio</button>
         </div>
 
+        <div id="audio-dialogue-panel" class="generate-card" hidden>
+          <p class="scene-sub" data-i18n="dialoguePick">Pick the characters (2–6) — each speaks in their own fixed voice:</p>
+          <div id="dialogue-participants" class="scene-participants"></div>
+          <textarea id="dialogue-script" data-i18n-ph="phDialogueScript" placeholder="Kaede: Hey Ren, can you help me with English?&#10;Ren: Sure, let's start with this chapter." maxlength="4000" rows="6"></textarea>
+          <p class="generate-hint" data-i18n="dialogueHint">One line per turn, format "Name: line" — spoken in order, each in the named character's fixed voice.</p>
+          <p id="dialogue-note" class="generate-hint" hidden></p>
+          <button id="generate-dialogue-button" class="button primary" data-i18n="genDialogueBtn">Generate dialogue</button>
+        </div>
+
         <div id="audio-status" class="generation-status" hidden></div>
 
-        <h3 class="assets-heading" data-i18n="yourAudio">Your audio</h3>
-        <div id="audio-grid" class="asset-grid"></div>
-        <p id="audio-empty" class="empty-note" hidden data-i18n="audioEmpty">Nothing here yet — write a line and generate.</p>
+        <div id="audio-single-gallery">
+          <h3 class="assets-heading" data-i18n="yourAudio">Your audio</h3>
+          <div id="audio-grid" class="asset-grid"></div>
+          <p id="audio-empty" class="empty-note" hidden data-i18n="audioEmpty">Nothing here yet — write a line and generate.</p>
+        </div>
+
+        <div id="audio-dialogue-gallery" hidden>
+          <h3 class="assets-heading" data-i18n="yourDialogues">Your dialogues</h3>
+          <div id="dialogue-grid" class="asset-grid"></div>
+          <p id="dialogue-empty" class="empty-note" hidden data-i18n="dialogueEmpty">No dialogues yet — pick characters and write a script above.</p>
+        </div>
       </div>
 
       <div id="video-view" hidden>
