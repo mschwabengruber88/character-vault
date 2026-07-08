@@ -208,26 +208,6 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/debug/identify_face", include_in_schema=False)
-def debug_identify_face(video_url: str, workspace: str = Depends(require_workspace)):
-    """TEMP: probe whether GMI's kling-identify-face detects multiple faces in
-    a multi-character video. Remove after Phase 3B is decided."""
-    import httpx
-
-    from app.config import GMI_API_KEY
-    from app.pipelines import IDENTIFY_FACE_MODEL, _dig, _gmi_submit_poll
-    from app.storage import presign_asset_url
-
-    if not GMI_API_KEY:
-        raise HTTPException(status_code=400, detail="GMI_API_KEY not configured")
-    v = presign_asset_url(video_url) or video_url
-    headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
-    with httpx.Client(timeout=60) as client:
-        ident = _gmi_submit_poll(client, IDENTIFY_FACE_MODEL, {"video_url": v}, headers, timeout=300)
-    idata = _dig(_dig(ident, "outcome") or ident, "data") or _dig(ident, "outcome") or ident
-    return {"raw": ident, "idata": idata}
-
-
 class CharacterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
