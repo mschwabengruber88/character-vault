@@ -64,6 +64,7 @@ const TRANSLATIONS = {
     wsBadToken: "That workspace token was not found.",
     wsError: "Could not create the workspace. Try again.",
     wsCopied: "Workspace token copied.",
+    wsRecent: "Continue in a workspace",
     navScript: "Idea → Script",
     scriptTitle: "Idea → Script",
     scriptDesc: "Describe an idea in a sentence and get a ready-to-shoot script. A story script drops straight into the Story image mode — one line becomes one panel.",
@@ -269,6 +270,7 @@ const TRANSLATIONS = {
     wsBadToken: "Dieser Workspace-Token wurde nicht gefunden.",
     wsError: "Workspace konnte nicht erstellt werden. Bitte erneut versuchen.",
     wsCopied: "Workspace-Token kopiert.",
+    wsRecent: "In einem Workspace weiter",
     navScript: "Idee → Skript",
     scriptTitle: "Idee → Skript",
     scriptDesc: "Beschreibe eine Idee in einem Satz und erhalte ein drehfertiges Skript. Ein Story-Skript fließt direkt in den Story-Bildmodus – eine Zeile wird ein Panel.",
@@ -495,9 +497,41 @@ function apiKey() {
 /* ---------- Workspaces (multitenancy) ---------- */
 
 const WORKSPACE_STORAGE = "cv_workspace_id";
+const WORKSPACE_COOKIE = "cv_ws";        // backup of the active id
+const RECENT_STORAGE = "cv_workspaces";  // remembered [{id,name}]
 
+function setCookie(name, value, days = 365) {
+  try {
+    const exp = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${exp}; path=/; SameSite=Lax`;
+  } catch {}
+}
+function getCookie(name) {
+  return document.cookie.split("; ").reduce((acc, c) => {
+    const i = c.indexOf("=");
+    return c.slice(0, i) === name ? decodeURIComponent(c.slice(i + 1)) : acc;
+  }, "");
+}
+
+// Active workspace survives a localStorage-only clear via the cookie backup.
 function workspaceId() {
-  return localStorage.getItem(WORKSPACE_STORAGE) || "";
+  return localStorage.getItem(WORKSPACE_STORAGE) || getCookie(WORKSPACE_COOKIE) || "";
+}
+
+function recentWorkspaces() {
+  try { return JSON.parse(localStorage.getItem(RECENT_STORAGE) || getCookie(RECENT_STORAGE) || "[]"); }
+  catch { return []; }
+}
+function rememberWorkspace(ws) {
+  const list = [{ id: ws.id, name: ws.name }, ...recentWorkspaces().filter((w) => w.id !== ws.id)].slice(0, 6);
+  const json = JSON.stringify(list);
+  localStorage.setItem(RECENT_STORAGE, json);
+  setCookie(RECENT_STORAGE, json);
+}
+function forgetWorkspace(id) {
+  const json = JSON.stringify(recentWorkspaces().filter((w) => w.id !== id));
+  localStorage.setItem(RECENT_STORAGE, json);
+  setCookie(RECENT_STORAGE, json);
 }
 
 async function validateWorkspace(id) {
@@ -516,17 +550,40 @@ function ensureWorkspace() {
     const id = workspaceId();
     if (id) {
       const ws = await validateWorkspace(id);
-      if (ws) { setWorkspaceChip(ws); return; }
+      if (ws) { adoptWorkspace(ws); return; }   // valid → adopt (also remembers it)
       localStorage.removeItem(WORKSPACE_STORAGE);
+      setCookie(WORKSPACE_COOKIE, "", -1);
     }
     await new Promise((resolve) => {
       workspaceResolve = resolve;
       el("ws-gate-error").hidden = true;
       el("ws-name").value = "";
       el("ws-token").value = "";
+      renderRecentWorkspaces();
       el("workspace-gate").showModal();
     });
   })();
+}
+
+function renderRecentWorkspaces() {
+  const wrap = el("ws-recent");
+  const box = el("ws-recent-list");
+  const list = recentWorkspaces();
+  box.innerHTML = "";
+  if (!list.length) { wrap.hidden = true; return; }
+  for (const w of list) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ws-recent-chip";
+    btn.textContent = `◈ ${w.name}`;
+    btn.addEventListener("click", async () => {
+      const ws = await validateWorkspace(w.id);
+      if (ws) { adoptWorkspace(ws); }
+      else { forgetWorkspace(w.id); renderRecentWorkspaces(); gateError("wsBadToken"); }
+    });
+    box.appendChild(btn);
+  }
+  wrap.hidden = false;
 }
 
 function gateError(key) {
@@ -537,6 +594,8 @@ function gateError(key) {
 
 function adoptWorkspace(ws) {
   localStorage.setItem(WORKSPACE_STORAGE, ws.id);
+  setCookie(WORKSPACE_COOKIE, ws.id);
+  rememberWorkspace(ws);
   setWorkspaceChip(ws);
   if (el("workspace-gate").open) el("workspace-gate").close();
   if (workspaceResolve) { workspaceResolve(); workspaceResolve = null; }
@@ -590,6 +649,7 @@ function setupWorkspace() {
   el("ws-switch").addEventListener("click", async () => {
     el("workspace-info").close();
     localStorage.removeItem(WORKSPACE_STORAGE);
+    setCookie(WORKSPACE_COOKIE, "", -1);  // keep the remembered list for one-click switch-back
     el("workspace-chip").hidden = true;
     state.selectedId = null;
     await ensureWorkspace();

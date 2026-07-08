@@ -516,6 +516,11 @@
   <dialog id="workspace-gate" class="key-dialog workspace-gate">
     <h3 data-i18n="wsGateTitle">Your workspace</h3>
     <p data-i18n="wsGateIntro">Loomina is multi-tenant: your characters, images, audio and videos live in your own private workspace. Create one, or open an existing workspace with its token.</p>
+    <div id="ws-recent" class="ws-recent" hidden>
+      <span class="ws-recent-label" data-i18n="wsRecent">Continue in a workspace</span>
+      <div id="ws-recent-list" class="ws-recent-list"></div>
+      <div class="ws-gate-divider"><span data-i18n="wsOr">or</span></div>
+    </div>
     <div class="ws-gate-block">
       <label class="ws-field">
         <span data-i18n="wsNameLabel">New workspace name</span>

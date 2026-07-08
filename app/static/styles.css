@@ -1317,3 +1317,20 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 
 .voice-pick-row { display: flex; gap: 8px; align-items: center; }
 .voice-pick-row select { flex: 1; }
+
+/* Workspace gate — remembered workspaces (one-click recovery) */
+.ws-recent { margin-bottom: 4px; }
+.ws-recent-label { display: block; font-size: 12px; color: var(--ink-faint); margin-bottom: 8px; }
+.ws-recent-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ws-recent-chip {
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+  border: 1px solid var(--brass-deep);
+  border-radius: 999px;
+  color: var(--ink);
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ws-recent-chip:hover { background: color-mix(in srgb, var(--violet) 22%, transparent); }
