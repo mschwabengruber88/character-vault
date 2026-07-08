@@ -1314,3 +1314,6 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
   .hero-threads { opacity: 1; animation: none; }
   .hero-threads path { animation: none; stroke-dasharray: none; opacity: 0.7; }
 }
+
+.voice-pick-row { display: flex; gap: 8px; align-items: center; }
+.voice-pick-row select { flex: 1; }

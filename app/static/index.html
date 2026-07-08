@@ -36,10 +36,13 @@
         <textarea id="create-personality" data-i18n-ph="phPersonality" placeholder="Personality &amp; traits — e.g. 'shy, doesn't speak directly to women' or 'strong, confident, charismatic'" maxlength="1000" rows="2"></textarea>
         <input id="create-purpose" type="text" data-i18n-ph="phPurpose" placeholder="Purpose / use-case (optional)" maxlength="500">
         <input id="create-seed" type="number" min="0" data-i18n-ph="phSeed" placeholder="Seed (optional, for reproducibility)">
-        <label class="voice-field">
+        <div class="voice-field">
           <span data-i18n="voicePickLabel">Voice (fixed on the character)</span>
-          <select id="create-voice"></select>
-        </label>
+          <div class="voice-pick-row">
+            <select id="create-voice"></select>
+            <button type="button" id="create-voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
+          </div>
+        </div>
         <label class="upload-field">
           <span data-i18n="refPhotoLabel">Reference photo (optional — create from your own image)</span>
           <input id="create-image" type="file" accept="image/png,image/jpeg,image/webp">
@@ -138,10 +141,13 @@
           <textarea id="edit-personality" data-i18n-ph="phPersonalityShort" placeholder="Personality &amp; traits" maxlength="1000" rows="2"></textarea>
           <input id="edit-purpose" type="text" data-i18n-ph="phPurposeShort" placeholder="Purpose / use-case" maxlength="500">
           <input id="edit-seed" type="number" min="0" data-i18n-ph="phSeedShort" placeholder="Seed">
-          <label class="voice-field">
+          <div class="voice-field">
             <span data-i18n="voicePickLabel">Voice (fixed on the character)</span>
-            <select id="edit-voice"></select>
-          </label>
+            <div class="voice-pick-row">
+              <select id="edit-voice"></select>
+              <button type="button" id="edit-voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
+            </div>
+          </div>
           <div class="form-row">
             <button type="submit" class="button primary small" data-i18n="save">Save</button>
             <button type="button" id="edit-cancel" class="button small" data-i18n="cancel">Cancel</button>
@@ -224,7 +230,6 @@
             <label class="model-row">
               <span class="model-label" data-i18n="voiceLabel">Voice</span>
               <span id="voice-fixed" class="voice-fixed"></span>
-              <button type="button" id="voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
             </label>
             <p id="voice-note" class="generate-hint" hidden></p>
             <button id="generate-voice-button" class="button primary" data-i18n="genVoiceBtn">Generate voice line</button>

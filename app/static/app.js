@@ -701,10 +701,11 @@ function previewVoice(selectId, buttonId) {
   previewVoiceValue(el(selectId).value, buttonId);
 }
 
-function previewSelectedVoice() {
-  const value = el("voice-fixed").dataset.value || "";
+// Preview the voice currently selected in a picker (create / profile forms).
+function previewPickerVoice(selectId, buttonId) {
+  const value = el(selectId).value || "";
   if (!value) { toast(t("toastPickVoiceFirst"), true); return; }
-  previewVoiceValue(value, "voice-preview");
+  previewVoiceValue(value, buttonId);
 }
 
 async function loadImageModels() {
@@ -2394,7 +2395,8 @@ function init() {
   el("batch-cancel").addEventListener("click", cancelBatch);
   document.querySelectorAll('input[name="quality"]').forEach((r) => r.addEventListener("change", updateCostEstimate));
   updateModeUI();
-  el("voice-preview").addEventListener("click", previewSelectedVoice);
+  el("create-voice-preview").addEventListener("click", () => previewPickerVoice("create-voice", "create-voice-preview"));
+  el("edit-voice-preview").addEventListener("click", () => previewPickerVoice("edit-voice", "edit-voice-preview"));
   el("open-scenes").addEventListener("click", showScenesView);
   el("generate-scene-button").addEventListener("click", generateScene);
   setupStudio();
