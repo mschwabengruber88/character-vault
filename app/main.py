@@ -875,6 +875,14 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
     else:
         speech = None  # text-to-video has no character voice to speak with
 
+    # For a talking clip, keep the base motion's mouth calm so lip-sync alone
+    # drives the speech — otherwise the base clip "talks" too and the mouth
+    # over-moves. (Display prompt stays as the user wrote it.)
+    motion_prompt = body.prompt
+    if speech and speech.strip():
+        motion_prompt = (f"{body.prompt}. Keep the mouth relaxed and mostly closed with "
+                         f"minimal lip movement; calm, steady expression, eyes on camera.")
+
     _acquire_slot(workspace, "video")
     try:
         video = db.create_video(
@@ -887,7 +895,7 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
         raise
     thread = threading.Thread(
         target=_run_video,
-        args=(workspace, video["id"], body.prompt, body.model, reference, body.duration,
+        args=(workspace, video["id"], motion_prompt, body.model, reference, body.duration,
               body.aspect_ratio, character_id, speech, voice_provider, voice_id),
         daemon=True,
     )
