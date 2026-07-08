@@ -50,6 +50,12 @@ SCENE_INSTRUCTION = (
     "Compose a single new image containing ALL of these characters together in "
     "one scene, each matching their own reference image exactly (same face, hair, "
     "colors, and outfit). Do not merge or swap their features. "
+    "Apply ONE consistent art style and color treatment across the ENTIRE image — "
+    "if it's black-and-white/monochrome, render every character and the background "
+    "in grayscale too; never selectively color in just one character's hair or "
+    "clothing while the rest stays monochrome. If the scene includes speech "
+    "bubbles, draw each bubble's tail pointing clearly at the character who is "
+    "speaking it, positioned near their mouth, so it's unambiguous who says what. "
 )
 
 IDENTITY_INSTRUCTION = (
