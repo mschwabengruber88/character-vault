@@ -189,6 +189,19 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def revalidate_frontend(request: Request, call_next):
+    """Force the browser to revalidate the HTML/JS/CSS on every load so a
+    freshly deployed build can't be served as a stale mix of old + new files
+    (which breaks init and leaves half the UI dead). StaticFiles still sends
+    ETag/Last-Modified, so unchanged files return a cheap 304."""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html")
