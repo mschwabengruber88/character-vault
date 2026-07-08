@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 
 from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline, StepStatus
@@ -385,6 +386,16 @@ VIDEO_MODELS = {
 }
 DEFAULT_VIDEO_MODEL = "Kling-Image2Video-V2.1-Master"
 
+# Pixverse v5.6 diverges from the shared GMI video param shape the SDK
+# builds for Kling/Veo/Wan. Reverse-engineered against GMI's live API
+# (2026-07, see console.gmicloud.ai/api/v1/ie/requestqueue): `duration` is
+# a string enum ("5"/"8"/"10", not an int) and the reference image is a
+# top-level `image_url` field, not `image`. `quality` is required with no
+# server-side default.
+_PIXVERSE_VIDEO_MODELS = {"pixverse-v5.6-i2v", "pixverse-v5.6-t2v"}
+_PIXVERSE_DURATIONS = (5, 8, 10)
+_PIXVERSE_QUALITY = "720p"
+
 
 def available_video_models() -> list[dict]:
     if not GMI_API_KEY:
@@ -540,6 +551,51 @@ def mux_video_with_audio(video_url: str, audio_url: str) -> dict:
     return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
 
 
+_video_provider_instance = None
+_video_provider_lock = threading.Lock()
+
+
+def _video_provider():
+    """GMICloudVideoProvider with the Pixverse param contract corrected —
+    built once and reused (registry construction isn't free)."""
+    global _video_provider_instance
+    if _video_provider_instance is not None:
+        return _video_provider_instance
+    with _video_provider_lock:
+        if _video_provider_instance is None:
+            from genblaze_core.providers import ModelSpec, ParamSurface, route_images
+            from genblaze_gmicloud import GMICloudVideoProvider
+
+            registry = GMICloudVideoProvider.models_default().fork()
+            pixverse_surface = (
+                ParamSurface.for_modality(Modality.VIDEO)
+                .extend("quality")
+                .with_coercers(duration=str)
+            )
+            for slug in _PIXVERSE_VIDEO_MODELS:
+                registry.register(
+                    ModelSpec(
+                        model_id=slug,
+                        modality=Modality.VIDEO,
+                        input_mapping=route_images(slots=("image_url",)),
+                        extras={"envelope_key": "payload"},
+                        **pixverse_surface.build(),
+                    )
+                )
+            _video_provider_instance = GMICloudVideoProvider(models=registry)
+    return _video_provider_instance
+
+
+def _video_step_params(model: str, duration: int, aspect_ratio: str) -> dict:
+    """Per-model native params. Pixverse needs a duration snapped to its
+    allowed options plus an explicit quality tier; every other GMI video
+    model takes the duration as-is."""
+    if model in _PIXVERSE_VIDEO_MODELS:
+        snapped = min(_PIXVERSE_DURATIONS, key=lambda d: abs(d - duration))
+        return {"duration": snapped, "aspect_ratio": aspect_ratio, "quality": _PIXVERSE_QUALITY}
+    return {"duration": duration, "aspect_ratio": aspect_ratio}
+
+
 def generate_video(
     prompt: str,
     model: str = DEFAULT_VIDEO_MODEL,
@@ -550,10 +606,8 @@ def generate_video(
     """Generate a video clip. If the model is image-to-video, `reference`
     (a stored portrait) is used as the first frame to hold the character's
     identity. Runs on GMI Cloud with async polling handled by the pipeline."""
-    from genblaze_gmicloud import GMICloudVideoProvider
-
     meta = VIDEO_MODELS[model]
-    step_kwargs: dict = {"duration": duration, "aspect_ratio": aspect_ratio}
+    step_kwargs: dict = _video_step_params(model, duration, aspect_ratio)
     if meta["needs_image"]:
         if not reference:
             raise ValueError("This video model needs a character portrait as reference.")
@@ -565,7 +619,7 @@ def generate_video(
     result = (
         Pipeline("character-video")
         .step(
-            GMICloudVideoProvider(),
+            _video_provider(),
             model=model,
             prompt=prompt,
             modality=Modality.VIDEO,
