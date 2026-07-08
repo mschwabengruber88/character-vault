@@ -793,6 +793,11 @@ class VideoRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1000)
     model: str = DEFAULT_VIDEO_MODEL
     character_id: int | None = None
+    # Animate an existing multi-character scene image instead of a single
+    # character's portrait — several characters in one clip. Mutually
+    # exclusive with character_id; no lip-sync is attempted for these (no
+    # single fixed voice to sync to a face), so speech is ignored.
+    scene_id: int | None = None
     duration: int = Field(default=5, ge=3, le=10)
     aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
     # Optional line for the character to SPEAK — turns a silent clip into a
@@ -871,20 +876,29 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
     voice_provider = voice_id = None
     speech = body.speech
     if meta["needs_image"]:
-        if body.character_id is None:
-            raise HTTPException(status_code=400, detail="This model animates a character — pick one.")
-        character = db.get_character(workspace, body.character_id)
-        if character is None:
-            raise HTTPException(status_code=404, detail="Character not found")
-        refs = identity_references(character)
-        if not refs:
-            raise HTTPException(
-                status_code=400,
-                detail=f"'{character['name']}' has no portrait to animate. Generate one first.",
-            )
-        reference = refs[0]
-        character_id, character_name, kind = character["id"], character["name"], "character"
-        voice_provider, voice_id = character.get("voice_provider"), character.get("voice_id")
+        if body.scene_id is not None:
+            scene = db.get_scene(workspace, body.scene_id)
+            if scene is None:
+                raise HTTPException(status_code=404, detail="Scene not found")
+            reference = {"url": scene.get("original_url") or scene["url"], "sha256": scene.get("sha256")}
+            character_name = " + ".join(scene["participant_names"])
+            kind = "scene"
+            speech = None  # several characters, no single fixed voice to lip-sync to
+        elif body.character_id is not None:
+            character = db.get_character(workspace, body.character_id)
+            if character is None:
+                raise HTTPException(status_code=404, detail="Character not found")
+            refs = identity_references(character)
+            if not refs:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{character['name']}' has no portrait to animate. Generate one first.",
+                )
+            reference = refs[0]
+            character_id, character_name, kind = character["id"], character["name"], "character"
+            voice_provider, voice_id = character.get("voice_provider"), character.get("voice_id")
+        else:
+            raise HTTPException(status_code=400, detail="This model animates a character or scene — pick one.")
     else:
         speech = None  # text-to-video has no character voice to speak with
 

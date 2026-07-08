@@ -423,6 +423,14 @@ def list_scenes(workspace_id: str) -> list[dict]:
         return out
 
 
+def get_scene(workspace_id: str, scene_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM scenes WHERE id = ? AND workspace_id = ?", (scene_id, workspace_id)
+        ).fetchone()
+        return _scene_row(conn, row["id"]) if row else None
+
+
 def delete_scene(workspace_id: str, scene_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute(
