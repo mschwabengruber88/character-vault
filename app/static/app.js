@@ -166,6 +166,12 @@ const TRANSLATIONS = {
     yourAudio: "Your audio",
     audioEmpty: "Nothing here yet — write a line and generate.",
     characterLabel: "Character",
+    videoSourceLabel: "Reference",
+    videoSourceCharacter: "Single character",
+    videoSourceScene: "Existing scene — multiple characters",
+    sceneLabel: "Scene",
+    videoNoScenes: "No scenes yet — create one in the Images tab first.",
+    toastPickSceneFirst: "Pick a scene first.",
     phVideoPrompt: "Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'",
     durationLabel: "Duration",
     dur5: "5 seconds",
@@ -377,6 +383,12 @@ const TRANSLATIONS = {
     yourAudio: "Deine Audios",
     audioEmpty: "Noch nichts hier – schreibe eine Zeile und generiere.",
     characterLabel: "Charakter",
+    videoSourceLabel: "Referenz",
+    videoSourceCharacter: "Einzelner Charakter",
+    videoSourceScene: "Bestehende Szene — mehrere Charaktere",
+    sceneLabel: "Szene",
+    videoNoScenes: "Noch keine Szenen – erstelle zuerst eine im Bilder-Reiter.",
+    toastPickSceneFirst: "Wähle zuerst eine Szene.",
     phVideoPrompt: "Beschreibe die Bewegung, z. B. 'sie dreht den Kopf und lächelt, sanfte Kamerafahrt nach vorn'",
     durationLabel: "Dauer",
     dur5: "5 Sekunden",
@@ -2143,6 +2155,7 @@ function showVideoView() {
   el("video-view").hidden = false;
   el("open-video").classList.add("active");
   populateVideoCharacters();
+  populateVideoScenes();
   applyVideoModelUI();
   loadVideos();
 }
@@ -2177,8 +2190,13 @@ function selectedVideoModel() {
 function applyVideoModelUI() {
   const model = selectedVideoModel();
   const needsImage = model ? model.needs_image : false;
-  el("video-character-row").hidden = !needsImage;
-  el("video-speech-field").hidden = !needsImage;
+  const useScene = needsImage && el("video-source").value === "scene";
+  el("video-source-row").hidden = !needsImage;
+  el("video-character-row").hidden = !needsImage || useScene;
+  el("video-scene-row").hidden = !needsImage || !useScene;
+  // No single fixed voice to lip-sync to when several characters share the
+  // frame, so speech only makes sense for the single-character source.
+  el("video-speech-field").hidden = !needsImage || useScene;
 
   const desc = el("video-model-desc");
   if (!model || !model.description) {
@@ -2214,9 +2232,34 @@ function populateVideoCharacters() {
   }
 }
 
+async function populateVideoScenes() {
+  const select = el("video-scene");
+  select.innerHTML = "";
+  try {
+    const scenes = await api("/scenes");
+    if (!scenes.length) {
+      const opt = document.createElement("option");
+      opt.textContent = t("videoNoScenes");
+      opt.disabled = true;
+      select.appendChild(opt);
+      return;
+    }
+    for (const scene of scenes) {
+      const option = document.createElement("option");
+      option.value = String(scene.id);
+      const who = (scene.participant_names || []).join(" + ");
+      option.textContent = `${who} — ${scene.prompt.slice(0, 60)}`;
+      select.appendChild(option);
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 function setupVideo() {
   el("open-video").addEventListener("click", showVideoView);
   el("video-model").addEventListener("change", applyVideoModelUI);
+  el("video-source").addEventListener("change", applyVideoModelUI);
   el("generate-video-button").addEventListener("click", generateVideo);
 }
 
@@ -2236,11 +2279,17 @@ async function generateVideo() {
     aspect_ratio: el("video-aspect").value,
   };
   if (model.needs_image) {
-    const cid = el("video-character").value;
-    if (!cid) { toast("Pick a character with a portrait first.", true); return; }
-    payload.character_id = Number(cid);
-    const speech = el("video-speech").value.trim();
-    if (speech) payload.speech = speech;
+    if (el("video-source").value === "scene") {
+      const sid = el("video-scene").value;
+      if (!sid) { toast(t("toastPickSceneFirst"), true); return; }
+      payload.scene_id = Number(sid);
+    } else {
+      const cid = el("video-character").value;
+      if (!cid) { toast("Pick a character with a portrait first.", true); return; }
+      payload.character_id = Number(cid);
+      const speech = el("video-speech").value.trim();
+      if (speech) payload.speech = speech;
+    }
   }
 
   videoGenerating = true;

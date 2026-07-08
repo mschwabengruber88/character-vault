@@ -418,9 +418,20 @@
             <span id="video-model-tag" class="model-desc-tag"></span>
             <span id="video-model-text"></span>
           </div>
+          <label class="model-row" id="video-source-row">
+            <span class="model-label" data-i18n="videoSourceLabel">Reference</span>
+            <select id="video-source">
+              <option value="character" data-i18n="videoSourceCharacter">Single character</option>
+              <option value="scene" data-i18n="videoSourceScene">Existing scene — multiple characters</option>
+            </select>
+          </label>
           <label class="model-row" id="video-character-row">
             <span class="model-label" data-i18n="characterLabel">Character</span>
             <select id="video-character"></select>
+          </label>
+          <label class="model-row" id="video-scene-row" hidden>
+            <span class="model-label" data-i18n="sceneLabel">Scene</span>
+            <select id="video-scene"></select>
           </label>
           <p id="video-model-hint" class="generate-hint"></p>
           <textarea id="video-prompt" data-i18n-ph="phVideoPrompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
