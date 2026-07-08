@@ -982,6 +982,8 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
   padding: 22px;
   max-width: 380px;
   width: calc(100vw - 40px);
+  max-height: 88vh;
+  overflow-y: auto;
 }
 
 .key-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
