@@ -38,6 +38,20 @@
         <input id="create-seed" type="number" min="0" data-i18n-ph="phSeed" placeholder="Seed (optional, for reproducibility)">
         <div class="voice-field">
           <span data-i18n="voicePickLabel">Voice (fixed on the character)</span>
+          <div class="voice-filters">
+            <select id="create-voice-filter-gender" class="filter-select" aria-label="Filter by gender">
+              <option value="" data-i18n="filterAnyGender">Any gender</option>
+              <option value="female" data-i18n="filterFemale">Female</option>
+              <option value="male" data-i18n="filterMale">Male</option>
+              <option value="neutral" data-i18n="filterNeutral">Neutral</option>
+            </select>
+            <select id="create-voice-filter-age" class="filter-select" aria-label="Filter by age">
+              <option value="" data-i18n="filterAnyAge">Any age</option>
+              <option value="young" data-i18n="filterYoung">Young / teen</option>
+              <option value="adult" data-i18n="filterAdult">Adult</option>
+              <option value="mature" data-i18n="filterMature">Mature</option>
+            </select>
+          </div>
           <div class="voice-pick-row">
             <select id="create-voice"></select>
             <button type="button" id="create-voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
@@ -143,6 +157,20 @@
           <input id="edit-seed" type="number" min="0" data-i18n-ph="phSeedShort" placeholder="Seed">
           <div class="voice-field">
             <span data-i18n="voicePickLabel">Voice (fixed on the character)</span>
+            <div class="voice-filters">
+              <select id="edit-voice-filter-gender" class="filter-select" aria-label="Filter by gender">
+                <option value="" data-i18n="filterAnyGender">Any gender</option>
+                <option value="female" data-i18n="filterFemale">Female</option>
+                <option value="male" data-i18n="filterMale">Male</option>
+                <option value="neutral" data-i18n="filterNeutral">Neutral</option>
+              </select>
+              <select id="edit-voice-filter-age" class="filter-select" aria-label="Filter by age">
+                <option value="" data-i18n="filterAnyAge">Any age</option>
+                <option value="young" data-i18n="filterYoung">Young / teen</option>
+                <option value="adult" data-i18n="filterAdult">Adult</option>
+                <option value="mature" data-i18n="filterMature">Mature</option>
+              </select>
+            </div>
             <div class="voice-pick-row">
               <select id="edit-voice"></select>
               <button type="button" id="edit-voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>

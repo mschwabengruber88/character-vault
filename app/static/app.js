@@ -678,7 +678,7 @@ const PROVIDER_LABEL = { openai: "OpenAI TTS", elevenlabs: "ElevenLabs" };
 
 async function loadVoices() {
   state.voices = await api("/voices").catch(() => ({}));
-  buildVoicePicker(el("create-voice"), "");
+  refreshVoicePicker("create");
 }
 
 function voiceOptionLabel(voice) {
@@ -692,20 +692,29 @@ function voiceLabelFor(provider, voiceId) {
   return v ? voiceOptionLabel(v) : voiceId;
 }
 
-// Fill a <select> with all voices (grouped) plus a "none" option — used by the
+// Fill a <select> with voices (grouped) plus a "none" option — used by the
 // create and profile forms, the only places a voice can be chosen/changed.
-function buildVoicePicker(select, currentValue) {
+// `filters` narrows by gender/age so picking a voice doesn't mean previewing
+// every single one; the currently selected value is kept even if it no
+// longer matches the filter, so switching filters never silently discards
+// an already-chosen voice.
+function buildVoicePicker(select, currentValue, filters) {
   if (!select) return;
+  const gender = filters && filters.gender;
+  const age = filters && filters.age;
   select.innerHTML = "";
   const none = document.createElement("option");
   none.value = "";
   none.textContent = t("voiceNone");
   select.appendChild(none);
   for (const [provider, voices] of Object.entries(state.voices || {})) {
-    if (!voices.length) continue;
+    const filtered = voices.filter((v) =>
+      (!gender || v.gender === gender) && (!age || v.age === age) ||
+      currentValue === `${provider}:${v.id}`);
+    if (!filtered.length) continue;
     const group = document.createElement("optgroup");
     group.label = PROVIDER_LABEL[provider] || provider;
-    for (const voice of voices) {
+    for (const voice of filtered) {
       const o = document.createElement("option");
       o.value = `${provider}:${voice.id}`;
       o.textContent = voiceOptionLabel(voice);
@@ -714,6 +723,18 @@ function buildVoicePicker(select, currentValue) {
     select.appendChild(group);
   }
   select.value = currentValue || "";
+}
+
+// Re-render a voice picker from its paired gender/age filter selects,
+// preserving whatever is currently chosen.
+function refreshVoicePicker(prefix) {
+  const select = el(`${prefix}-voice`);
+  if (!select) return;
+  const filters = {
+    gender: el(`${prefix}-voice-filter-gender`).value,
+    age: el(`${prefix}-voice-filter-age`).value,
+  };
+  buildVoicePicker(select, select.value, filters);
 }
 
 function splitVoiceValue(value) {
@@ -1030,6 +1051,8 @@ function setupCreateForm() {
     form.hidden = !form.hidden;
     if (!form.hidden) el("create-name").focus();
   });
+  el("create-voice-filter-gender").addEventListener("change", () => refreshVoicePicker("create"));
+  el("create-voice-filter-age").addEventListener("change", () => refreshVoicePicker("create"));
   el("create-cancel").addEventListener("click", () => { form.hidden = true; });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1076,6 +1099,8 @@ async function uploadReferenceImage(characterId, file) {
 }
 
 function setupProfileEditing() {
+  el("edit-voice-filter-gender").addEventListener("change", () => refreshVoicePicker("edit"));
+  el("edit-voice-filter-age").addEventListener("change", () => refreshVoicePicker("edit"));
   el("edit-profile-button").addEventListener("click", () => {
     const c = state.currentCharacter;
     if (!c) return;
@@ -1084,6 +1109,8 @@ function setupProfileEditing() {
     el("edit-personality").value = c.personality || "";
     el("edit-purpose").value = c.purpose || "";
     el("edit-seed").value = c.seed ?? "";
+    el("edit-voice-filter-gender").value = "";
+    el("edit-voice-filter-age").value = "";
     buildVoicePicker(el("edit-voice"), c.voice_id ? `${c.voice_provider}:${c.voice_id}` : "");
     el("edit-form").hidden = false;
   });
