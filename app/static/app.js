@@ -42,7 +42,8 @@ const TRANSLATIONS = {
     navVideo: "Video — animate characters",
     imagesTitle: "Images",
     imagesDesc: "Generate portraits, variation sets, photoshoots or story panels for one character — or bring several together in one scene. Pick who's in the frame below.",
-    imagesPick: "Pick the character(s):",
+    pickOneCharacter: "Pick the character — their stored portraits keep the identity consistent:",
+    pickSceneCharacters: "Pick the characters for the scene (2–4) — Nano Banana composes them together:",
     optScene: "Scene — multiple characters together",
     phScenePrompt: "Describe the scene, e.g. 'the two of them talking by the classroom window, manga panel'",
     hintScene: "Nano Banana multi-character composition — pick 2–4 characters above.",
@@ -252,7 +253,8 @@ const TRANSLATIONS = {
     navVideo: "Video – Charaktere animieren",
     imagesTitle: "Bilder",
     imagesDesc: "Porträts, Variationssets, Fotoshootings oder Story-Panels für einen Charakter generieren – oder mehrere in einer Szene zusammenbringen. Wähle unten, wer im Bild ist.",
-    imagesPick: "Wähle den/die Charakter(e):",
+    pickOneCharacter: "Wähle den Charakter — seine gespeicherten Porträts halten die Identität konsistent:",
+    pickSceneCharacters: "Wähle die Charaktere für die Szene (2–4) — Nano Banana setzt sie gemeinsam zusammen:",
     optScene: "Szene — mehrere Charaktere zusammen",
     phScenePrompt: "Beschreibe die Szene, z. B. 'die beiden unterhalten sich am Klassenzimmerfenster, Manga-Panel'",
     hintScene: "Nano-Banana-Multi-Charakter-Komposition — wähle oben 2–4 Charaktere.",
@@ -1608,6 +1610,11 @@ function onImageParticipantsChange() {
 function renderImageParticipants() {
   const box = el("image-participants");
   const isScene = currentMode() === "scene";
+  // The picker silently switches between "exactly one" and "2-4" depending
+  // on mode (single-character modes need one identity to stay consistent;
+  // scenes compose several) — spell that out, since the radio/checkbox
+  // switch alone isn't obvious.
+  el("participants-label").textContent = t(isScene ? "pickSceneCharacters" : "pickOneCharacter");
   const prevChecked = new Set([...box.querySelectorAll("input:checked")].map((c) => c.value));
   box.innerHTML = "";
   const withPortrait = state.characters.filter((c) => c.thumbnail_url);
