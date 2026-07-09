@@ -45,6 +45,7 @@ from app.pipelines import (
     generate_video,
     generate_lipsync,
     mux_video_with_audio,
+    get_storage_sink,
 )
 from app.storage import presign_asset_url, upload_bytes, upload_reference_image, with_signed_url
 
@@ -208,6 +209,38 @@ async def revalidate_frontend(request: Request, call_next):
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/debug/gmi_audio", include_in_schema=False)
+def debug_gmi_audio(model: str, voice_id: str = "", workspace: str = Depends(require_workspace)):
+    """TEMP: probe whether GMICloud's audio models (elevenlabs-tts-v3,
+    minimax-tts-*, inworld-tts-*, minimax-music-*) actually work — the SDK
+    flags them all "suspected_dead" as of the 2026-04 reconciliation.
+    Remove once the voice-provider swap is decided."""
+    from genblaze_core import Modality, Pipeline
+    from genblaze_gmicloud import GMICloudAudioProvider
+
+    kwargs = {"voice_id": voice_id} if voice_id else {}
+    try:
+        result = (
+            Pipeline("debug-gmi-audio")
+            .step(
+                GMICloudAudioProvider(),
+                model=model,
+                prompt="Hi! This is a test of GMI Cloud's audio pipeline.",
+                modality=Modality.AUDIO,
+                **kwargs,
+            )
+            .run(sink=get_storage_sink(), timeout=120)
+        )
+        asset = result.run.steps[0].assets[0] if result.run.steps[0].assets else None
+        return {
+            "status": str(result.run.steps[0].status),
+            "error": result.run.steps[0].error,
+            "asset_url": asset.url if asset else None,
+        }
+    except Exception as exc:
+        return {"exception": str(exc)}
 
 
 class CharacterCreate(BaseModel):
