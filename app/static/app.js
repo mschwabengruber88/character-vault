@@ -135,6 +135,31 @@ const TRANSLATIONS = {
     ttsHint: "Genblaze TTS → Backblaze B2",
     voiceLabel: "Voice",
     assetsHeading: "Assets",
+    detailsBtn: "Details",
+    detailsTitle: "Generation details",
+    detailPrompt: "Prompt",
+    detailScript: "Script",
+    detailWho: "Character(s)",
+    detailVoice: "Voice",
+    detailModel: "Model",
+    detailSeed: "Seed",
+    detailQuality: "Quality",
+    qualityFinalShort: "Final",
+    qualityDraftShort: "Draft",
+    detailDisclosure: "AI disclosure",
+    detailDisclosureVisible: "Visible watermark",
+    detailDisclosureInvisible: "Invisible manifest",
+    detailManifest: "Provenance manifest",
+    detailManifestYes: "Verified",
+    detailManifestNo: "Not verified",
+    detailCost: "Cost",
+    detailDuration: "Duration",
+    detailAspect: "Aspect ratio",
+    detailType: "File type",
+    detailHash: "SHA-256",
+    detailHashCopied: "Hash copied.",
+    detailCreated: "Created",
+    copy: "Copy",
     assetsEmpty: "No assets yet — generate one in the Images tab.",
     filterAnyGender: "Any gender",
     filterFemale: "Female",
@@ -381,6 +406,31 @@ const TRANSLATIONS = {
     ttsHint: "Genblaze TTS → Backblaze B2",
     voiceLabel: "Stimme",
     assetsHeading: "Assets",
+    detailsBtn: "Details",
+    detailsTitle: "Generierungs-Details",
+    detailPrompt: "Prompt",
+    detailScript: "Skript",
+    detailWho: "Charakter(e)",
+    detailVoice: "Stimme",
+    detailModel: "Modell",
+    detailSeed: "Seed",
+    detailQuality: "Qualität",
+    qualityFinalShort: "Final",
+    qualityDraftShort: "Entwurf",
+    detailDisclosure: "KI-Kennzeichnung",
+    detailDisclosureVisible: "Sichtbares Wasserzeichen",
+    detailDisclosureInvisible: "Unsichtbares Manifest",
+    detailManifest: "Herkunftsnachweis",
+    detailManifestYes: "Verifiziert",
+    detailManifestNo: "Nicht verifiziert",
+    detailCost: "Kosten",
+    detailDuration: "Dauer",
+    detailAspect: "Seitenverhältnis",
+    detailType: "Dateityp",
+    detailHash: "SHA-256",
+    detailHashCopied: "Hash kopiert.",
+    detailCreated: "Erstellt",
+    copy: "Kopieren",
     assetsEmpty: "Noch keine Assets – generiere eins im Bilder-Reiter.",
     filterAnyGender: "Beliebiges Geschlecht",
     filterFemale: "Weiblich",
@@ -1024,6 +1074,87 @@ function openLightbox(src, caption) {
   el("lightbox").showModal();
 }
 
+/* ---------- Transparency: per-asset detail card ---------- */
+// Every generated asset already carries its full provenance (prompt, model,
+// seed, quality, disclosure, manifest, cost, hash) — this surfaces it
+// explicitly instead of leaving it in hover tooltips, so consistency claims
+// are checkable, not just asserted.
+
+function assetDetailFields(asset) {
+  const fields = [];
+  const push = (labelKey, value) => {
+    if (value !== undefined && value !== null && value !== "") fields.push([labelKey, value]);
+  };
+
+  if (Array.isArray(asset.script) && asset.script.length) {
+    push("detailScript", asset.script.map((s) => `${s.character_name}: ${s.text}`).join("\n"));
+  } else if (asset.prompt) {
+    push("detailPrompt", asset.prompt);
+  }
+  if (asset.character_name) push("detailWho", asset.character_name);
+  if (Array.isArray(asset.participant_names) && asset.participant_names.length) {
+    push("detailWho", asset.participant_names.join(" + "));
+  }
+  if (asset.voice) push("detailVoice", asset.voice);
+  push("detailModel", asset.model);
+  if (typeof asset.seed === "number") push("detailSeed", String(asset.seed));
+  if (asset.quality) push("detailQuality", asset.quality === "final" ? t("qualityFinalShort") : t("qualityDraftShort"));
+  if (asset.disclosure) {
+    push("detailDisclosure", asset.disclosure === "visible" ? t("detailDisclosureVisible") : t("detailDisclosureInvisible"));
+  }
+  if (asset.manifest_verified !== undefined) {
+    push("detailManifest", asset.manifest_verified ? t("detailManifestYes") : t("detailManifestNo"));
+  }
+  if (typeof asset.cost_usd === "number") push("detailCost", `$${asset.cost_usd.toFixed(4)}`);
+  if (asset.duration) push("detailDuration", `${asset.duration}s`);
+  if (asset.aspect_ratio) push("detailAspect", asset.aspect_ratio);
+  if (asset.mime_type) push("detailType", asset.mime_type);
+  if (asset.sha256) push("detailHash", asset.sha256);
+  if (asset.created_at) push("detailCreated", formatTimestamp(asset.created_at));
+  return fields;
+}
+
+function showAssetDetails(asset) {
+  const body = el("detail-dialog-body");
+  body.innerHTML = "";
+  for (const [labelKey, value] of assetDetailFields(asset)) {
+    const dt = document.createElement("dt");
+    dt.textContent = t(labelKey);
+    const dd = document.createElement("dd");
+    if (labelKey === "detailHash") {
+      const code = document.createElement("code");
+      code.textContent = value;
+      dd.appendChild(code);
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "button small";
+      copyBtn.textContent = t("copy");
+      copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(value);
+        toast(t("detailHashCopied"));
+      });
+      dd.appendChild(copyBtn);
+    } else {
+      dd.textContent = value;
+    }
+    body.append(dt, dd);
+  }
+  el("detail-dialog").showModal();
+}
+
+function addDetailsButton(actions, item) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "asset-details-btn";
+  btn.textContent = t("detailsBtn");
+  btn.addEventListener("click", () => showAssetDetails(item));
+  actions.appendChild(btn);
+}
+
+function setupDetailDialog() {
+  el("detail-dialog-close").addEventListener("click", () => el("detail-dialog").close());
+}
+
 function renderAssetCard(asset) {
   const card = document.createElement("div");
   card.className = "asset-card";
@@ -1104,6 +1235,7 @@ function renderAssetCard(asset) {
     open.textContent = "Open ↗";
     actions.appendChild(open);
   }
+  addDetailsButton(actions, asset);
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "asset-delete";
@@ -1765,6 +1897,7 @@ function renderScenes(scenes) {
       open.textContent = "Open ↗";
       actions.appendChild(open);
     }
+    addDetailsButton(actions, scene);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-delete";
@@ -2001,6 +2134,7 @@ function renderStudio(images) {
       open.textContent = "Open ↗";
       actions.appendChild(open);
     }
+    addDetailsButton(actions, image);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-delete";
@@ -2200,6 +2334,7 @@ function renderAudio(clips) {
       open.textContent = "Open ↗";
       actions.appendChild(open);
     }
+    addDetailsButton(actions, clip);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-delete";
@@ -2359,6 +2494,7 @@ function renderDialogues(dialogues) {
       open.textContent = "Open ↗";
       actions.appendChild(open);
     }
+    addDetailsButton(actions, dlg);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-delete";
@@ -2822,6 +2958,7 @@ function renderVideos(videos) {
       open.textContent = "Open ↗";
       actions.appendChild(open);
     }
+    addDetailsButton(actions, video);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-delete";
@@ -3013,6 +3150,7 @@ function init() {
   setupDelete();
   setupKeyDialog();
   setupLightbox();
+  setupDetailDialog();
   refreshKeyButton();
   el("generate-image-button").addEventListener("click", generateImage);
   setupImageComposer();

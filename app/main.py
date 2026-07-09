@@ -489,6 +489,7 @@ def generate_image(character_id: int, body: PortraitRequest, workspace: str = De
         quality=result.get("quality"),
         cost_usd=result.get("cost_usd"),
         model=result.get("model"),
+        seed=result.get("seed"),
     ))
 
 
@@ -514,7 +515,7 @@ def _run_batch(job_id: int, character_id: int, prompts: list[str], references: l
                     manifest_verified=result["manifest_verified"],
                     disclosure=result.get("disclosure"), original_url=result.get("original_url"),
                     quality=result.get("quality"), cost_usd=result.get("cost_usd"),
-                    model=result.get("model"), batch_id=job_id,
+                    model=result.get("model"), batch_id=job_id, seed=result.get("seed"),
                 )
                 db.bump_batch(job_id, completed=1)
             except Exception:

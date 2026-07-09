@@ -219,6 +219,7 @@ def generate_character_portrait(
     asset["url"] = apply_image_disclosure(asset["url"], result.manifest, disclosure)
     asset["disclosure"] = disclosure
     asset["model"] = model
+    asset["seed"] = seed if meta["provider"] == "gmi" else None  # only GMI models honor it
     if meta["quality_tiers"]:
         asset["quality"] = quality
         asset["cost_usd"] = IMAGE_COST_USD[quality]

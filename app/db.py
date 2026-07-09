@@ -178,6 +178,10 @@ MIGRATIONS = (
     # Motion comics (panels + dialogue, no video model) reuse the videos
     # table via kind="motion_comic" — this carries their per-panel transcript.
     "ALTER TABLE videos ADD COLUMN script TEXT",
+    # The seed actually used per image, for the transparency detail card —
+    # separate from characters.seed, which can change later and would
+    # otherwise misrepresent what an older image was really generated with.
+    "ALTER TABLE assets ADD COLUMN seed INTEGER",
 )
 
 
@@ -364,17 +368,18 @@ def add_asset(
     cost_usd: float | None = None,
     model: str | None = None,
     batch_id: int | None = None,
+    seed: int | None = None,
 ) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO assets
                (character_id, kind, url, sha256, mime_type, prompt, manifest_verified,
-                created_at, disclosure, original_url, quality, cost_usd, model, batch_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, disclosure, original_url, quality, cost_usd, model, batch_id, seed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 character_id, kind, url, sha256, mime_type, prompt,
                 int(manifest_verified), now(), disclosure, original_url,
-                quality, cost_usd, model, batch_id,
+                quality, cost_usd, model, batch_id, seed,
             ),
         )
         row = conn.execute(
