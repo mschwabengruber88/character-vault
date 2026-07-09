@@ -607,6 +607,74 @@ def test_dialogue_generation_stores_script_and_participants(client):
     assert client.delete(f"/audio/dialogue/{dialogue['id']}").status_code == 404
 
 
+def test_motion_comic_requires_voice_on_character(client):
+    from app import db
+
+    scene = db.create_scene(
+        workspace_id=client.workspace_id, prompt="p", url="https://example.com/s.png",
+        original_url="https://example.com/s.png", sha256="s", model="gemini-2.5-flash-image",
+        disclosure="invisible", cost_usd=0.039, manifest_verified=True,
+        participant_ids=[1, 2], participant_names=["A", "B"],
+    )
+    no_voice = client.post("/characters", json={"name": "Mute"}).json()["id"]
+    resp = client.post(
+        "/videos/motion-comic",
+        json={"panels": [
+            {"scene_id": scene["id"], "character_id": no_voice, "text": "hi"},
+            {"scene_id": scene["id"], "character_id": no_voice, "text": "hi again"},
+        ]},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_motion_comic_generation_stores_script_and_duration(client):
+    from app import db
+
+    scene = db.create_scene(
+        workspace_id=client.workspace_id, prompt="p", url="https://example.com/s.png",
+        original_url="https://example.com/s.png", sha256="s", model="gemini-2.5-flash-image",
+        disclosure="invisible", cost_usd=0.039, manifest_verified=True,
+        participant_ids=[1, 2], participant_names=["A", "B"],
+    )
+    a = client.post("/characters", json={
+        "name": "Kaede", "voice_provider": "elevenlabs", "voice_id": "abc123",
+    }).json()["id"]
+    b = client.post("/characters", json={
+        "name": "Ren", "voice_provider": "openai", "voice_id": "nova",
+    }).json()["id"]
+
+    with patch("app.main.generate_motion_comic") as mock_mc:
+        mock_mc.return_value = {
+            "url": "https://example.com/comic.mp4", "sha256": "mcsha",
+            "mime_type": "video/mp4", "manifest_verified": True, "cost_usd": 0.001,
+            "duration": 7.4,
+            "script": [
+                {"character_id": a, "character_name": "Kaede", "text": "Hey Ren!"},
+                {"character_id": b, "character_name": "Ren", "text": "Hey Kaede."},
+            ],
+        }
+        resp = client.post(
+            "/videos/motion-comic",
+            json={"panels": [
+                {"scene_id": scene["id"], "character_id": a, "text": "Hey Ren!"},
+                {"scene_id": scene["id"], "character_id": b, "text": "Hey Kaede."},
+            ]},
+            headers={"X-API-Key": API_KEY},
+        )
+    assert resp.status_code == 200
+    video = resp.json()
+    assert video["status"] == "done"
+    assert video["duration"] == 7
+    assert video["script"] == mock_mc.return_value["script"]
+    passed_panels = mock_mc.call_args.args[0]
+    assert len(passed_panels) == 2
+    assert passed_panels[0]["voice_provider"] == "elevenlabs" and passed_panels[0]["voice_id"] == "abc123"
+
+    assert any(v["id"] == video["id"] for v in client.get("/videos").json())
+    assert client.delete(f"/videos/{video['id']}").status_code == 204
+
+
 def test_build_batch_prompts_strategies():
     from app.pipelines import build_batch_prompts
 

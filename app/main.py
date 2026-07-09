@@ -37,6 +37,7 @@ from app.pipelines import (
     generate_character_portrait,
     generate_character_voice_line,
     generate_dialogue_audio,
+    generate_motion_comic,
     generate_scene,
     generate_script,
     generate_studio_image,
@@ -1021,6 +1022,80 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
 def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
     if not db.delete_video(workspace, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
+
+
+class MotionComicPanel(BaseModel):
+    scene_id: int
+    character_id: int
+    text: str = Field(min_length=1, max_length=500)
+
+
+class MotionComicRequest(BaseModel):
+    # No GMI video call happens here at all — see generate_motion_comic's
+    # docstring for why (kling-identify-face only ever finds one face, so
+    # real multi-character lip-sync isn't achievable). Each panel is a still
+    # scene image held on screen for exactly as long as its own line takes.
+    panels: list[MotionComicPanel] = Field(min_length=2, max_length=12)
+
+
+@app.post("/videos/motion-comic")
+def create_motion_comic(body: MotionComicRequest, request: Request,
+                        workspace: str = Depends(require_workspace),
+                        x_api_key: str = Header(default="")):
+    if not _is_owner(x_api_key) and len(body.panels) > MAX_KEYLESS_BATCH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Keyless motion comics are capped at {MAX_KEYLESS_BATCH} panels — shorten it "
+                   "or add the owner API key.",
+        )
+
+    panels, char_names = [], []
+    for p in body.panels:
+        scene = db.get_scene(workspace, p.scene_id)
+        if scene is None:
+            raise HTTPException(status_code=404, detail=f"Scene {p.scene_id} not found")
+        character = db.get_character(workspace, p.character_id)
+        if character is None:
+            raise HTTPException(status_code=404, detail=f"Character {p.character_id} not found")
+        if not character.get("voice_id"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{character['name']}' has no voice set — give it one in the profile first.",
+            )
+        char_names.append(character["name"])
+        panels.append({
+            "image_url": scene.get("original_url") or scene["url"],
+            "character_id": p.character_id,
+            "character_name": character["name"],
+            "voice_provider": character.get("voice_provider"),
+            "voice_id": character.get("voice_id"),
+            "text": p.text,
+        })
+
+    enforce_rate(request, x_api_key, "voice", units=len(body.panels))
+
+    video = db.create_video(
+        workspace_id=workspace, character_id=None,
+        character_name=" + ".join(dict.fromkeys(char_names)),
+        kind="motion_comic", prompt=f"{len(body.panels)}-panel motion comic",
+        model="motion-comic", duration=None, aspect_ratio=None,
+    )
+    with generation_slot(workspace, "motion_comic"):
+        try:
+            result = generate_motion_comic(panels)
+        except Exception:
+            logger.exception("Motion comic generation failed")
+            db.finish_video(video["id"], status="error",
+                            error="Motion comic generation failed. Please try again.")
+            raise HTTPException(status_code=502, detail="Motion comic generation failed. Please try again.")
+
+    db.finish_video(
+        video["id"], status="done", url=result["url"], original_url=result["url"],
+        sha256=result["sha256"], mime_type=result["mime_type"], cost_usd=result.get("cost_usd"),
+        manifest_verified=result["manifest_verified"], duration=round(result["duration"]),
+        script=result["script"],
+    )
+    return _video_with_signed_url(db.get_video(workspace, video["id"]))
 
 
 class ScriptRequest(BaseModel):

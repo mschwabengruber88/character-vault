@@ -184,6 +184,15 @@ const TRANSLATIONS = {
     videoSourceLabel: "Reference",
     videoSourceCharacter: "Single character",
     videoSourceScene: "Existing scene — multiple characters",
+    videoSourceMotionComic: "Motion comic — panels + dialogue",
+    motionComicHint: "No video model, no lip-sync risk — each panel's still scene image is shown for exactly as long as its own line takes to speak. Built for more than one character talking at once, since real animated lip-sync only ever works for one face per clip.",
+    addPanel: "+ Add panel",
+    removePanel: "Remove panel",
+    phMotionComicLine: "What does this character say in this panel?",
+    genMotionComicBtn: "Generate motion comic",
+    generatingMotionComic: "Rendering panels and voice lines… usually a few seconds.",
+    toastMotionComicCreated: "Motion comic created.",
+    toastNeedTwoPanels: "Add at least two panels.",
     sceneLabel: "Scene",
     videoNoScenes: "No scenes yet — create one in the Images tab first.",
     toastPickSceneFirst: "Pick a scene first.",
@@ -416,6 +425,15 @@ const TRANSLATIONS = {
     videoSourceLabel: "Referenz",
     videoSourceCharacter: "Einzelner Charakter",
     videoSourceScene: "Bestehende Szene — mehrere Charaktere",
+    videoSourceMotionComic: "Motion Comic — Panels + Dialog",
+    motionComicHint: "Kein Videomodell, kein Sync-Risiko — jedes Panel-Bild steht genau so lange, wie seine Zeile dauert. Gebaut für mehr als eine sprechende Person gleichzeitig, da echtes animiertes Lipsync immer nur für ein Gesicht pro Clip funktioniert.",
+    addPanel: "+ Panel hinzufügen",
+    removePanel: "Panel entfernen",
+    phMotionComicLine: "Was sagt dieser Charakter in diesem Panel?",
+    genMotionComicBtn: "Motion Comic generieren",
+    generatingMotionComic: "Panels und Sprachzeilen werden gerendert … meist ein paar Sekunden.",
+    toastMotionComicCreated: "Motion Comic erstellt.",
+    toastNeedTwoPanels: "Füge mindestens zwei Panels hinzu.",
     sceneLabel: "Szene",
     videoNoScenes: "Noch keine Szenen – erstelle zuerst eine im Bilder-Reiter.",
     toastPickSceneFirst: "Wähle zuerst eine Szene.",
@@ -2362,8 +2380,8 @@ function showVideoView() {
   el("video-view").hidden = false;
   el("open-video").classList.add("active");
   populateVideoCharacters();
-  populateVideoScenes();
-  applyVideoModelUI();
+  populateVideoScenes().then(() => { if (el("video-source").value === "motion-comic") renderMotionComicPanels(); });
+  applyVideoSourceUI();
   loadVideos();
 }
 
@@ -2394,11 +2412,19 @@ function selectedVideoModel() {
   return state.videoModels.find((m) => m.slug === el("video-model").value);
 }
 
+function applyVideoSourceUI() {
+  const isComic = el("video-source").value === "motion-comic";
+  el("video-gmi-fields").hidden = isComic;
+  el("motion-comic-fields").hidden = !isComic;
+  el("generate-video-button").textContent = t(isComic ? "genMotionComicBtn" : "genVideoBtn");
+  if (isComic) renderMotionComicPanels();
+  else applyVideoModelUI();
+}
+
 function applyVideoModelUI() {
   const model = selectedVideoModel();
   const needsImage = model ? model.needs_image : false;
   const useScene = needsImage && el("video-source").value === "scene";
-  el("video-source-row").hidden = !needsImage;
   el("video-character-row").hidden = !needsImage || useScene;
   el("video-scene-row").hidden = !needsImage || !useScene;
   // No single fixed voice to lip-sync to when several characters share the
@@ -2463,11 +2489,153 @@ async function populateVideoScenes() {
   }
 }
 
+/* ---------- Motion comic: panels + dialogue, no video model ---------- */
+
+const MOTION_COMIC_MIN_PANELS = 2;
+const MOTION_COMIC_MAX_PANELS = 12;
+let motionComicPanelCount = 0;
+
+function motionComicSceneOptions() {
+  return [...el("video-scene").options].filter((o) => !o.disabled);
+}
+
+function motionComicCharacterOptions() {
+  return state.characters.filter((c) => c.voice_id);
+}
+
+function addMotionComicPanel() {
+  const container = el("motion-comic-panels");
+  if (container.children.length >= MOTION_COMIC_MAX_PANELS) return;
+  const sceneOptions = motionComicSceneOptions();
+  const charOptions = motionComicCharacterOptions();
+
+  const row = document.createElement("div");
+  row.className = "motion-comic-panel";
+
+  const sceneSelect = document.createElement("select");
+  sceneSelect.className = "mc-scene";
+  if (!sceneOptions.length) {
+    const opt = document.createElement("option");
+    opt.textContent = t("videoNoScenes");
+    opt.disabled = true;
+    sceneSelect.appendChild(opt);
+  } else {
+    for (const src of sceneOptions) {
+      const opt = document.createElement("option");
+      opt.value = src.value;
+      opt.textContent = src.textContent;
+      sceneSelect.appendChild(opt);
+    }
+  }
+
+  const charSelect = document.createElement("select");
+  charSelect.className = "mc-character";
+  if (!charOptions.length) {
+    const opt = document.createElement("option");
+    opt.textContent = t("needVoiceForDialogue");
+    opt.disabled = true;
+    charSelect.appendChild(opt);
+  } else {
+    for (const c of charOptions) {
+      const opt = document.createElement("option");
+      opt.value = String(c.id);
+      opt.textContent = c.name;
+      charSelect.appendChild(opt);
+    }
+  }
+
+  const sceneLabel = document.createElement("label");
+  sceneLabel.className = "model-row";
+  const sceneSpan = document.createElement("span");
+  sceneSpan.className = "model-label";
+  sceneSpan.textContent = t("sceneLabel");
+  sceneLabel.append(sceneSpan, sceneSelect);
+
+  const charLabel = document.createElement("label");
+  charLabel.className = "model-row";
+  const charSpan = document.createElement("span");
+  charSpan.className = "model-label";
+  charSpan.textContent = t("characterLabel");
+  charLabel.append(charSpan, charSelect);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "button small danger";
+  removeBtn.textContent = "✕";
+  removeBtn.title = t("removePanel");
+  removeBtn.addEventListener("click", () => {
+    if (container.children.length <= MOTION_COMIC_MIN_PANELS) { toast(t("toastNeedTwoPanels"), true); return; }
+    row.remove();
+  });
+
+  const head = document.createElement("div");
+  head.className = "mc-panel-head";
+  head.append(removeBtn);
+
+  const textInput = document.createElement("textarea");
+  textInput.className = "mc-text";
+  textInput.rows = 2;
+  textInput.maxLength = 500;
+  textInput.placeholder = t("phMotionComicLine");
+
+  row.append(head, sceneLabel, charLabel, textInput);
+  container.appendChild(row);
+}
+
+function renderMotionComicPanels() {
+  const container = el("motion-comic-panels");
+  container.innerHTML = "";
+  addMotionComicPanel();
+  addMotionComicPanel();
+}
+
+async function generateMotionComic() {
+  if (videoGenerating) return;
+  const rows = [...el("motion-comic-panels").children];
+  const panels = [];
+  for (const row of rows) {
+    const sceneId = row.querySelector(".mc-scene").value;
+    const characterId = row.querySelector(".mc-character").value;
+    const text = row.querySelector(".mc-text").value.trim();
+    if (!sceneId) { toast(t("toastPickSceneFirst"), true); return; }
+    if (!characterId) { toast(t("needVoiceForDialogue"), true); return; }
+    if (!text) { toast(t("toastWriteScriptFirst"), true); return; }
+    panels.push({ scene_id: Number(sceneId), character_id: Number(characterId), text });
+  }
+  if (panels.length < MOTION_COMIC_MIN_PANELS) { toast(t("toastNeedTwoPanels"), true); return; }
+
+  videoGenerating = true;
+  el("generate-video-button").disabled = true;
+  const status = el("video-status");
+  status.classList.remove("error");
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("generatingMotionComic")}`;
+  status.hidden = false;
+  try {
+    await api("/videos/motion-comic", {
+      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify({ panels }),
+    });
+    status.hidden = true;
+    renderMotionComicPanels();
+    await loadVideos();
+    toast(t("toastMotionComicCreated"));
+  } catch (err) {
+    if (err.status === 401) { status.hidden = true; openKeyDialog(); toast(t("toastNeedKey"), true); }
+    else { status.classList.add("error"); status.textContent = err.message; }
+  } finally {
+    videoGenerating = false;
+    el("generate-video-button").disabled = false;
+  }
+}
+
 function setupVideo() {
   el("open-video").addEventListener("click", showVideoView);
   el("video-model").addEventListener("change", applyVideoModelUI);
-  el("video-source").addEventListener("change", applyVideoModelUI);
-  el("generate-video-button").addEventListener("click", generateVideo);
+  el("video-source").addEventListener("change", applyVideoSourceUI);
+  el("motion-comic-add-panel").addEventListener("click", () => addMotionComicPanel());
+  el("generate-video-button").addEventListener("click", () => {
+    if (el("video-source").value === "motion-comic") generateMotionComic();
+    else generateVideo();
+  });
 }
 
 let videoGenerating = false;
@@ -2569,14 +2737,17 @@ function renderVideos(videos) {
     }
     const prompt = document.createElement("p");
     prompt.className = "asset-prompt";
-    prompt.textContent = video.prompt;
-    prompt.title = video.prompt;
+    prompt.textContent = video.kind === "motion_comic" && video.script
+      ? video.script.map((t) => `${t.character_name}: ${t.text}`).join("  ·  ")
+      : video.prompt;
+    prompt.title = prompt.textContent;
     body.appendChild(prompt);
     const meta = document.createElement("div");
     meta.className = "asset-meta";
     const time = document.createElement("span");
     const parts = [formatTimestamp(video.created_at)];
-    if (video.model) parts.push(video.model);
+    if (video.kind === "motion_comic") parts.push(t("videoSourceMotionComic"));
+    else if (video.model) parts.push(video.model);
     if (video.duration) parts.push(`${video.duration}s`);
     if (video.aspect_ratio) parts.push(video.aspect_ratio);
     time.textContent = parts.join(" · ");

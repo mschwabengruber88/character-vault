@@ -926,3 +926,106 @@ def generate_dialogue_audio(turns: list[dict]) -> dict:
             for l in lines
         ],
     }
+
+
+def _probe_duration_s(path: Path) -> float:
+    import subprocess
+
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nw=1:nk=1", str(path)],
+        capture_output=True, text=True, timeout=20,
+    ).stdout.strip()
+    return max(0.5, float(out)) if out else 3.0
+
+
+def generate_motion_comic(panels: list[dict]) -> dict:
+    """A slideshow, not a video model: each panel's still image is shown for
+    exactly as long as its own voice line takes to speak, in order. No GMI
+    video call happens at all — this is the deliberate workaround for
+    multi-character talking video, since kling-identify-face only ever
+    detects a single face per clip (confirmed: a 2-person scene image still
+    only returns one face_data entry), so real lip-sync across several
+    characters at once isn't achievable there.
+
+    `panels`: [{"image_url", "character_id", "character_name",
+    "voice_provider", "voice_id", "text"}, ...] — one entry per panel, in
+    display order. Returns {url, sha256, mime_type, duration, cost_usd,
+    manifest_verified, script}."""
+    import subprocess
+    import uuid as _uuid
+
+    from app.storage import download_bytes, upload_bytes
+
+    lines = []
+    for panel in panels:
+        asset = generate_character_voice_line(
+            panel["character_id"], panel["text"], panel.get("voice_provider"), panel.get("voice_id"),
+        )
+        lines.append({**panel, "asset": asset})
+
+    with tempfile.TemporaryDirectory() as d:
+        audio_paths, image_paths, durations = [], [], []
+        for i, line in enumerate(lines):
+            ap = Path(d) / f"a{i}.mp3"
+            ap.write_bytes(download_bytes(line["asset"]["url"]))
+            audio_paths.append(ap)
+            durations.append(_probe_duration_s(ap))
+
+            ip = Path(d) / f"img{i}.png"
+            ip.write_bytes(download_bytes(line["image_url"]))
+            image_paths.append(ip)
+
+        audio_inputs = []
+        for p in audio_paths:
+            audio_inputs += ["-i", str(p)]
+        filter_a = "".join(f"[{i}:a]" for i in range(len(audio_paths)))
+        combined_audio = Path(d) / "audio.mp3"
+        subprocess.run(
+            ["ffmpeg", "-y", *audio_inputs, "-filter_complex",
+             f"{filter_a}concat=n={len(audio_paths)}:v=0:a=1[out]", "-map", "[out]", str(combined_audio)],
+            check=True, capture_output=True, timeout=120,
+        )
+
+        # concat demuxer: each image held for its own line's duration; the
+        # final entry is repeated without a duration (ffmpeg quirk — the
+        # last file's duration is otherwise ignored).
+        list_path = Path(d) / "images.txt"
+        entries = []
+        for ip, dur in zip(image_paths, durations):
+            entries.append(f"file '{ip}'")
+            entries.append(f"duration {dur}")
+        entries.append(f"file '{image_paths[-1]}'")
+        list_path.write_text("\n".join(entries))
+
+        slideshow = Path(d) / "slideshow.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
+             "-vf", "fps=24,format=yuv420p", str(slideshow)],
+            check=True, capture_output=True, timeout=120,
+        )
+
+        op = Path(d) / "out.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(slideshow), "-i", str(combined_audio),
+             "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+             "-map", "0:v:0", "-map", "1:a:0", str(op)],
+            check=True, capture_output=True, timeout=120,
+        )
+        out = op.read_bytes()
+        total_duration = _probe_duration_s(op)
+
+    url, sha = upload_bytes(f"videos/motion-comic/{_uuid.uuid4().hex}.mp4", out, "video/mp4")
+    costs = [l["asset"].get("cost_usd") for l in lines if l["asset"].get("cost_usd") is not None]
+    return {
+        "url": url,
+        "sha256": sha,
+        "mime_type": "video/mp4",
+        "duration": total_duration,
+        "manifest_verified": all(l["asset"].get("manifest_verified") for l in lines),
+        "cost_usd": sum(costs) if costs else None,
+        "script": [
+            {"character_id": l["character_id"], "character_name": l["character_name"], "text": l["text"]}
+            for l in lines
+        ],
+    }

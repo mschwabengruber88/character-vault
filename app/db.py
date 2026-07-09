@@ -175,6 +175,9 @@ MIGRATIONS = (
     "ALTER TABLE videos ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
     "ALTER TABLE audio_clips ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
     "ALTER TABLE batch_jobs ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'default'",
+    # Motion comics (panels + dialogue, no video model) reuse the videos
+    # table via kind="motion_comic" — this carries their per-panel transcript.
+    "ALTER TABLE videos ADD COLUMN script TEXT",
 )
 
 
@@ -595,26 +598,48 @@ def create_video(
         ).fetchone())
 
 
+def _video_row(row) -> dict:
+    import json
+
+    d = dict(row)
+    d["script"] = json.loads(d["script"]) if d.get("script") else None
+    return d
+
+
 def get_video(workspace_id: str, video_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM videos WHERE id = ? AND workspace_id = ?", (video_id, workspace_id)
         ).fetchone()
-        return dict(row) if row else None
+        return _video_row(row) if row else None
 
 
 def finish_video(video_id: int, *, status: str, url: str | None = None,
                  original_url: str | None = None, sha256: str | None = None,
                  mime_type: str | None = None, cost_usd: float | None = None,
-                 manifest_verified: bool = False, error: str | None = None) -> None:
+                 manifest_verified: bool = False, error: str | None = None,
+                 duration: float | None = None, script: list[dict] | None = None) -> None:
+    import json
+
     with get_conn() as conn:
-        conn.execute(
-            """UPDATE videos SET status = ?, url = ?, original_url = ?, sha256 = ?,
-               mime_type = ?, cost_usd = ?, manifest_verified = ?, error = ?
-               WHERE id = ?""",
-            (status, url, original_url, sha256, mime_type, cost_usd,
-             int(manifest_verified), error, video_id),
-        )
+        if duration is not None or script is not None:
+            conn.execute(
+                """UPDATE videos SET status = ?, url = ?, original_url = ?, sha256 = ?,
+                   mime_type = ?, cost_usd = ?, manifest_verified = ?, error = ?,
+                   duration = COALESCE(?, duration), script = COALESCE(?, script)
+                   WHERE id = ?""",
+                (status, url, original_url, sha256, mime_type, cost_usd,
+                 int(manifest_verified), error, duration,
+                 json.dumps(script) if script is not None else None, video_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE videos SET status = ?, url = ?, original_url = ?, sha256 = ?,
+                   mime_type = ?, cost_usd = ?, manifest_verified = ?, error = ?
+                   WHERE id = ?""",
+                (status, url, original_url, sha256, mime_type, cost_usd,
+                 int(manifest_verified), error, video_id),
+            )
 
 
 def list_videos(workspace_id: str) -> list[dict]:
@@ -622,7 +647,7 @@ def list_videos(workspace_id: str) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM videos WHERE workspace_id = ? ORDER BY id DESC", (workspace_id,)
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [_video_row(row) for row in rows]
 
 
 def delete_video(workspace_id: str, video_id: int) -> bool:

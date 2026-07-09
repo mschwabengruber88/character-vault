@@ -433,53 +433,64 @@
 
         <div class="generate-card">
           <label class="model-row">
-            <span class="model-label" data-i18n="modelLabel">Model</span>
-            <select id="video-model"></select>
-          </label>
-          <div id="video-model-desc" class="model-desc" hidden>
-            <span id="video-model-tag" class="model-desc-tag"></span>
-            <span id="video-model-text"></span>
-          </div>
-          <label class="model-row" id="video-source-row">
             <span class="model-label" data-i18n="videoSourceLabel">Reference</span>
             <select id="video-source">
               <option value="character" data-i18n="videoSourceCharacter">Single character</option>
               <option value="scene" data-i18n="videoSourceScene">Existing scene — multiple characters</option>
+              <option value="motion-comic" data-i18n="videoSourceMotionComic">Motion comic — panels + dialogue</option>
             </select>
           </label>
-          <label class="model-row" id="video-character-row">
-            <span class="model-label" data-i18n="characterLabel">Character</span>
-            <select id="video-character"></select>
-          </label>
-          <label class="model-row" id="video-scene-row" hidden>
-            <span class="model-label" data-i18n="sceneLabel">Scene</span>
-            <select id="video-scene"></select>
-          </label>
-          <p id="video-model-hint" class="generate-hint"></p>
-          <textarea id="video-prompt" data-i18n-ph="phVideoPrompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
-          <label id="video-speech-field" class="voice-field" hidden>
-            <span data-i18n="videoSpeechLabel">✦ Let them speak (optional) — uses the character's fixed voice</span>
-            <textarea id="video-speech" data-i18n-ph="videoSpeechPh" placeholder="e.g. 'Hi. Nice to meet you.'" maxlength="400" rows="2"></textarea>
-          </label>
-          <div class="mode-grid">
+
+          <div id="video-gmi-fields">
             <label class="model-row">
-              <span class="model-label" data-i18n="durationLabel">Duration</span>
-              <select id="video-duration">
-                <option value="5" selected data-i18n="dur5">5 seconds</option>
-                <option value="8" data-i18n="dur8">8 seconds</option>
-                <option value="10" data-i18n="dur10">10 seconds</option>
-              </select>
+              <span class="model-label" data-i18n="modelLabel">Model</span>
+              <select id="video-model"></select>
             </label>
-            <label class="model-row">
-              <span class="model-label" data-i18n="aspectLabel">Aspect</span>
-              <select id="video-aspect">
-                <option value="16:9" selected data-i18n="asp169">16:9 — landscape</option>
-                <option value="9:16" data-i18n="asp916">9:16 — vertical</option>
-                <option value="1:1" data-i18n="asp11">1:1 — square</option>
-              </select>
+            <div id="video-model-desc" class="model-desc" hidden>
+              <span id="video-model-tag" class="model-desc-tag"></span>
+              <span id="video-model-text"></span>
+            </div>
+            <label class="model-row" id="video-character-row">
+              <span class="model-label" data-i18n="characterLabel">Character</span>
+              <select id="video-character"></select>
             </label>
+            <label class="model-row" id="video-scene-row" hidden>
+              <span class="model-label" data-i18n="sceneLabel">Scene</span>
+              <select id="video-scene"></select>
+            </label>
+            <p id="video-model-hint" class="generate-hint"></p>
+            <textarea id="video-prompt" data-i18n-ph="phVideoPrompt" placeholder="Describe the motion, e.g. 'she turns her head and smiles, gentle camera push-in'" maxlength="1000" rows="3"></textarea>
+            <label id="video-speech-field" class="voice-field" hidden>
+              <span data-i18n="videoSpeechLabel">✦ Let them speak (optional) — uses the character's fixed voice</span>
+              <textarea id="video-speech" data-i18n-ph="videoSpeechPh" placeholder="e.g. 'Hi. Nice to meet you.'" maxlength="400" rows="2"></textarea>
+            </label>
+            <div class="mode-grid">
+              <label class="model-row">
+                <span class="model-label" data-i18n="durationLabel">Duration</span>
+                <select id="video-duration">
+                  <option value="5" selected data-i18n="dur5">5 seconds</option>
+                  <option value="8" data-i18n="dur8">8 seconds</option>
+                  <option value="10" data-i18n="dur10">10 seconds</option>
+                </select>
+              </label>
+              <label class="model-row">
+                <span class="model-label" data-i18n="aspectLabel">Aspect</span>
+                <select id="video-aspect">
+                  <option value="16:9" selected data-i18n="asp169">16:9 — landscape</option>
+                  <option value="9:16" data-i18n="asp916">9:16 — vertical</option>
+                  <option value="1:1" data-i18n="asp11">1:1 — square</option>
+                </select>
+              </label>
+            </div>
+            <p class="generate-hint" data-i18n="videoRunHint">Video generation runs on GMI Cloud and takes 1–4 minutes. It keeps running if you switch views.</p>
           </div>
-          <p class="generate-hint" data-i18n="videoRunHint">Video generation runs on GMI Cloud and takes 1–4 minutes. It keeps running if you switch views.</p>
+
+          <div id="motion-comic-fields" hidden>
+            <p class="generate-hint" data-i18n="motionComicHint">No video model, no lip-sync risk — each panel's still scene image is shown for exactly as long as its own line takes to speak. Built for more than one character talking at once, since real animated lip-sync only ever works for one face per clip.</p>
+            <div id="motion-comic-panels"></div>
+            <button type="button" id="motion-comic-add-panel" class="button small" data-i18n="addPanel">+ Add panel</button>
+          </div>
+
           <button id="generate-video-button" class="button primary" data-i18n="genVideoBtn">Generate video</button>
           <div id="video-progress" class="batch-progress" hidden>
             <div class="batch-bar"><div id="video-bar-fill" class="batch-bar-fill batch-bar-indeterminate"></div></div>
@@ -487,6 +498,7 @@
               <span id="video-progress-label">Rendering…</span>
             </div>
           </div>
+          <div id="video-status" class="generation-status" hidden></div>
         </div>
 
         <div id="video-status" class="generation-status" hidden></div>

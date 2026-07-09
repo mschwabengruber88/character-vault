@@ -284,6 +284,34 @@ h1, h2, h3, h4 {
 .participant input { accent-color: var(--brass); }
 .participant .avatar { width: 24px; height: 24px; }
 
+.motion-comic-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  margin-bottom: 10px;
+}
+
+.mc-panel-head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mc-text {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 8px 10px;
+  resize: vertical;
+}
+
 .scene-who {
   margin: 0;
   font-weight: 600;
