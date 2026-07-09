@@ -211,39 +211,35 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/debug/gmi_audio", include_in_schema=False)
-def debug_gmi_audio(model: str, voice_id: str = "", text: str = "", lyrics: str = "",
-                    workspace: str = Depends(require_workspace)):
-    """TEMP: probe whether GMICloud's audio models (elevenlabs-tts-v3,
-    minimax-tts-*, inworld-tts-*, minimax-music-*) actually work — the SDK
-    flags them all "suspected_dead" as of the 2026-04 reconciliation.
-    Remove once the voice-provider swap is decided."""
-    from genblaze_core import Modality, Pipeline
-    from genblaze_gmicloud import GMICloudAudioProvider
+@app.get("/debug/gmi_audio_raw", include_in_schema=False)
+def debug_gmi_audio_raw(model: str, voice_id: str = "", text: str = "", lyrics: str = "",
+                        workspace: str = Depends(require_workspace)):
+    """TEMP: bypass the genblaze SDK's Pipeline abstraction (it validates
+    step kwargs against a fixed allowlist that doesn't include "text" or
+    "lyrics" for audio models, so those get silently dropped — same class
+    of bug as the Pixverse video fix) and hit GMI's request-queue directly,
+    the same way generate_lipsync() already does. Remove once the
+    voice/music-provider plan is decided."""
+    import httpx
 
-    kwargs = {"voice_id": voice_id} if voice_id else {}
+    from app.config import GMI_API_KEY
+    from app.pipelines import _gmi_submit_poll, _dig
+
+    if not GMI_API_KEY:
+        raise HTTPException(status_code=400, detail="GMI_API_KEY not configured")
+    payload = {}
     if text:
-        kwargs["text"] = text
+        payload["text"] = text
     if lyrics:
-        kwargs["lyrics"] = lyrics
+        payload["lyrics"] = lyrics
+    if voice_id:
+        payload["voice_id"] = voice_id
+    headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
     try:
-        result = (
-            Pipeline("debug-gmi-audio")
-            .step(
-                GMICloudAudioProvider(),
-                model=model,
-                prompt="Hi! This is a test of GMI Cloud's audio pipeline.",
-                modality=Modality.AUDIO,
-                **kwargs,
-            )
-            .run(sink=get_storage_sink(), timeout=120)
-        )
-        asset = result.run.steps[0].assets[0] if result.run.steps[0].assets else None
-        return {
-            "status": str(result.run.steps[0].status),
-            "error": result.run.steps[0].error,
-            "asset_url": asset.url if asset else None,
-        }
+        with httpx.Client(timeout=60) as client:
+            result = _gmi_submit_poll(client, model, payload, headers, timeout=180)
+        data = _dig(_dig(result, "outcome") or result, "data") or _dig(result, "outcome") or result
+        return {"raw": result, "data": data}
     except Exception as exc:
         return {"exception": str(exc)}
 
