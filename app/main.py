@@ -212,7 +212,8 @@ def index():
 
 
 @app.get("/debug/gmi_audio", include_in_schema=False)
-def debug_gmi_audio(model: str, voice_id: str = "", workspace: str = Depends(require_workspace)):
+def debug_gmi_audio(model: str, voice_id: str = "", text: str = "", lyrics: str = "",
+                    workspace: str = Depends(require_workspace)):
     """TEMP: probe whether GMICloud's audio models (elevenlabs-tts-v3,
     minimax-tts-*, inworld-tts-*, minimax-music-*) actually work — the SDK
     flags them all "suspected_dead" as of the 2026-04 reconciliation.
@@ -221,6 +222,10 @@ def debug_gmi_audio(model: str, voice_id: str = "", workspace: str = Depends(req
     from genblaze_gmicloud import GMICloudAudioProvider
 
     kwargs = {"voice_id": voice_id} if voice_id else {}
+    if text:
+        kwargs["text"] = text
+    if lyrics:
+        kwargs["lyrics"] = lyrics
     try:
         result = (
             Pipeline("debug-gmi-audio")
