@@ -6,8 +6,13 @@ attempted; only voices that actually produce audio are kept. The surviving
 catalog is written to app/static/voice-samples/catalog.json and committed
 alongside the mp3s.
 
-Run from a residential IP — ElevenLabs' free tier blocks datacenter IPs and
-gates some voices behind a paid plan (those are dropped automatically).
+OpenAI voices are generated locally via OPENAI_API_KEY. GMI voices go
+through the deployed app's own /audio endpoint on production instead of
+calling GMI directly — GMI_API_KEY lives only in Railway, not in the local
+.env, and this reuses the already-verified generation path rather than
+duplicating it. Each sample clip is created as a throwaway audio asset in a
+scratch workspace on prod, downloaded, then deleted again so it doesn't
+clutter the real gallery.
 """
 
 import json
@@ -37,27 +42,36 @@ OPENAI = [
     ("shimmer", "Shimmer", "female", "young", "light"),
 ]
 
-ELEVENLABS = [
-    ("9BWtsMINqrJLrRacOk9x", "Aria", "female", "adult", "expressive"),
-    ("CwhRBWXzGAHq8TQ4Fs17", "Roger", "male", "adult", "casual"),
-    ("EXAVITQu4vr4xnSDxMaL", "Sarah", "female", "young", "soft"),
-    ("FGY2WhTYpPnrIDTdsKH5", "Laura", "female", "young", "sassy"),
-    ("IKne3meq5aSn9XLyUdCD", "Charlie", "male", "adult", "casual"),
-    ("JBFqnCBsd6RMkjVDRZzb", "George", "male", "mature", "warm storyteller"),
-    ("N2lVS1w4EtoT3dr4eOWO", "Callum", "male", "adult", "intense"),
-    ("SAz9YHcvj6GT2YYXdXww", "River", "neutral", "adult", "calm"),
-    ("TX3LPaxmHKxFdv7VOQHJ", "Liam", "male", "young", "articulate"),
-    ("XB0fDUnXU5powFXDhCwa", "Charlotte", "female", "young", "gentle"),
-    ("Xb7hH8MSUJpSbSDYk0k2", "Alice", "female", "adult", "confident"),
-    ("XrExE9yKIg1WjnnlVkGX", "Matilda", "female", "adult", "warm"),
-    ("bIHbv24MWmeRgasZH58o", "Will", "male", "young", "friendly"),
-    ("cgSgspJ2msm6clMCkdW9", "Jessica", "female", "young", "playful"),
-    ("cjVigY5qzO86Huf0OWal", "Eric", "male", "adult", "smooth"),
-    ("iP95p4xoKVk53GoZ742B", "Chris", "male", "adult", "casual"),
-    ("nPczCjzI2devNBz1zQrb", "Brian", "male", "mature", "deep"),
-    ("onwK4e9ZLuTAKqWW03F9", "Daniel", "male", "adult", "news"),
-    ("pFZP5JQG7iQjIQuC4Bku", "Lily", "female", "adult", "warm"),
-    ("pqHfZKP75CvOlQylNhV4", "Bill", "male", "mature", "trustworthy"),
+# GMI's Inworld TTS voices (id doubles as display name — GMI doesn't expose
+# separate ids, see app/pipelines.py GMI_TTS_MODEL). Gender/age/style are
+# transcribed from GMI's public docs (docs.gmicloud.ai), which is the only
+# place this catalog is documented.
+GMI = [
+    ("Alex", "male", "adult", "energetic, mid-range"),
+    ("Ashley", "female", "adult", "warm, natural"),
+    ("Blake", "male", "adult", "rich, intimate"),
+    ("Carter", "male", "mature", "radio announcer"),
+    ("Clive", "male", "adult", "British, calm"),
+    ("Craig", "male", "mature", "older British, refined"),
+    ("Deborah", "female", "mature", "gentle, elegant"),
+    ("Dennis", "male", "adult", "smooth, calm"),
+    ("Dominus", "male", "adult", "robotic, deep"),
+    ("Edward", "male", "adult", "fast-talking, emphatic"),
+    ("Elizabeth", "female", "adult", "professional"),
+    ("Hades", "male", "mature", "commanding, gruff"),
+    ("Hana", "female", "young", "bright, expressive"),
+    ("Julia", "female", "young", "quirky, high-pitched"),
+    ("Luna", "female", "adult", "calm, relaxing"),
+    ("Mark", "male", "adult", "energetic, rapid-fire"),
+    ("Olivia", "female", "young", "British, upbeat"),
+    ("Pixie", "female", "child", "childlike"),
+    ("Priya", "female", "adult", "Indian accent"),
+    ("Ronald", "male", "mature", "British, deep"),
+    ("Sarah", "female", "young", "young adult, natural"),
+    ("Shaun", "male", "adult", "friendly, dynamic"),
+    ("Theodore", "male", "mature", "gravelly, elderly"),
+    ("Timothy", "male", "young", "lively American"),
+    ("Wendy", "female", "adult", "British, posh"),
 ]
 
 
@@ -111,28 +125,51 @@ def gen_openai_child_variants(raw: dict) -> list:
     return kept
 
 
-def gen_elevenlabs():
-    key = os.environ.get("ELEVENLABS_API_KEY")
+GMI_PROD_URL = "https://character-vault-production-7da6.up.railway.app"
+
+
+def gen_gmi():
     kept = []
-    if not key:
-        return kept
-    for vid, name, gender, age, style in ELEVENLABS:
-        body = json.dumps({"text": PHRASE, "model_id": "eleven_multilingual_v2"}).encode()
+
+    ws_req = urllib.request.Request(
+        f"{GMI_PROD_URL}/workspaces",
+        data=json.dumps({"name": "voice-sample-gen"}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    workspace_id = json.loads(urllib.request.urlopen(ws_req, timeout=30).read())["id"]
+
+    created_ids = []
+    for vid, gender, age, style in GMI:
+        body = json.dumps({"text": PHRASE, "voice_provider": "gmi", "voice_id": vid}).encode()
         req = urllib.request.Request(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{vid}",
-            data=body, headers={"xi-api-key": key, "Content-Type": "application/json"},
+            f"{GMI_PROD_URL}/audio", data=body,
+            headers={"Content-Type": "application/json", "X-Workspace-Id": workspace_id},
+            method="POST",
         )
         try:
-            mp3 = urllib.request.urlopen(req, timeout=30).read()
-            (OUT / f"elevenlabs-{vid}.mp3").write_bytes(mp3)
-            kept.append(entry("elevenlabs", vid, name, gender, age, style))
-            print("elevenlabs", name, "ok")
+            clip = json.loads(urllib.request.urlopen(req, timeout=180).read())
+            created_ids.append(clip["id"])
+            mp3 = urllib.request.urlopen(clip["url"], timeout=60).read()
+            (OUT / f"gmi-{vid}.mp3").write_bytes(mp3)
+            kept.append(entry("gmi", vid, vid, gender, age, style))
+            print("gmi", vid, "ok")
         except Exception as e:
-            print("elevenlabs", name, "FAILED", str(e)[:80])
+            print("gmi", vid, "FAILED", str(e)[:150])
+
+    for clip_id in created_ids:
+        try:
+            del_req = urllib.request.Request(
+                f"{GMI_PROD_URL}/audio/{clip_id}",
+                headers={"X-Workspace-Id": workspace_id}, method="DELETE",
+            )
+            urllib.request.urlopen(del_req, timeout=30)
+        except Exception as e:
+            print("cleanup FAILED for clip", clip_id, str(e)[:100])
+
     return kept
 
 
 if __name__ == "__main__":
-    catalog = {"openai": gen_openai(), "elevenlabs": gen_elevenlabs()}
+    catalog = {"openai": gen_openai(), "gmi": gen_gmi()}
     (OUT / "catalog.json").write_text(json.dumps(catalog, indent=2))
-    print(f"\ncatalog: {len(catalog['openai'])} openai + {len(catalog['elevenlabs'])} elevenlabs")
+    print(f"\ncatalog: {len(catalog['openai'])} openai + {len(catalog['gmi'])} gmi")

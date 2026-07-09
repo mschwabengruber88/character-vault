@@ -6,14 +6,12 @@ from pathlib import Path
 
 from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline, StepStatus
 from genblaze_core.models.asset import Asset
-from genblaze_elevenlabs import ElevenLabsTTSProvider
 from genblaze_openai import DalleProvider, OpenAITTSProvider
 from genblaze_s3 import S3StorageBackend
 
 from app.config import (
     B2_BUCKET_NAME,
     B2_REGION,
-    ELEVENLABS_API_KEY,
     GMI_API_KEY,
     OPENAI_API_KEY,
 )
@@ -127,8 +125,8 @@ def _gmi_references(references: list[dict], limit: int = 3) -> list[Asset]:
             assets.append(Asset(url=signed, media_type="image/png", sha256=ref.get("sha256")))
     return assets
 
-# gpt-4o-mini-tts: ~$12 per 1M input characters. ElevenLabs cost depends
-# on the account's plan, so we don't guess it (cost stays None).
+# gpt-4o-mini-tts: ~$12 per 1M input characters. GMI's Inworld TTS pricing
+# isn't publicly listed, so we don't guess it (cost stays None).
 OPENAI_TTS_USD_PER_CHAR = 12 / 1_000_000
 
 
@@ -417,6 +415,7 @@ def available_video_models() -> list[dict]:
 # call GMI's request-queue REST API directly (same key, same account). Any
 # failure falls back to the ffmpeg mux so the talking feature never breaks.
 LIPSYNC_MODEL = "kling-lip-sync"
+GMI_TTS_MODEL = "inworld-tts-2"
 _GMI_QUEUE = "https://console.gmicloud.ai/api/v1/ie/requestqueue/apikey/requests"
 
 
@@ -524,6 +523,41 @@ def generate_lipsync(video_url: str, audio_url: str) -> dict:
     data = httpx.get(out_url, timeout=180).content
     url, sha = upload_bytes(f"videos/lipsync/{_uuid.uuid4().hex}.mp4", data, "video/mp4")
     return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
+
+
+def _gmi_voice_line(character_id: int, text: str, voice_id: str) -> dict:
+    """TTS via GMI's Inworld model, called through the raw request-queue REST
+    API rather than the genblaze SDK's Pipeline abstraction — the SDK's audio
+    ParamSurface allowlist doesn't include "text", so it gets silently
+    dropped and the call fails server-side even though it's a valid field.
+    Same bypass pattern as generate_lipsync()."""
+    import uuid as _uuid
+
+    import httpx
+
+    from app.storage import upload_bytes
+
+    if not GMI_API_KEY:
+        raise RuntimeError("GMI_API_KEY not configured")
+    headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
+    payload = {"text": text, "voice_id": voice_id, "audio_encoding": "MP3"}
+
+    with httpx.Client(timeout=60) as client:
+        result = _gmi_submit_poll(client, GMI_TTS_MODEL, payload, headers, timeout=120)
+    data = _dig(_dig(result, "outcome") or result, "data") or _dig(result, "outcome") or result
+    out_url = _dig(data, "audio_url", "url")
+    if not out_url:
+        raise RuntimeError(f"{GMI_TTS_MODEL} finished without an audio url: {str(result)[:600]}")
+
+    audio = httpx.get(out_url, timeout=120).content
+    url, sha = upload_bytes(f"audio/voice-lines/{_uuid.uuid4().hex}.mp3", audio, "audio/mpeg")
+    return {
+        "url": url,
+        "sha256": sha,
+        "mime_type": "audio/mpeg",
+        "cost_usd": None,  # GMI Inworld TTS pricing not publicly listed
+        "voice": f"gmi:{voice_id}",
+    }
 
 
 def mux_video_with_audio(video_url: str, audio_url: str) -> dict:
@@ -718,10 +752,10 @@ def generate_scene(
 
 
 # Each character can be assigned a voice from either provider, switchable
-# anytime. OpenAI voices work everywhere (incl. Railway). ElevenLabs is
-# richer but its free tier blocks datacenter IPs, so from the cloud it may
-# be unreachable — those requests fall back to a deterministic OpenAI voice,
-# and the asset records which voice actually spoke.
+# anytime. OpenAI voices work everywhere (incl. Railway). GMI's Inworld TTS
+# runs through the same account/key as our image and video models — no new
+# external signup, and (unlike ElevenLabs' free tier) not IP-blocked from
+# Railway's datacenter, so it's the richer default.
 # The catalog (id/name/gender/age/style per voice) is generated alongside the
 # sample clips by scripts/generate_voice_samples.py and committed. Loaded once.
 def _load_voice_catalog() -> dict:
@@ -732,19 +766,19 @@ def _load_voice_catalog() -> dict:
         return json.loads(path.read_text())
     except Exception:
         return {"openai": [{"id": "onyx", "name": "Onyx", "gender": "male",
-                            "age": "mature", "style": "deep"}], "elevenlabs": []}
+                            "age": "mature", "style": "deep"}], "gmi": []}
 
 
 VOICE_CATALOG = _load_voice_catalog()
 OPENAI_VOICES = VOICE_CATALOG.get("openai", [])
-ELEVENLABS_VOICES = VOICE_CATALOG.get("elevenlabs", [])
+GMI_VOICES = VOICE_CATALOG.get("gmi", [])
 _OPENAI_VOICE_IDS = {v["id"] for v in OPENAI_VOICES}
 
 
 def available_voices() -> dict:
     voices = {"openai": OPENAI_VOICES}
-    if ELEVENLABS_API_KEY:
-        voices["elevenlabs"] = ELEVENLABS_VOICES
+    if GMI_API_KEY:
+        voices["gmi"] = GMI_VOICES
     return voices
 
 
@@ -826,9 +860,8 @@ def generate_audio(
     voice_id: str | None = None,
 ) -> dict:
     """Standalone TTS for the Audio pipeline — narration/voiceover not tied to a
-    character. Accepts any ElevenLabs voice_id (so users can import their own
-    cloned voice by ID); OpenAI voice_ids are validated by the caller. Reuses
-    the same generation path (incl. ElevenLabs→OpenAI cloud fallback)."""
+    character. voice_id must be one of the catalog's fixed GMI or OpenAI
+    voices. Reuses the same generation path (incl. GMI→OpenAI fallback)."""
     return generate_character_voice_line(0, text, voice_provider, voice_id)
 
 
@@ -838,28 +871,12 @@ def generate_character_voice_line(
     voice_provider: str | None = None,
     voice_id: str | None = None,
 ) -> dict:
-    if voice_provider == "elevenlabs" and voice_id and ELEVENLABS_API_KEY:
+    if voice_provider == "gmi" and voice_id and GMI_API_KEY:
         try:
-            result = (
-                Pipeline(f"character-{character_id}-voice-line")
-                .step(
-                    ElevenLabsTTSProvider(output_dir=tempfile.gettempdir()),
-                    model="eleven_v3",
-                    prompt=text,
-                    modality=Modality.AUDIO,
-                    voice_id=voice_id,
-                )
-                .run(sink=get_storage_sink(), timeout=120)
-            )
-            asset = _asset_result(result)
-            asset["cost_usd"] = None  # ElevenLabs pricing is plan-dependent
-            asset["voice"] = f"elevenlabs:{voice_id}"
-            return asset
+            return _gmi_voice_line(character_id, text, voice_id)
         except Exception as exc:
-            # Surface WHY it fell back (cloud IP block, quota, voice needs a
-            # paid plan, …) instead of silently swallowing it.
             logger.warning(
-                "ElevenLabs voice %s unavailable, falling back to OpenAI: %s",
+                "GMI voice %s unavailable, falling back to OpenAI: %s",
                 voice_id, exc,
             )
 

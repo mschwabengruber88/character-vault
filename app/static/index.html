@@ -350,7 +350,7 @@
         <div class="detail-head">
           <div>
             <h2 data-i18n="audioTitle">Audio</h2>
-            <p class="detail-description" data-i18n="audioDesc">Turn a script into spoken audio — narration, voiceover, dialogue. Pick a catalog voice, or bring your own ElevenLabs voice by its Voice ID.</p>
+            <p class="detail-description" data-i18n="audioDesc">Turn a script into spoken audio — narration, voiceover, dialogue. Pick a voice from the catalog.</p>
           </div>
         </div>
 
@@ -362,10 +362,6 @@
         <div id="audio-single-panel" class="generate-card">
           <p class="generate-hint" data-i18n="ttsHint">Genblaze TTS → Backblaze B2</p>
           <textarea id="audio-text" data-i18n-ph="phAudioText" placeholder="What should be spoken? e.g. 'In a world long forgotten, one traveller set out at dawn…'" maxlength="4000" rows="4"></textarea>
-          <div class="studio-modes">
-            <button type="button" class="audio-source-btn active" data-source="catalog" data-i18n="audioCatalog">Catalog voice</button>
-            <button type="button" class="audio-source-btn" data-source="custom" data-i18n="audioCustom">Your ElevenLabs voice (by ID)</button>
-          </div>
           <div id="audio-catalog">
             <div class="voice-filters">
               <select id="audio-filter-gender" class="filter-select" aria-label="Filter by gender">
@@ -387,13 +383,6 @@
               <select id="audio-voice-select"></select>
               <button type="button" id="audio-voice-preview" class="preview-button" title="Play a sample of this voice" aria-label="Play voice sample">▶</button>
             </label>
-          </div>
-          <div id="audio-custom" hidden>
-            <label class="model-row">
-              <span class="model-label" data-i18n="voiceIdLabel">Voice ID</span>
-              <input id="audio-custom-id" type="text" data-i18n-ph="phVoiceId" placeholder="ElevenLabs Voice ID, e.g. 21m00Tcm4TlvDq8ikWAM" maxlength="100">
-            </label>
-            <p class="generate-hint" data-i18n="voiceIdHint">Copy the Voice ID from your ElevenLabs voice library. Requires an ElevenLabs plan reachable from the server — otherwise it falls back to an OpenAI voice.</p>
           </div>
           <p id="audio-note" class="generate-hint" hidden></p>
           <button id="generate-audio-button" class="button primary" data-i18n="genAudioBtn">Generate audio</button>

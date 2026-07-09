@@ -57,7 +57,7 @@ const TRANSLATIONS = {
     studioTitle: "Studio",
     studioDesc: "Generate images without a character — free artistic photo art like Midjourney, or empty background/scene plates. Same prompt builder, no identity lock.",
     audioTitle: "Audio",
-    audioDesc: "Turn a script into spoken audio — narration, voiceover, dialogue. Pick a catalog voice, or bring your own ElevenLabs voice by its Voice ID.",
+    audioDesc: "Turn a script into spoken audio — narration, voiceover, dialogue. Pick a voice from the catalog.",
     videoTitle: "Video",
     videoDesc: "Bring a character to life — animate one of their portraits into a short clip (identity held via image-to-video), or generate video straight from a prompt.",
     wsGateTitle: "Your workspace",
@@ -182,11 +182,6 @@ const TRANSLATIONS = {
     yourStudio: "Your studio images",
     studioEmpty: "Nothing here yet — pick a mode and generate.",
     phAudioText: "What should be spoken? e.g. 'In a world long forgotten, one traveller set out at dawn…'",
-    audioCatalog: "Catalog voice",
-    audioCustom: "Your ElevenLabs voice (by ID)",
-    voiceIdLabel: "Voice ID",
-    phVoiceId: "ElevenLabs Voice ID, e.g. 21m00Tcm4TlvDq8ikWAM",
-    voiceIdHint: "Copy the Voice ID from your ElevenLabs voice library. Requires an ElevenLabs plan reachable from the server — otherwise it falls back to an OpenAI voice.",
     genAudioBtn: "Generate audio",
     yourAudio: "Your audio",
     audioEmpty: "Nothing here yet — write a line and generate.",
@@ -328,7 +323,7 @@ const TRANSLATIONS = {
     studioTitle: "Studio",
     studioDesc: "Bilder ohne Charakter generieren – freie künstlerische Foto-Art wie bei Midjourney oder leere Hintergrund-/Szenen-Plates. Derselbe Prompt-Baukasten, ohne Identitäts-Lock.",
     audioTitle: "Audio",
-    audioDesc: "Mach aus einem Skript gesprochenes Audio – Erzählung, Voiceover, Dialog. Wähle eine Katalog-Stimme oder bring deine eigene ElevenLabs-Stimme per Voice-ID mit.",
+    audioDesc: "Mach aus einem Skript gesprochenes Audio – Erzählung, Voiceover, Dialog. Wähle eine Stimme aus dem Katalog.",
     videoTitle: "Video",
     videoDesc: "Erwecke einen Charakter zum Leben – animiere eines seiner Porträts zu einem kurzen Clip (Identität via Image-to-Video gehalten) oder generiere Video direkt aus einem Prompt.",
     wsGateTitle: "Dein Workspace",
@@ -453,11 +448,6 @@ const TRANSLATIONS = {
     yourStudio: "Deine Studio-Bilder",
     studioEmpty: "Noch nichts hier – wähle einen Modus und generiere.",
     phAudioText: "Was soll gesprochen werden? z. B. 'In einer längst vergessenen Welt brach ein Reisender bei Tagesanbruch auf …'",
-    audioCatalog: "Katalog-Stimme",
-    audioCustom: "Deine ElevenLabs-Stimme (per ID)",
-    voiceIdLabel: "Voice-ID",
-    phVoiceId: "ElevenLabs Voice-ID, z. B. 21m00Tcm4TlvDq8ikWAM",
-    voiceIdHint: "Kopiere die Voice-ID aus deiner ElevenLabs-Stimmen-Bibliothek. Benötigt einen vom Server erreichbaren ElevenLabs-Plan – sonst greift eine OpenAI-Stimme.",
     genAudioBtn: "Audio generieren",
     yourAudio: "Deine Audios",
     audioEmpty: "Noch nichts hier – schreibe eine Zeile und generiere.",
@@ -804,7 +794,7 @@ function applyModelUI() {
 
 /* ---------- Voices ---------- */
 
-const PROVIDER_LABEL = { openai: "OpenAI TTS", elevenlabs: "ElevenLabs" };
+const PROVIDER_LABEL = { openai: "OpenAI TTS", gmi: "GMI (Inworld)" };
 
 async function loadVoices() {
   state.voices = await api("/voices").catch(() => ({}));
@@ -2154,8 +2144,6 @@ function renderStudio(images) {
 
 /* ---------- Audio: narration & voiceover ---------- */
 
-let audioSource = "catalog";
-
 function showAudioView() {
   state.selectedId = null;
   renderCharacterList();
@@ -2207,14 +2195,6 @@ function renderAudioVoices() {
   }
 }
 
-function setAudioSource(source) {
-  audioSource = source;
-  document.querySelectorAll(".audio-source-btn[data-source]").forEach((b) =>
-    b.classList.toggle("active", b.dataset.source === source));
-  el("audio-catalog").hidden = source !== "catalog";
-  el("audio-custom").hidden = source !== "custom";
-}
-
 let audioMode = "single";
 
 function setAudioMode(mode) {
@@ -2233,9 +2213,6 @@ function setupAudio() {
   el("audio-filter-gender").addEventListener("change", renderAudioVoices);
   el("audio-filter-age").addEventListener("change", renderAudioVoices);
   el("audio-voice-preview").addEventListener("click", () => previewVoice("audio-voice-select", "audio-voice-preview"));
-  document.querySelectorAll(".audio-source-btn[data-source]").forEach((b) =>
-    b.addEventListener("click", () => setAudioSource(b.dataset.source)));
-  setAudioSource("catalog");
   document.querySelectorAll(".audio-source-btn[data-audio-mode]").forEach((b) =>
     b.addEventListener("click", () => setAudioMode(b.dataset.audioMode)));
   setAudioMode("single");
@@ -2249,18 +2226,11 @@ async function generateAudioClip() {
   const text = el("audio-text").value.trim();
   if (!text) { toast("Write the line to speak first.", true); el("audio-text").focus(); return; }
 
-  let provider, voiceId;
-  if (audioSource === "custom") {
-    provider = "elevenlabs";
-    voiceId = el("audio-custom-id").value.trim();
-    if (!voiceId) { toast("Enter your ElevenLabs Voice ID.", true); el("audio-custom-id").focus(); return; }
-  } else {
-    const value = el("audio-voice-select").value;
-    if (!value) { toast("Pick a voice first.", true); return; }
-    const parts = value.split(":");
-    provider = parts[0];
-    voiceId = parts.slice(1).join(":");
-  }
+  const value = el("audio-voice-select").value;
+  if (!value) { toast("Pick a voice first.", true); return; }
+  const parts = value.split(":");
+  const provider = parts[0];
+  const voiceId = parts.slice(1).join(":");
 
   audioGenerating = true;
   el("generate-audio-button").disabled = true;

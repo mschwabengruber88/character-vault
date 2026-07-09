@@ -565,9 +565,10 @@ def test_dialogue_requires_voice_on_each_character(client):
     assert resp.status_code == 400
 
 
-def test_dialogue_generation_stores_script_and_participants(client):
+def test_dialogue_generation_stores_script_and_participants(client, monkeypatch):
+    monkeypatch.setattr("app.pipelines.GMI_API_KEY", "test-gmi-key")
     a = client.post("/characters", json={
-        "name": "Kaede", "voice_provider": "elevenlabs", "voice_id": "abc123",
+        "name": "Kaede", "voice_provider": "gmi", "voice_id": "Hana",
     }).json()["id"]
     b = client.post("/characters", json={
         "name": "Ren", "voice_provider": "openai", "voice_id": "nova",
@@ -600,7 +601,7 @@ def test_dialogue_generation_stores_script_and_participants(client):
     assert len(dialogue["script"]) == 3
     passed_turns = mock_dlg.call_args.args[0]
     assert len(passed_turns) == 3
-    assert passed_turns[0]["voice_provider"] == "elevenlabs" and passed_turns[0]["voice_id"] == "abc123"
+    assert passed_turns[0]["voice_provider"] == "gmi" and passed_turns[0]["voice_id"] == "Hana"
 
     assert any(d["id"] == dialogue["id"] for d in client.get("/audio/dialogue").json())
     assert client.delete(f"/audio/dialogue/{dialogue['id']}").status_code == 204
@@ -628,8 +629,10 @@ def test_motion_comic_requires_voice_on_character(client):
     assert resp.status_code == 400
 
 
-def test_motion_comic_generation_stores_script_and_duration(client):
+def test_motion_comic_generation_stores_script_and_duration(client, monkeypatch):
     from app import db
+
+    monkeypatch.setattr("app.pipelines.GMI_API_KEY", "test-gmi-key")
 
     scene = db.create_scene(
         workspace_id=client.workspace_id, prompt="p", url="https://example.com/s.png",
@@ -638,7 +641,7 @@ def test_motion_comic_generation_stores_script_and_duration(client):
         participant_ids=[1, 2], participant_names=["A", "B"],
     )
     a = client.post("/characters", json={
-        "name": "Kaede", "voice_provider": "elevenlabs", "voice_id": "abc123",
+        "name": "Kaede", "voice_provider": "gmi", "voice_id": "Hana",
     }).json()["id"]
     b = client.post("/characters", json={
         "name": "Ren", "voice_provider": "openai", "voice_id": "nova",
@@ -669,7 +672,7 @@ def test_motion_comic_generation_stores_script_and_duration(client):
     assert video["script"] == mock_mc.return_value["script"]
     passed_panels = mock_mc.call_args.args[0]
     assert len(passed_panels) == 2
-    assert passed_panels[0]["voice_provider"] == "elevenlabs" and passed_panels[0]["voice_id"] == "abc123"
+    assert passed_panels[0]["voice_provider"] == "gmi" and passed_panels[0]["voice_id"] == "Hana"
     assert passed_panels[0]["caption"] == "Visit us today!"
     assert passed_panels[1]["caption"] is None
     assert mock_mc.call_args.kwargs["music_url"] == "https://example.com/music.mp3"
@@ -883,27 +886,37 @@ def test_audio_generation_with_catalog_voice(client):
     assert client.delete(f"/audio/{clip['id']}").status_code == 404
 
 
-def test_audio_accepts_custom_elevenlabs_voice_id(client):
-    # a custom (non-catalog) ElevenLabs id is allowed — that's the import path
+def test_audio_generation_with_gmi_catalog_voice(client, monkeypatch):
+    monkeypatch.setattr("app.pipelines.GMI_API_KEY", "test-gmi-key")
     with patch("app.main.generate_audio") as mock_gen:
         mock_gen.return_value = {
             "url": "https://example.com/b.mp3", "sha256": "aud2",
             "mime_type": "audio/mpeg", "manifest_verified": True,
-            "cost_usd": None, "voice": "elevenlabs:MYOWNVOICE123",
+            "cost_usd": None, "voice": "gmi:Craig",
         }
         resp = client.post(
             "/audio",
-            json={"text": "Custom voice", "voice_provider": "elevenlabs", "voice_id": "MYOWNVOICE123"},
+            json={"text": "GMI voice", "voice_provider": "gmi", "voice_id": "Craig"},
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
-    mock_gen.assert_called_once_with("Custom voice", "elevenlabs", "MYOWNVOICE123")
+    mock_gen.assert_called_once_with("GMI voice", "gmi", "Craig")
 
 
 def test_audio_rejects_unknown_openai_voice(client):
     resp = client.post(
         "/audio",
         json={"text": "hi", "voice_provider": "openai", "voice_id": "not-a-voice"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_audio_rejects_unknown_gmi_voice(client):
+    # GMI voices are a fixed catalog now too — no more arbitrary voice-id import.
+    resp = client.post(
+        "/audio",
+        json={"text": "hi", "voice_provider": "gmi", "voice_id": "not-a-voice"},
         headers={"X-API-Key": API_KEY},
     )
     assert resp.status_code == 400

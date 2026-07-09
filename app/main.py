@@ -45,7 +45,6 @@ from app.pipelines import (
     generate_video,
     generate_lipsync,
     mux_video_with_audio,
-    get_storage_sink,
 )
 from app.storage import presign_asset_url, upload_bytes, upload_reference_image, with_signed_url
 
@@ -211,46 +210,13 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/debug/gmi_audio_raw", include_in_schema=False)
-def debug_gmi_audio_raw(model: str, voice_id: str = "", text: str = "", lyrics: str = "",
-                        workspace: str = Depends(require_workspace)):
-    """TEMP: bypass the genblaze SDK's Pipeline abstraction (it validates
-    step kwargs against a fixed allowlist that doesn't include "text" or
-    "lyrics" for audio models, so those get silently dropped — same class
-    of bug as the Pixverse video fix) and hit GMI's request-queue directly,
-    the same way generate_lipsync() already does. Remove once the
-    voice/music-provider plan is decided."""
-    import httpx
-
-    from app.config import GMI_API_KEY
-    from app.pipelines import _gmi_submit_poll, _dig
-
-    if not GMI_API_KEY:
-        raise HTTPException(status_code=400, detail="GMI_API_KEY not configured")
-    payload = {}
-    if text:
-        payload["text"] = text
-    if lyrics:
-        payload["lyrics"] = lyrics
-    if voice_id:
-        payload["voice_id"] = voice_id
-    headers = {"Authorization": f"Bearer {GMI_API_KEY}", "Content-Type": "application/json"}
-    try:
-        with httpx.Client(timeout=60) as client:
-            result = _gmi_submit_poll(client, model, payload, headers, timeout=180)
-        data = _dig(_dig(result, "outcome") or result, "data") or _dig(result, "outcome") or result
-        return {"raw": result, "data": data}
-    except Exception as exc:
-        return {"exception": str(exc)}
-
-
 class CharacterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
     personality: str | None = Field(default=None, max_length=1000)
     purpose: str | None = Field(default=None, max_length=500)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
-    voice_provider: Literal["openai", "elevenlabs"] | None = None
+    voice_provider: Literal["openai", "gmi"] | None = None
     voice_id: str | None = Field(default=None, max_length=100)
 
 
@@ -260,20 +226,19 @@ class CharacterUpdate(BaseModel):
     personality: str | None = Field(default=None, max_length=1000)
     purpose: str | None = Field(default=None, max_length=500)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
-    voice_provider: Literal["openai", "elevenlabs"] | None = None
+    voice_provider: Literal["openai", "gmi"] | None = None
     voice_id: str | None = Field(default=None, max_length=100)
 
 
 def _apply_voice(workspace: str, character_id: int, provider: str | None, voice_id: str | None) -> None:
     """The character's voice is fixed on the character (set at creation, edited
-    only in the profile). OpenAI voices are validated against the catalog;
-    ElevenLabs accepts any id (own cloned voice)."""
+    only in the profile). Both providers now use a fixed catalog — GMI's
+    Inworld voices replaced ElevenLabs' custom-voice-import-by-id flow."""
     if not provider or not voice_id:
         return
-    if provider == "openai":
-        valid = {v["id"] for v in available_voices().get("openai", [])}
-        if voice_id not in valid:
-            raise HTTPException(status_code=400, detail=f"Unknown OpenAI voice '{voice_id}'.")
+    valid = {v["id"] for v in available_voices().get(provider, [])}
+    if voice_id not in valid:
+        raise HTTPException(status_code=400, detail=f"Unknown {provider} voice '{voice_id}'.")
     db.set_character_voice(workspace, character_id, provider, voice_id)
 
 
@@ -328,7 +293,7 @@ class VoiceLineRequest(BaseModel):
 
 
 class VoiceAssign(BaseModel):
-    voice_provider: Literal["openai", "elevenlabs"]
+    voice_provider: Literal["openai", "gmi"]
     voice_id: str = Field(min_length=1, max_length=100)
 
 
@@ -783,7 +748,7 @@ def delete_studio(image_id: int, workspace: str = Depends(require_workspace)):
 
 class AudioRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    voice_provider: Literal["openai", "elevenlabs"]
+    voice_provider: Literal["openai", "gmi"]
     voice_id: str = Field(min_length=1, max_length=100)
 
 
@@ -794,12 +759,9 @@ def list_audio(workspace: str = Depends(require_workspace)):
 
 @app.post("/audio", dependencies=[Depends(generation_guard("voice", 1))])
 def create_audio(body: AudioRequest, workspace: str = Depends(require_workspace)):
-    # OpenAI voices must be one of the fixed set; ElevenLabs accepts ANY id so
-    # users can import their own cloned voice by its Voice ID.
-    if body.voice_provider == "openai":
-        valid = {v["id"] for v in available_voices().get("openai", [])}
-        if body.voice_id not in valid:
-            raise HTTPException(status_code=400, detail=f"Unknown OpenAI voice '{body.voice_id}'.")
+    valid = {v["id"] for v in available_voices().get(body.voice_provider, [])}
+    if body.voice_id not in valid:
+        raise HTTPException(status_code=400, detail=f"Unknown {body.voice_provider} voice '{body.voice_id}'.")
     with generation_slot(workspace, "audio"):
         try:
             result = generate_audio(body.text, body.voice_provider, body.voice_id)

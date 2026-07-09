@@ -97,150 +97,206 @@
       "style": "pitched-up, soft"
     }
   ],
-  "elevenlabs": [
+  "gmi": [
     {
-      "id": "CwhRBWXzGAHq8TQ4Fs17",
-      "name": "Roger",
-      "provider": "elevenlabs",
+      "id": "Alex",
+      "name": "Alex",
+      "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "casual"
+      "style": "energetic, mid-range"
     },
     {
-      "id": "EXAVITQu4vr4xnSDxMaL",
+      "id": "Ashley",
+      "name": "Ashley",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "adult",
+      "style": "warm, natural"
+    },
+    {
+      "id": "Blake",
+      "name": "Blake",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "adult",
+      "style": "rich, intimate"
+    },
+    {
+      "id": "Carter",
+      "name": "Carter",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "mature",
+      "style": "radio announcer"
+    },
+    {
+      "id": "Clive",
+      "name": "Clive",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "adult",
+      "style": "British, calm"
+    },
+    {
+      "id": "Craig",
+      "name": "Craig",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "mature",
+      "style": "older British, refined"
+    },
+    {
+      "id": "Deborah",
+      "name": "Deborah",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "mature",
+      "style": "gentle, elegant"
+    },
+    {
+      "id": "Dennis",
+      "name": "Dennis",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "adult",
+      "style": "smooth, calm"
+    },
+    {
+      "id": "Dominus",
+      "name": "Dominus",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "adult",
+      "style": "robotic, deep"
+    },
+    {
+      "id": "Edward",
+      "name": "Edward",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "adult",
+      "style": "fast-talking, emphatic"
+    },
+    {
+      "id": "Elizabeth",
+      "name": "Elizabeth",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "adult",
+      "style": "professional"
+    },
+    {
+      "id": "Hades",
+      "name": "Hades",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "mature",
+      "style": "commanding, gruff"
+    },
+    {
+      "id": "Hana",
+      "name": "Hana",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "young",
+      "style": "bright, expressive"
+    },
+    {
+      "id": "Julia",
+      "name": "Julia",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "young",
+      "style": "quirky, high-pitched"
+    },
+    {
+      "id": "Luna",
+      "name": "Luna",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "adult",
+      "style": "calm, relaxing"
+    },
+    {
+      "id": "Mark",
+      "name": "Mark",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "adult",
+      "style": "energetic, rapid-fire"
+    },
+    {
+      "id": "Olivia",
+      "name": "Olivia",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "young",
+      "style": "British, upbeat"
+    },
+    {
+      "id": "Pixie",
+      "name": "Pixie",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "child",
+      "style": "childlike"
+    },
+    {
+      "id": "Priya",
+      "name": "Priya",
+      "provider": "gmi",
+      "gender": "female",
+      "age": "adult",
+      "style": "Indian accent"
+    },
+    {
+      "id": "Ronald",
+      "name": "Ronald",
+      "provider": "gmi",
+      "gender": "male",
+      "age": "mature",
+      "style": "British, deep"
+    },
+    {
+      "id": "Sarah",
       "name": "Sarah",
-      "provider": "elevenlabs",
+      "provider": "gmi",
       "gender": "female",
       "age": "young",
-      "style": "soft"
+      "style": "young adult, natural"
     },
     {
-      "id": "FGY2WhTYpPnrIDTdsKH5",
-      "name": "Laura",
-      "provider": "elevenlabs",
-      "gender": "female",
-      "age": "young",
-      "style": "sassy"
-    },
-    {
-      "id": "IKne3meq5aSn9XLyUdCD",
-      "name": "Charlie",
-      "provider": "elevenlabs",
+      "id": "Shaun",
+      "name": "Shaun",
+      "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "casual"
+      "style": "friendly, dynamic"
     },
     {
-      "id": "JBFqnCBsd6RMkjVDRZzb",
-      "name": "George",
-      "provider": "elevenlabs",
+      "id": "Theodore",
+      "name": "Theodore",
+      "provider": "gmi",
       "gender": "male",
       "age": "mature",
-      "style": "warm storyteller"
+      "style": "gravelly, elderly"
     },
     {
-      "id": "N2lVS1w4EtoT3dr4eOWO",
-      "name": "Callum",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "adult",
-      "style": "intense"
-    },
-    {
-      "id": "SAz9YHcvj6GT2YYXdXww",
-      "name": "River",
-      "provider": "elevenlabs",
-      "gender": "neutral",
-      "age": "adult",
-      "style": "calm"
-    },
-    {
-      "id": "TX3LPaxmHKxFdv7VOQHJ",
-      "name": "Liam",
-      "provider": "elevenlabs",
+      "id": "Timothy",
+      "name": "Timothy",
+      "provider": "gmi",
       "gender": "male",
       "age": "young",
-      "style": "articulate"
+      "style": "lively American"
     },
     {
-      "id": "Xb7hH8MSUJpSbSDYk0k2",
-      "name": "Alice",
-      "provider": "elevenlabs",
+      "id": "Wendy",
+      "name": "Wendy",
+      "provider": "gmi",
       "gender": "female",
       "age": "adult",
-      "style": "confident"
-    },
-    {
-      "id": "XrExE9yKIg1WjnnlVkGX",
-      "name": "Matilda",
-      "provider": "elevenlabs",
-      "gender": "female",
-      "age": "adult",
-      "style": "warm"
-    },
-    {
-      "id": "bIHbv24MWmeRgasZH58o",
-      "name": "Will",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "young",
-      "style": "friendly"
-    },
-    {
-      "id": "cgSgspJ2msm6clMCkdW9",
-      "name": "Jessica",
-      "provider": "elevenlabs",
-      "gender": "female",
-      "age": "young",
-      "style": "playful"
-    },
-    {
-      "id": "cjVigY5qzO86Huf0OWal",
-      "name": "Eric",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "adult",
-      "style": "smooth"
-    },
-    {
-      "id": "iP95p4xoKVk53GoZ742B",
-      "name": "Chris",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "adult",
-      "style": "casual"
-    },
-    {
-      "id": "nPczCjzI2devNBz1zQrb",
-      "name": "Brian",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "mature",
-      "style": "deep"
-    },
-    {
-      "id": "onwK4e9ZLuTAKqWW03F9",
-      "name": "Daniel",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "adult",
-      "style": "news"
-    },
-    {
-      "id": "pFZP5JQG7iQjIQuC4Bku",
-      "name": "Lily",
-      "provider": "elevenlabs",
-      "gender": "female",
-      "age": "adult",
-      "style": "warm"
-    },
-    {
-      "id": "pqHfZKP75CvOlQylNhV4",
-      "name": "Bill",
-      "provider": "elevenlabs",
-      "gender": "male",
-      "age": "mature",
-      "style": "trustworthy"
+      "style": "British, posh"
     }
   ]
 }

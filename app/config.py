@@ -10,8 +10,6 @@ B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME", "character-vault")
 B2_REGION = os.environ.get("B2_REGION", "")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "")
 GMI_API_KEY = os.environ.get("GMI_API_KEY", "")
 
 CORS_ORIGINS = [
