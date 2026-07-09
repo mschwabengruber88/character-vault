@@ -17,6 +17,7 @@ clutter the real gallery.
 
 import json
 import os
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -131,6 +132,14 @@ GMI_PROD_URL = "https://character-vault-production-7da6.up.railway.app"
 def gen_gmi():
     kept = []
 
+    # Owner bypass: if GENERATE_API_KEY is set locally, send it so calls skip
+    # the shared free-tier rate limit entirely instead of competing with real
+    # traffic for the daily budget.
+    owner_key = os.environ.get("GENERATE_API_KEY", "")
+    base_headers = {"Content-Type": "application/json"}
+    if owner_key:
+        base_headers["X-API-Key"] = owner_key
+
     ws_req = urllib.request.Request(
         f"{GMI_PROD_URL}/workspaces",
         data=json.dumps({"name": "voice-sample-gen"}).encode(),
@@ -143,16 +152,18 @@ def gen_gmi():
         body = json.dumps({"text": PHRASE, "voice_provider": "gmi", "voice_id": vid}).encode()
         req = urllib.request.Request(
             f"{GMI_PROD_URL}/audio", data=body,
-            headers={"Content-Type": "application/json", "X-Workspace-Id": workspace_id},
+            headers={**base_headers, "X-Workspace-Id": workspace_id},
             method="POST",
         )
         try:
             clip = json.loads(urllib.request.urlopen(req, timeout=180).read())
             created_ids.append(clip["id"])
-            mp3 = urllib.request.urlopen(clip["url"], timeout=60).read()
+            mp3 = urllib.request.urlopen(clip["signed_url"], timeout=60).read()
             (OUT / f"gmi-{vid}.mp3").write_bytes(mp3)
             kept.append(entry("gmi", vid, vid, gender, age, style))
             print("gmi", vid, "ok")
+        except urllib.error.HTTPError as e:
+            print("gmi", vid, "FAILED", e.code, e.read()[:300])
         except Exception as e:
             print("gmi", vid, "FAILED", str(e)[:150])
 
