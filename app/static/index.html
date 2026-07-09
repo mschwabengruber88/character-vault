@@ -489,6 +489,14 @@
             <p class="generate-hint" data-i18n="motionComicHint">No video model, no lip-sync risk — each panel's still scene image is shown for exactly as long as its own line takes to speak. Built for more than one character talking at once, since real animated lip-sync only ever works for one face per clip.</p>
             <div id="motion-comic-panels"></div>
             <button type="button" id="motion-comic-add-panel" class="button small" data-i18n="addPanel">+ Add panel</button>
+            <label class="upload-field">
+              <span data-i18n="musicUploadLabel">Background music (optional) — mixed quietly under the voice lines</span>
+              <div class="voice-pick-row">
+                <input id="motion-comic-music" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a">
+                <button type="button" id="motion-comic-music-clear" class="button small" data-i18n="musicClear">Remove</button>
+              </div>
+            </label>
+            <p id="motion-comic-music-status" class="generate-hint" hidden></p>
           </div>
 
           <button id="generate-video-button" class="button primary" data-i18n="genVideoBtn">Generate video</button>

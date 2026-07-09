@@ -939,7 +939,57 @@ def _probe_duration_s(path: Path) -> float:
     return max(0.5, float(out)) if out else 3.0
 
 
-def generate_motion_comic(panels: list[dict]) -> dict:
+_CAPTION_FONT = Path(__file__).parent / "static" / "fonts" / "NotoSans.ttf"
+
+
+def _draw_caption(image_bytes: bytes, text: str) -> bytes:
+    """Burn a bottom-bar caption into a still image with PIL, not ffmpeg's
+    drawtext — the locally-tested ffmpeg build doesn't have libfreetype
+    compiled in, and Railway's apt-get ffmpeg isn't guaranteed to either, so
+    this sidesteps that entirely and gets the same result more portably."""
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+    draw = ImageDraw.Draw(img, "RGBA")
+    font_size = max(20, w // 22)
+    font = ImageFont.truetype(str(_CAPTION_FONT), font_size)
+    try:
+        font.set_variation_by_name("Bold")
+    except Exception:
+        pass  # non-variable font fallback — still renders, just not bold
+
+    max_width = int(w * 0.86)
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        if draw.textlength(trial, font=font) <= max_width:
+            current = trial
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+
+    line_height = int(font_size * 1.3)
+    bar_height = line_height * len(lines) + 40
+    draw.rectangle([0, h - bar_height, w, h], fill=(0, 0, 0, 165))
+    y = h - bar_height + 20
+    for line in lines:
+        tw = draw.textlength(line, font=font)
+        draw.text(((w - tw) / 2, y), line, font=font, fill=(255, 255, 255, 255))
+        y += line_height
+
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def generate_motion_comic(panels: list[dict], music_url: str | None = None) -> dict:
     """A slideshow, not a video model: each panel's still image is shown for
     exactly as long as its own voice line takes to speak, in order. No GMI
     video call happens at all — this is the deliberate workaround for
@@ -949,9 +999,12 @@ def generate_motion_comic(panels: list[dict]) -> dict:
     characters at once isn't achievable there.
 
     `panels`: [{"image_url", "character_id", "character_name",
-    "voice_provider", "voice_id", "text"}, ...] — one entry per panel, in
-    display order. Returns {url, sha256, mime_type, duration, cost_usd,
-    manifest_verified, script}."""
+    "voice_provider", "voice_id", "text", "caption"}, ...] — one entry per
+    panel, in display order. `caption` is optional per-panel overlay text
+    (subtitle or a CTA line), burned into the still image directly.
+    `music_url` is an optional background track, looped to length and mixed
+    under the voice lines at reduced volume. Returns {url, sha256,
+    mime_type, duration, cost_usd, manifest_verified, script}."""
     import subprocess
     import uuid as _uuid
 
@@ -973,7 +1026,10 @@ def generate_motion_comic(panels: list[dict]) -> dict:
             durations.append(_probe_duration_s(ap))
 
             ip = Path(d) / f"img{i}.png"
-            ip.write_bytes(download_bytes(line["image_url"]))
+            image_bytes = download_bytes(line["image_url"])
+            if line.get("caption"):
+                image_bytes = _draw_caption(image_bytes, line["caption"])
+            ip.write_bytes(image_bytes)
             image_paths.append(ip)
 
         audio_inputs = []
@@ -986,6 +1042,19 @@ def generate_motion_comic(panels: list[dict]) -> dict:
              f"{filter_a}concat=n={len(audio_paths)}:v=0:a=1[out]", "-map", "[out]", str(combined_audio)],
             check=True, capture_output=True, timeout=120,
         )
+
+        if music_url:
+            music_path = Path(d) / "music.src"
+            music_path.write_bytes(download_bytes(music_url))
+            mixed_audio = Path(d) / "mixed.mp3"
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(combined_audio), "-stream_loop", "-1", "-i", str(music_path),
+                 "-filter_complex",
+                 "[1:a]volume=0.18[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]",
+                 "-map", "[aout]", str(mixed_audio)],
+                check=True, capture_output=True, timeout=120,
+            )
+            combined_audio = mixed_audio
 
         # concat demuxer: each image held for its own line's duration; the
         # final entry is repeated without a duration (ffmpeg quirk — the
@@ -1009,7 +1078,7 @@ def generate_motion_comic(panels: list[dict]) -> dict:
         subprocess.run(
             ["ffmpeg", "-y", "-i", str(slideshow), "-i", str(combined_audio),
              "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-             "-map", "0:v:0", "-map", "1:a:0", str(op)],
+             "-map", "0:v:0", "-map", "1:a:0", "-shortest", str(op)],
             check=True, capture_output=True, timeout=120,
         )
         out = op.read_bytes()

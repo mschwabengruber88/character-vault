@@ -312,6 +312,17 @@ h1, h2, h3, h4 {
   resize: vertical;
 }
 
+.mc-caption {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  padding: 7px 10px;
+}
+
 .scene-who {
   margin: 0;
   font-weight: 600;

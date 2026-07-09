@@ -657,9 +657,9 @@ def test_motion_comic_generation_stores_script_and_duration(client):
         resp = client.post(
             "/videos/motion-comic",
             json={"panels": [
-                {"scene_id": scene["id"], "character_id": a, "text": "Hey Ren!"},
+                {"scene_id": scene["id"], "character_id": a, "text": "Hey Ren!", "caption": "Visit us today!"},
                 {"scene_id": scene["id"], "character_id": b, "text": "Hey Kaede."},
-            ]},
+            ], "music_url": "https://example.com/music.mp3"},
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
@@ -670,9 +670,33 @@ def test_motion_comic_generation_stores_script_and_duration(client):
     passed_panels = mock_mc.call_args.args[0]
     assert len(passed_panels) == 2
     assert passed_panels[0]["voice_provider"] == "elevenlabs" and passed_panels[0]["voice_id"] == "abc123"
+    assert passed_panels[0]["caption"] == "Visit us today!"
+    assert passed_panels[1]["caption"] is None
+    assert mock_mc.call_args.kwargs["music_url"] == "https://example.com/music.mp3"
 
     assert any(v["id"] == video["id"] for v in client.get("/videos").json())
     assert client.delete(f"/videos/{video['id']}").status_code == 204
+
+
+def test_upload_music_rejects_bad_type(client):
+    resp = client.post(
+        "/uploads/music",
+        files={"file": ("song.txt", b"not audio", "text/plain")},
+    )
+    assert resp.status_code == 400
+
+
+def test_upload_music_stores_and_returns_url(client):
+    with patch("app.main.upload_bytes", return_value=("https://example.com/uploads/music/x.mp3", "sha")) as mock_up:
+        resp = client.post(
+            "/uploads/music",
+            files={"file": ("song.mp3", b"fake mp3 bytes", "audio/mpeg")},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["url"] == "https://example.com/uploads/music/x.mp3"
+    assert body["sha256"] == "sha"
+    assert mock_up.call_args.args[0].endswith(".mp3")
 
 
 def test_build_batch_prompts_strategies():

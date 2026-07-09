@@ -1,5 +1,6 @@
 import logging
 import threading
+import uuid
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Literal
@@ -45,7 +46,7 @@ from app.pipelines import (
     generate_lipsync,
     mux_video_with_audio,
 )
-from app.storage import presign_asset_url, upload_reference_image, with_signed_url
+from app.storage import presign_asset_url, upload_bytes, upload_reference_image, with_signed_url
 
 logger = logging.getLogger("character_vault")
 
@@ -1024,10 +1025,30 @@ def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
         raise HTTPException(status_code=404, detail="Video not found")
 
 
+MAX_MUSIC_UPLOAD_BYTES = 15 * 1024 * 1024
+ALLOWED_MUSIC_TYPES = {"audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/mp4", "audio/m4a"}
+
+
+@app.post("/uploads/music")
+async def upload_music(file: UploadFile = File(...), workspace: str = Depends(require_workspace)):
+    """A user's own background-music file for the motion comic — not a paid
+    generation call, just storage, so no rate limiting or owner-key check."""
+    if file.content_type not in ALLOWED_MUSIC_TYPES:
+        raise HTTPException(status_code=400, detail="Upload an MP3, WAV or M4A audio file.")
+    data = await file.read()
+    if len(data) > MAX_MUSIC_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Audio file too large (max 15 MB).")
+    ext = {"audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav",
+           "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/m4a": "m4a"}.get(file.content_type, "mp3")
+    url, sha256 = upload_bytes(f"uploads/music/{workspace}/{uuid.uuid4().hex}.{ext}", data, file.content_type)
+    return {"url": url, "sha256": sha256}
+
+
 class MotionComicPanel(BaseModel):
     scene_id: int
     character_id: int
     text: str = Field(min_length=1, max_length=500)
+    caption: str | None = Field(default=None, max_length=200)
 
 
 class MotionComicRequest(BaseModel):
@@ -1036,6 +1057,7 @@ class MotionComicRequest(BaseModel):
     # real multi-character lip-sync isn't achievable). Each panel is a still
     # scene image held on screen for exactly as long as its own line takes.
     panels: list[MotionComicPanel] = Field(min_length=2, max_length=12)
+    music_url: str | None = None
 
 
 @app.post("/videos/motion-comic")
@@ -1070,6 +1092,7 @@ def create_motion_comic(body: MotionComicRequest, request: Request,
             "voice_provider": character.get("voice_provider"),
             "voice_id": character.get("voice_id"),
             "text": p.text,
+            "caption": p.caption,
         })
 
     enforce_rate(request, x_api_key, "voice", units=len(body.panels))
@@ -1082,7 +1105,7 @@ def create_motion_comic(body: MotionComicRequest, request: Request,
     )
     with generation_slot(workspace, "motion_comic"):
         try:
-            result = generate_motion_comic(panels)
+            result = generate_motion_comic(panels, music_url=body.music_url)
         except Exception:
             logger.exception("Motion comic generation failed")
             db.finish_video(video["id"], status="error",

@@ -193,6 +193,11 @@ const TRANSLATIONS = {
     generatingMotionComic: "Rendering panels and voice lines… usually a few seconds.",
     toastMotionComicCreated: "Motion comic created.",
     toastNeedTwoPanels: "Add at least two panels.",
+    phMotionComicCaption: "Optional caption/CTA text burned into this panel, e.g. 'Visit us today!'",
+    musicUploadLabel: "Background music (optional) — mixed quietly under the voice lines",
+    musicClear: "Remove",
+    uploadingMusic: "Uploading…",
+    musicAttached: "Attached",
     sceneLabel: "Scene",
     videoNoScenes: "No scenes yet — create one in the Images tab first.",
     toastPickSceneFirst: "Pick a scene first.",
@@ -434,6 +439,11 @@ const TRANSLATIONS = {
     generatingMotionComic: "Panels und Sprachzeilen werden gerendert … meist ein paar Sekunden.",
     toastMotionComicCreated: "Motion Comic erstellt.",
     toastNeedTwoPanels: "Füge mindestens zwei Panels hinzu.",
+    phMotionComicCaption: "Optionaler Bildunterschrift-/CTA-Text, der in dieses Panel eingebrannt wird, z. B. 'Jetzt vorbeischauen!'",
+    musicUploadLabel: "Hintergrundmusik (optional) — läuft leise unter den Sprachzeilen",
+    musicClear: "Entfernen",
+    uploadingMusic: "Wird hochgeladen …",
+    musicAttached: "Angehängt",
     sceneLabel: "Szene",
     videoNoScenes: "Noch keine Szenen – erstelle zuerst eine im Bilder-Reiter.",
     toastPickSceneFirst: "Wähle zuerst eine Szene.",
@@ -2494,6 +2504,26 @@ async function populateVideoScenes() {
 const MOTION_COMIC_MIN_PANELS = 2;
 const MOTION_COMIC_MAX_PANELS = 12;
 let motionComicPanelCount = 0;
+let motionComicMusicUrl = null;
+
+function clearMotionComicMusic() {
+  motionComicMusicUrl = null;
+  el("motion-comic-music").value = "";
+  el("motion-comic-music-status").hidden = true;
+}
+
+async function uploadMotionComicMusic(file) {
+  const data = new FormData();
+  data.append("file", file);
+  const resp = await fetch("/uploads/music", {
+    method: "POST", headers: { "X-Workspace-Id": workspaceId() }, body: data,
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : "Upload failed");
+  }
+  return resp.json();
+}
 
 function motionComicSceneOptions() {
   return [...el("video-scene").options].filter((o) => !o.disabled);
@@ -2578,7 +2608,13 @@ function addMotionComicPanel() {
   textInput.maxLength = 500;
   textInput.placeholder = t("phMotionComicLine");
 
-  row.append(head, sceneLabel, charLabel, textInput);
+  const captionInput = document.createElement("input");
+  captionInput.type = "text";
+  captionInput.className = "mc-caption";
+  captionInput.maxLength = 200;
+  captionInput.placeholder = t("phMotionComicCaption");
+
+  row.append(head, sceneLabel, charLabel, textInput, captionInput);
   container.appendChild(row);
 }
 
@@ -2597,10 +2633,14 @@ async function generateMotionComic() {
     const sceneId = row.querySelector(".mc-scene").value;
     const characterId = row.querySelector(".mc-character").value;
     const text = row.querySelector(".mc-text").value.trim();
+    const caption = row.querySelector(".mc-caption").value.trim();
     if (!sceneId) { toast(t("toastPickSceneFirst"), true); return; }
     if (!characterId) { toast(t("needVoiceForDialogue"), true); return; }
     if (!text) { toast(t("toastWriteScriptFirst"), true); return; }
-    panels.push({ scene_id: Number(sceneId), character_id: Number(characterId), text });
+    panels.push({
+      scene_id: Number(sceneId), character_id: Number(characterId), text,
+      caption: caption || null,
+    });
   }
   if (panels.length < MOTION_COMIC_MIN_PANELS) { toast(t("toastNeedTwoPanels"), true); return; }
 
@@ -2611,11 +2651,14 @@ async function generateMotionComic() {
   status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("generatingMotionComic")}`;
   status.hidden = false;
   try {
+    const payload = { panels };
+    if (motionComicMusicUrl) payload.music_url = motionComicMusicUrl;
     await api("/videos/motion-comic", {
-      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify({ panels }),
+      method: "POST", headers: { "X-API-Key": apiKey() }, body: JSON.stringify(payload),
     });
     status.hidden = true;
     renderMotionComicPanels();
+    clearMotionComicMusic();
     await loadVideos();
     toast(t("toastMotionComicCreated"));
   } catch (err) {
@@ -2632,6 +2675,23 @@ function setupVideo() {
   el("video-model").addEventListener("change", applyVideoModelUI);
   el("video-source").addEventListener("change", applyVideoSourceUI);
   el("motion-comic-add-panel").addEventListener("click", () => addMotionComicPanel());
+  el("motion-comic-music").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const musicStatus = el("motion-comic-music-status");
+    musicStatus.classList.remove("error");
+    musicStatus.textContent = t("uploadingMusic");
+    musicStatus.hidden = false;
+    try {
+      const uploaded = await uploadMotionComicMusic(file);
+      motionComicMusicUrl = uploaded.url;
+      musicStatus.textContent = `${t("musicAttached")}: ${file.name}`;
+    } catch (err) {
+      musicStatus.classList.add("error");
+      musicStatus.textContent = err.message;
+    }
+  });
+  el("motion-comic-music-clear").addEventListener("click", clearMotionComicMusic);
   el("generate-video-button").addEventListener("click", () => {
     if (el("video-source").value === "motion-comic") generateMotionComic();
     else generateVideo();
