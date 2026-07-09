@@ -4,7 +4,8 @@ A generative-media backend for AI character assets — built for the
 [Backblaze Generative AI Media Hackathon](https://backblaze-generative-media.devpost.com/).
 
 Character Vault lets you create a character profile, then generate a portrait
-(OpenAI DALL-E) and voice lines (ElevenLabs TTS) for it. Every generated asset
+(OpenAI / GMI Cloud) and voice lines (GMI Cloud Inworld TTS, falling back to
+OpenAI TTS) for it. Every generated asset
 is pushed straight to Backblaze B2 through [Genblaze](https://github.com/backblaze-labs/genblaze),
 which produces a SHA-256 provenance manifest for each run — so every asset in
 the vault is traceable back to the exact provider, model, and prompt that made it.
@@ -15,7 +16,7 @@ the vault is traceable back to the exact provider, model, and prompt that made i
 |-------------------|-----------|---------------|
 | Storage           | Backblaze B2 (via `genblaze-s3`) | S3-compatible object storage |
 | Character portrait | OpenAI (`genblaze-openai`) | `gpt-image-1` |
-| Character voice line | ElevenLabs (`genblaze-elevenlabs`), falls back to OpenAI TTS (`genblaze-openai`) on failure | `eleven_v3` / `gpt-4o-mini-tts` |
+| Character voice line | GMI Cloud Inworld TTS (raw request-queue API), falls back to OpenAI TTS (`genblaze-openai`) on failure | `inworld-tts-2` / `gpt-4o-mini-tts` |
 
 ## B2 + Genblaze usage
 
@@ -42,7 +43,7 @@ making the bucket public.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in B2 / OpenAI / ElevenLabs credentials
+cp .env.example .env   # fill in B2 / OpenAI / GMI Cloud credentials
 uvicorn app.main:app --reload
 ```
 

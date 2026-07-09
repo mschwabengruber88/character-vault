@@ -723,18 +723,7 @@ input[type="number"] {
 }
 .studio-mode:focus-visible, .audio-source-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
-#audio-custom input[type="text"] {
-  flex: 1;
-  background: var(--bg-inset);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 14px;
-}
-#audio-custom input[type="text"]:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
-#audio-catalog, #audio-custom { display: flex; flex-direction: column; gap: 10px; }
+#audio-catalog { display: flex; flex-direction: column; gap: 10px; }
 
 /* Video model description card */
 .model-desc {
