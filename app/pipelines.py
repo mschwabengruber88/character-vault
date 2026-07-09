@@ -557,6 +557,9 @@ def _gmi_voice_line(character_id: int, text: str, voice_id: str) -> dict:
         "mime_type": "audio/mpeg",
         "cost_usd": None,  # GMI Inworld TTS pricing not publicly listed
         "voice": f"gmi:{voice_id}",
+        # No genblaze Pipeline ran (raw REST bypass), so there's no C2PA-style
+        # manifest to verify — unlike _asset_result()'s result.manifest.verify().
+        "manifest_verified": False,
     }
 
 
