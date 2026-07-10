@@ -91,6 +91,24 @@ const TRANSLATIONS = {
     navScript: "Idea → Script",
     scriptTitle: "Idea → Script",
     scriptDesc: "Describe an idea in a sentence and get a ready-to-shoot script. A story script drops straight into the Story image mode — one line becomes one panel.",
+    navCanvas: "Canvas",
+    canvasTitle: "Canvas",
+    canvasDesc: "Bring text and shapes onto your generated images — marketing overlays, manga pages, and more.",
+    canvasBackgroundLabel: "Background",
+    canvasAddText: "+ Text",
+    canvasAddRect: "+ Rectangle",
+    canvasAddCircle: "+ Circle",
+    canvasAddLine: "+ Line",
+    canvasAddArrow: "+ Arrow",
+    canvasDuplicate: "Duplicate",
+    canvasDelete: "Delete",
+    canvasVisibleBadge: "Stamp a visible “✦ AI” badge onto the result",
+    canvasExportBtn: "Export",
+    canvasNoBackground: "Blank canvas",
+    canvasSceneLabel: "Scene",
+    canvasStudioLabel: "Studio",
+    canvasExporting: "Exporting…",
+    toastCanvasExported: "Saved to your Studio gallery.",
     scriptIdeaPh: "Describe your idea, e.g. 'a shy robot learns to dance at a city festival'",
     scriptFormat: "Format",
     fmtStory: "Story — one line per panel",
@@ -368,6 +386,24 @@ const TRANSLATIONS = {
     navScript: "Idee → Skript",
     scriptTitle: "Idee → Skript",
     scriptDesc: "Beschreibe eine Idee in einem Satz und erhalte ein drehfertiges Skript. Ein Story-Skript fließt direkt in den Story-Bildmodus – eine Zeile wird ein Panel.",
+    navCanvas: "Canvas",
+    canvasTitle: "Canvas",
+    canvasDesc: "Text und Formen auf deine generierten Bilder bringen – Marketing-Overlays, Manga-Seiten und mehr.",
+    canvasBackgroundLabel: "Hintergrund",
+    canvasAddText: "+ Text",
+    canvasAddRect: "+ Rechteck",
+    canvasAddCircle: "+ Kreis",
+    canvasAddLine: "+ Linie",
+    canvasAddArrow: "+ Pfeil",
+    canvasDuplicate: "Duplizieren",
+    canvasDelete: "Löschen",
+    canvasVisibleBadge: "Sichtbares „✦ AI“-Badge auf das Ergebnis stempeln",
+    canvasExportBtn: "Exportieren",
+    canvasNoBackground: "Leere Fläche",
+    canvasSceneLabel: "Szene",
+    canvasStudioLabel: "Studio",
+    canvasExporting: "Wird exportiert…",
+    toastCanvasExported: "In deiner Studio-Galerie gespeichert.",
     scriptIdeaPh: "Beschreibe deine Idee, z. B. 'ein schüchterner Roboter lernt auf einem Stadtfest tanzen'",
     scriptFormat: "Format",
     fmtStory: "Story – eine Zeile pro Panel",
@@ -1033,6 +1069,7 @@ function renderDetail(character) {
   hideAudioView();
   hideVideoView();
   hideScriptView();
+  hideCanvasView();
   setActiveNavGroup(null);
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
@@ -1847,6 +1884,7 @@ function showScenesView() {
   hideAudioView();
   hideVideoView();
   hideScriptView();
+  hideCanvasView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -2024,6 +2062,7 @@ function showStudioView() {
   hideAudioView();
   hideVideoView();
   hideScriptView();
+  hideCanvasView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
@@ -2229,6 +2268,7 @@ function showAudioView() {
   hideStudioView();
   hideVideoView();
   hideScriptView();
+  hideCanvasView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("audio-view").hidden = false;
@@ -2569,6 +2609,7 @@ function showVideoView() {
   hideStudioView();
   hideAudioView();
   hideScriptView();
+  hideCanvasView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("video-view").hidden = false;
@@ -3034,6 +3075,7 @@ function showScriptView() {
   hideAudioView();
   hideVideoView();
   hideScriptView();
+  hideCanvasView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("script-view").hidden = false;

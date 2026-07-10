@@ -1,0 +1,10 @@
+Fabric.js v5.3.0
+https://github.com/fabricjs/fabric.js
+
+Copyright (c) 2008-2015 Printio (Juriy Zaytsev, Maxim Chernyak)
+Copyright (c) 2018 Fabric.js
+
+Released under the MIT License.
+Fetched from https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js and
+vendored unmodified for local, no-build-step use (this project ships plain
+<script> tags, no bundler).

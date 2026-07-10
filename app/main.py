@@ -7,7 +7,7 @@ from typing import Literal
 
 import time
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from app import db
 from app.config import (
+    B2_BUCKET_NAME,
+    B2_REGION,
     CORS_ORIGINS,
     GENERATE_API_KEY,
     MAX_KEYLESS_BATCH,
@@ -332,6 +334,28 @@ def capabilities():
 @app.get("/voices")
 def voices():
     return available_voices()
+
+
+@app.get("/assets/proxy")
+def proxy_asset(url: str, workspace: str = Depends(require_workspace)):
+    """Same-origin passthrough for a signed B2 asset URL. <img> tags render
+    cross-origin images fine, but drawing one onto a <canvas> element taints
+    it unless the response carries CORS headers — B2 sends none, and adding
+    bucket-level CORS rules is an out-of-repo dashboard change. Proxying
+    through our own origin sidesteps that for the Canvas editor with zero
+    B2-side configuration. Restricted to our own bucket's host+path so this
+    can't become an open SSRF relay for arbitrary URLs."""
+    import httpx
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    expected_host = f"s3.{B2_REGION}.backblazeb2.com"
+    if parsed.scheme != "https" or parsed.netloc != expected_host or not parsed.path.startswith(f"/{B2_BUCKET_NAME}/"):
+        raise HTTPException(status_code=400, detail="Only vault asset URLs can be proxied.")
+    resp = httpx.get(url, timeout=30)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Could not fetch the asset.")
+    return Response(content=resp.content, media_type=resp.headers.get("content-type", "application/octet-stream"))
 
 
 class WorkspaceCreate(BaseModel):
@@ -744,6 +768,58 @@ def create_studio(body: StudioRequest, workspace: str = Depends(require_workspac
 def delete_studio(image_id: int, workspace: str = Depends(require_workspace)):
     if not db.delete_studio_image(workspace, image_id):
         raise HTTPException(status_code=404, detail="Studio image not found")
+
+
+MAX_CANVAS_EXPORT_BYTES = 20 * 1024 * 1024
+
+
+class CanvasExportRequest(BaseModel):
+    image_base64: str = Field(min_length=1)
+    visible_badge: bool = False
+
+
+@app.post("/canvas/export")
+def export_canvas(body: CanvasExportRequest, workspace: str = Depends(require_workspace)):
+    """Flatten a Canvas editor composition (text/shapes over a background)
+    into a Studio-gallery asset. No provider call happens here — it's local
+    compositing on the client, not generation — so unlike every /generate/*
+    endpoint this deliberately has no generation_guard/rate limit, and
+    manifest_verified always stays False: nothing here ran through a
+    genblaze Pipeline, so there's no C2PA manifest to (honestly) claim as
+    verified, same reasoning as the GMI voice-line raw-REST path."""
+    import base64
+    import binascii
+    import uuid as _uuid
+
+    from app.disclosure import stamp_visible_badge
+
+    header, _, encoded = body.image_base64.partition(",")
+    if not encoded or "base64" not in header:
+        raise HTTPException(status_code=400, detail="image_base64 must be a data: URL.")
+    if len(encoded) > MAX_CANVAS_EXPORT_BYTES:
+        raise HTTPException(status_code=400, detail="Composition is too large to export.")
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Could not decode image_base64.")
+
+    if body.visible_badge:
+        data = stamp_visible_badge(data)
+
+    url, sha = upload_bytes(f"canvas/{_uuid.uuid4().hex}.png", data, "image/png")
+    return _scene_with_signed_url(db.create_studio_image(
+        workspace_id=workspace,
+        kind="canvas",
+        prompt="Canvas composition",
+        url=url,
+        original_url=url,
+        sha256=sha,
+        model="canvas-editor",
+        quality=None,
+        disclosure="visible" if body.visible_badge else None,
+        cost_usd=0.0,
+        manifest_verified=False,
+    ))
 
 
 class AudioRequest(BaseModel):

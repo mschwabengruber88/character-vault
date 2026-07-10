@@ -112,6 +112,7 @@
         </div>
 
         <button id="open-script" class="scenes-nav"><span class="nav-glyph">✎</span><span data-i18n="navScript">Idea → Script</span></button>
+        <button id="open-canvas" class="scenes-nav"><span class="nav-glyph">▧</span><span data-i18n="navCanvas">Canvas</span></button>
       </nav>
     </aside>
 
@@ -590,6 +591,44 @@
         <div id="script-list" class="script-list"></div>
         <p id="script-empty" class="empty-note" hidden data-i18n="scriptNone">No scripts yet — describe an idea above.</p>
       </div>
+
+      <div id="canvas-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2 data-i18n="canvasTitle">Canvas</h2>
+            <p class="detail-description" data-i18n="canvasDesc">Bring text and shapes onto your generated images — marketing overlays, manga pages, and more.</p>
+          </div>
+        </div>
+
+        <div class="generate-card canvas-toolbar">
+          <label class="model-row">
+            <span class="model-label" data-i18n="canvasBackgroundLabel">Background</span>
+            <select id="canvas-background-select"></select>
+          </label>
+          <div class="canvas-tool-buttons">
+            <button type="button" id="canvas-add-text" class="button small" data-i18n="canvasAddText">+ Text</button>
+            <button type="button" id="canvas-add-rect" class="button small" data-i18n="canvasAddRect">+ Rectangle</button>
+            <button type="button" id="canvas-add-circle" class="button small" data-i18n="canvasAddCircle">+ Circle</button>
+            <button type="button" id="canvas-add-line" class="button small" data-i18n="canvasAddLine">+ Line</button>
+            <button type="button" id="canvas-add-arrow" class="button small" data-i18n="canvasAddArrow">+ Arrow</button>
+            <button type="button" id="canvas-duplicate" class="button small" data-i18n="canvasDuplicate">Duplicate</button>
+            <button type="button" id="canvas-delete" class="button small" data-i18n="canvasDelete">Delete</button>
+          </div>
+        </div>
+
+        <div class="canvas-stage-wrap">
+          <canvas id="canvas-editor"></canvas>
+        </div>
+
+        <div class="canvas-export-row">
+          <label class="canvas-badge-toggle">
+            <input type="checkbox" id="canvas-visible-badge">
+            <span data-i18n="canvasVisibleBadge">Stamp a visible "✦ AI" badge onto the result</span>
+          </label>
+          <button type="button" id="canvas-export-button" class="button primary" data-i18n="canvasExportBtn">Export</button>
+        </div>
+        <div id="canvas-status" class="generation-status" hidden></div>
+      </div>
     </section>
 
   </main>
@@ -663,5 +702,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="/static/app.js"></script>
+  <script src="/static/vendor/fabric.min.js"></script>
+  <script src="/static/canvas.js"></script>
 </body>
 </html>

@@ -1451,3 +1451,36 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
   cursor: pointer;
 }
 .ws-recent-chip:hover { background: color-mix(in srgb, var(--violet) 22%, transparent); }
+
+/* Canvas editor — text/shape overlay tool built on Fabric.js */
+.canvas-toolbar { gap: 12px; }
+.canvas-tool-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.canvas-stage-wrap {
+  display: flex;
+  justify-content: center;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow: auto;
+}
+
+#canvas-editor { display: block; }
+
+.canvas-export-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.canvas-badge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}

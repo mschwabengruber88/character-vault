@@ -863,6 +863,73 @@ def test_studio_background_mode_prepends_no_people(client):
     assert STUDIO_MODES["photo-art"] == ""
 
 
+def _tiny_png_data_url():
+    import base64
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color=(200, 50, 50))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def test_canvas_export_stores_studio_asset(client):
+    with patch("app.main.upload_bytes", return_value=("https://example.com/canvas/x.png", "sha")) as mock_up:
+        resp = client.post(
+            "/canvas/export",
+            json={"image_base64": _tiny_png_data_url(), "visible_badge": False},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "canvas"
+    assert body["manifest_verified"] == 0
+    assert body["cost_usd"] == 0.0
+    assert body["disclosure"] is None
+    assert body["model"] == "canvas-editor"
+    assert mock_up.call_args.args[0].startswith("canvas/")
+    assert mock_up.call_args.args[2] == "image/png"
+
+    assert any(a["id"] == body["id"] for a in client.get("/studio").json())
+
+
+def test_canvas_export_with_visible_badge_sets_disclosure(client):
+    with patch("app.main.upload_bytes", return_value=("https://example.com/canvas/y.png", "sha2")):
+        resp = client.post(
+            "/canvas/export",
+            json={"image_base64": _tiny_png_data_url(), "visible_badge": True},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["disclosure"] == "visible"
+
+
+def test_canvas_export_rejects_bad_base64(client):
+    resp = client.post(
+        "/canvas/export",
+        json={"image_base64": "data:image/png;base64,not-valid-base64!!!", "visible_badge": False},
+    )
+    assert resp.status_code == 400
+
+
+def test_canvas_export_rejects_non_data_url(client):
+    resp = client.post(
+        "/canvas/export",
+        json={"image_base64": "https://example.com/not-a-data-url.png", "visible_badge": False},
+    )
+    assert resp.status_code == 400
+
+
+def test_canvas_export_isolated_between_workspaces(client, other_client):
+    with patch("app.main.upload_bytes", return_value=("https://example.com/canvas/z.png", "sha3")):
+        client.post("/canvas/export", json={"image_base64": _tiny_png_data_url(), "visible_badge": False})
+    assert other_client.get("/studio").json() == []
+
+
+def test_assets_proxy_rejects_non_bucket_url(client):
+    resp = client.get("/assets/proxy", params={"url": "https://evil.example.com/x.png"})
+    assert resp.status_code == 400
+
+
 def test_audio_generation_with_catalog_voice(client):
     with patch("app.main.generate_audio") as mock_gen:
         mock_gen.return_value = {
