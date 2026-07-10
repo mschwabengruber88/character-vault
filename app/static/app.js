@@ -36,10 +36,21 @@ const TRANSLATIONS = {
     charactersHeading: "Characters",
     new: "New",
     noCharacters: "No characters yet. Create your first one.",
-    navScenes: "Images",
-    navStudio: "Studio — backgrounds & photo art",
-    navAudio: "Audio — narration & voiceover",
-    navVideo: "Video — animate characters",
+    navGroupBild: "Images",
+    navBildSingle: "Single image",
+    navBildVariation: "Variation set",
+    navBildPhotoshoot: "Photoshoot",
+    navBildStory: "Story series",
+    navBildScene: "Scene (multi-character)",
+    navBildPhotoArt: "Photo art",
+    navBildBackground: "Background / scene plate",
+    navGroupVideo: "Video",
+    navVideoCharacter: "Animate a character",
+    navVideoScene: "Scene (multi-character)",
+    navVideoMotionComic: "Motion comic",
+    navGroupTon: "Audio",
+    navTonSingle: "Single voice",
+    navTonDialogue: "Dialogue",
     imagesTitle: "Images",
     imagesDesc: "Generate portraits, variation sets, photoshoots or story panels for one character — or bring several together in one scene. Pick who's in the frame below.",
     pickOneCharacter: "Pick the character — their stored portraits keep the identity consistent:",
@@ -302,10 +313,21 @@ const TRANSLATIONS = {
     charactersHeading: "Charaktere",
     new: "Neu",
     noCharacters: "Noch keine Charaktere. Erstelle deinen ersten.",
-    navScenes: "Bilder",
-    navStudio: "Studio – Hintergründe & Foto-Art",
-    navAudio: "Audio – Erzählung & Voiceover",
-    navVideo: "Video – Charaktere animieren",
+    navGroupBild: "Bild",
+    navBildSingle: "Einzelbild",
+    navBildVariation: "Variation",
+    navBildPhotoshoot: "Fotoshooting",
+    navBildStory: "Story-Serie",
+    navBildScene: "Szene (mehrere Charaktere)",
+    navBildPhotoArt: "Foto-Art",
+    navBildBackground: "Hintergrund / Szenenkulisse",
+    navGroupVideo: "Video",
+    navVideoCharacter: "Charakter animieren",
+    navVideoScene: "Szene (mehrere Charaktere)",
+    navVideoMotionComic: "Motion Comic",
+    navGroupTon: "Ton",
+    navTonSingle: "Einzelstimme",
+    navTonDialogue: "Dialog",
     imagesTitle: "Bilder",
     imagesDesc: "Porträts, Variationssets, Fotoshootings oder Story-Panels für einen Charakter generieren – oder mehrere in einer Szene zusammenbringen. Wähle unten, wer im Bild ist.",
     pickOneCharacter: "Wähle den Charakter — seine gespeicherten Porträts halten die Identität konsistent:",
@@ -1011,6 +1033,7 @@ function renderDetail(character) {
   hideAudioView();
   hideVideoView();
   hideScriptView();
+  setActiveNavGroup(null);
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
   if (!character) return;
@@ -1573,6 +1596,7 @@ function updateModeUI() {
   const mode = currentMode();
   const meta = MODE_META[mode];
   const isScene = mode === "scene";
+  setActiveNavSubitem("scenes", mode);
   el("count-row").hidden = !meta.counted;
   el("image-prompt").placeholder = t(meta.phKey);
   el("image-prompt").rows = mode === "story" ? 5 : 2;
@@ -1762,6 +1786,60 @@ function setupKeyDialog() {
 
 /* ---------- Scenes / storytelling ---------- */
 
+// The sidebar groups several distinct workflows (image modes, studio modes,
+// video sources, audio modes) under 4 collapsible headings so the nav stays
+// scannable instead of listing every mode as its own top-level button. Each
+// heading maps to one or more of the 4 underlying views; opening any view
+// expands and highlights its heading so "where am I" stays visible.
+const NAV_GROUP_OF = { scenes: "bild", studio: "bild", audio: "ton", video: "video" };
+
+function setActiveNavGroup(openKey) {
+  // Clears "current view" highlighting only — expand/collapse state (hidden,
+  // aria-expanded) of OTHER groups is left alone, since a user may
+  // deliberately keep several groups open at once while browsing.
+  document.querySelectorAll(".nav-group").forEach((g) => g.classList.remove("active"));
+  document.querySelectorAll(".nav-subitem").forEach((b) => b.classList.remove("active"));
+  const groupKey = NAV_GROUP_OF[openKey];
+  if (!groupKey) return;
+  const group = document.querySelector(`.nav-group[data-group="${groupKey}"]`);
+  if (!group) return;
+  group.classList.add("active");
+  group.querySelector(".nav-group-toggle").setAttribute("aria-expanded", "true");
+  group.querySelector(".nav-group-body").hidden = false;
+}
+
+function setActiveNavSubitem(openKey, mode) {
+  document.querySelectorAll(".nav-subitem").forEach((b) =>
+    b.classList.toggle("active", b.dataset.open === openKey && (mode == null || b.dataset.mode === mode)));
+}
+
+// Each sidebar group toggle expands/collapses its own body only — expanding
+// one doesn't touch the others, so a user can keep several open at once.
+// Each sub-item presets the target view's mode before opening it, so
+// clicking straight from the sidebar lands exactly where its label says.
+function setupNavGroups() {
+  document.querySelectorAll(".nav-group-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const body = btn.parentElement.querySelector(".nav-group-body");
+      const expanded = btn.getAttribute("aria-expanded") === "true";
+      body.hidden = expanded;
+      btn.setAttribute("aria-expanded", String(!expanded));
+    });
+  });
+
+  const OPEN_VIEW = { scenes: showScenesView, studio: showStudioView, audio: showAudioView, video: showVideoView };
+  document.querySelectorAll(".nav-subitem").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const { open, mode } = btn.dataset;
+      if (open === "scenes") el("gen-mode").value = mode;
+      else if (open === "studio") setStudioMode(mode);
+      else if (open === "audio") setAudioMode(mode);
+      else if (open === "video") el("video-source").value = mode;
+      OPEN_VIEW[open]();
+    });
+  });
+}
+
 function showScenesView() {
   state.selectedId = null;
   renderCharacterList();
@@ -1772,13 +1850,13 @@ function showScenesView() {
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
-  el("open-scenes").classList.add("active");
+  setActiveNavGroup("scenes");
+  setActiveNavSubitem("scenes", currentMode());
   updateModeUI();
 }
 
 function hideScenesView() {
   el("scenes-view").hidden = true;
-  el("open-scenes").classList.remove("active");
 }
 
 // Shared picker for the Images tab: a single active radio for modes that
@@ -1949,7 +2027,8 @@ function showStudioView() {
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
-  el("open-studio").classList.add("active");
+  setActiveNavGroup("studio");
+  setActiveNavSubitem("studio", studioMode);
   applyStudioModelUI();
   updateStudioCost();
   loadStudio();
@@ -1957,7 +2036,6 @@ function showStudioView() {
 
 function hideStudioView() {
   el("studio-view").hidden = true;
-  el("open-studio").classList.remove("active");
 }
 
 function populateStudioModel() {
@@ -2013,6 +2091,7 @@ function setStudioMode(mode) {
   document.querySelectorAll(".studio-mode").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
   });
+  setActiveNavSubitem("studio", mode);
   el("studio-mode-hint").textContent = t(STUDIO_MODE_HINT[mode]);
 }
 
@@ -2021,7 +2100,6 @@ function setupStudio() {
   el("studio-composer-reset").addEventListener("click", () => studioComposer.reset());
   el("studio-prompt").addEventListener("input", refreshStudioPreview);
   el("studio-model").addEventListener("change", applyStudioModelUI);
-  el("open-studio").addEventListener("click", showStudioView);
   el("generate-studio-button").addEventListener("click", generateStudioImage);
   document.querySelectorAll(".studio-mode").forEach((b) => {
     b.addEventListener("click", () => setStudioMode(b.dataset.mode));
@@ -2154,7 +2232,8 @@ function showAudioView() {
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("audio-view").hidden = false;
-  el("open-audio").classList.add("active");
+  setActiveNavGroup("audio");
+  setActiveNavSubitem("audio", audioMode);
   renderAudioVoices();
   loadAudio();
   renderDialogueParticipants();
@@ -2163,7 +2242,6 @@ function showAudioView() {
 
 function hideAudioView() {
   el("audio-view").hidden = true;
-  el("open-audio").classList.remove("active");
 }
 
 function renderAudioVoices() {
@@ -2201,6 +2279,7 @@ function setAudioMode(mode) {
   audioMode = mode;
   document.querySelectorAll(".audio-source-btn[data-audio-mode]").forEach((b) =>
     b.classList.toggle("active", b.dataset.audioMode === mode));
+  setActiveNavSubitem("audio", mode);
   el("audio-single-panel").hidden = mode !== "single";
   el("audio-dialogue-panel").hidden = mode !== "dialogue";
   el("audio-single-gallery").hidden = mode !== "single";
@@ -2208,7 +2287,6 @@ function setAudioMode(mode) {
 }
 
 function setupAudio() {
-  el("open-audio").addEventListener("click", showAudioView);
   el("generate-audio-button").addEventListener("click", generateAudioClip);
   el("audio-filter-gender").addEventListener("change", renderAudioVoices);
   el("audio-filter-age").addEventListener("change", renderAudioVoices);
@@ -2494,7 +2572,8 @@ function showVideoView() {
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("video-view").hidden = false;
-  el("open-video").classList.add("active");
+  setActiveNavGroup("video");
+  setActiveNavSubitem("video", el("video-source").value);
   populateVideoCharacters();
   populateVideoScenes().then(() => { if (el("video-source").value === "motion-comic") renderMotionComicPanels(); });
   applyVideoSourceUI();
@@ -2503,7 +2582,6 @@ function showVideoView() {
 
 function hideVideoView() {
   el("video-view").hidden = true;
-  el("open-video").classList.remove("active");
 }
 
 function populateVideoModels() {
@@ -2533,6 +2611,7 @@ function applyVideoSourceUI() {
   el("video-gmi-fields").hidden = isComic;
   el("motion-comic-fields").hidden = !isComic;
   el("generate-video-button").textContent = t(isComic ? "genMotionComicBtn" : "genVideoBtn");
+  setActiveNavSubitem("video", el("video-source").value);
   if (isComic) renderMotionComicPanels();
   else applyVideoModelUI();
 }
@@ -2777,7 +2856,6 @@ async function generateMotionComic() {
 }
 
 function setupVideo() {
-  el("open-video").addEventListener("click", showVideoView);
   el("video-model").addEventListener("change", applyVideoModelUI);
   el("video-source").addEventListener("change", applyVideoSourceUI);
   el("motion-comic-add-panel").addEventListener("click", () => addMotionComicPanel());
@@ -2960,6 +3038,7 @@ function showScriptView() {
   el("detail-content").hidden = true;
   el("script-view").hidden = false;
   el("open-script").classList.add("active");
+  setActiveNavGroup(null);
   renderScriptCast();
   loadScripts();
 }
@@ -3132,7 +3211,7 @@ function init() {
   updateModeUI();
   el("create-voice-preview").addEventListener("click", () => previewPickerVoice("create-voice", "create-voice-preview"));
   el("edit-voice-preview").addEventListener("click", () => previewPickerVoice("edit-voice", "edit-voice-preview"));
-  el("open-scenes").addEventListener("click", showScenesView);
+  setupNavGroups();
   setupStudio();
   setupAudio();
   setupVideo();

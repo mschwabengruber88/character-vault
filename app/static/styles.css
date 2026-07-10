@@ -256,6 +256,40 @@ h1, h2, h3, h4 {
 .scenes-nav:hover { border-color: var(--brass); color: var(--brass); }
 .scenes-nav.active { border-color: var(--brass-deep); color: var(--brass); background: color-mix(in srgb, var(--brass) 6%, transparent); }
 
+/* Collapsible workflow groups (Images/Video/Audio) — each pipeline's modes
+   are hidden behind a toggle so the sidebar stays scannable instead of
+   listing every mode as its own top-level button. */
+.workflow-nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-group-toggle { margin-top: 0; justify-content: space-between; }
+.nav-group:first-child .nav-group-toggle { margin-top: 16px; }
+.nav-chevron { color: var(--ink-faint); font-size: 13px; transition: transform 0.15s ease; }
+.nav-group-toggle[aria-expanded="true"] .nav-chevron { transform: rotate(90deg); }
+.nav-group.active .nav-group-toggle { border-color: var(--brass-deep); color: var(--brass); background: color-mix(in srgb, var(--brass) 6%, transparent); }
+
+.nav-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.nav-subitem {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.nav-subitem:hover { color: var(--brass); background: var(--bg-raised); }
+.nav-subitem.active { color: var(--brass); background: color-mix(in srgb, var(--brass) 8%, transparent); border-color: var(--brass-deep); }
+
 .scene-sub { font-size: 13px; color: var(--ink-soft); margin: 0; }
 
 .scene-participants {

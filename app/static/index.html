@@ -71,11 +71,48 @@
       <ul id="character-list" class="character-list"></ul>
       <p id="character-empty" class="empty-note" hidden data-i18n="noCharacters">No characters yet. Create your first one.</p>
 
-      <button id="open-scenes" class="scenes-nav"><span class="nav-glyph">▦</span><span data-i18n="navScenes">Images</span></button>
-      <button id="open-studio" class="scenes-nav"><span class="nav-glyph">◈</span><span data-i18n="navStudio">Studio — backgrounds &amp; photo art</span></button>
-      <button id="open-audio" class="scenes-nav"><span class="nav-glyph">♪</span><span data-i18n="navAudio">Audio — narration &amp; voiceover</span></button>
-      <button id="open-video" class="scenes-nav"><span class="nav-glyph">▷</span><span data-i18n="navVideo">Video — animate characters</span></button>
-      <button id="open-script" class="scenes-nav"><span class="nav-glyph">✎</span><span data-i18n="navScript">Idea → Script</span></button>
+      <nav class="workflow-nav">
+        <div class="nav-group" data-group="bild">
+          <button type="button" class="scenes-nav nav-group-toggle" aria-expanded="false">
+            <span class="nav-glyph">▦</span><span data-i18n="navGroupBild">Images</span>
+            <span class="nav-chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-body" hidden>
+            <button type="button" class="nav-subitem" data-open="scenes" data-mode="single" data-i18n="navBildSingle">Single image</button>
+            <button type="button" class="nav-subitem" data-open="scenes" data-mode="variation" data-i18n="navBildVariation">Variation set</button>
+            <button type="button" class="nav-subitem" data-open="scenes" data-mode="photoshoot" data-i18n="navBildPhotoshoot">Photoshoot</button>
+            <button type="button" class="nav-subitem" data-open="scenes" data-mode="story" data-i18n="navBildStory">Story series</button>
+            <button type="button" class="nav-subitem" data-open="scenes" data-mode="scene" data-i18n="navBildScene">Scene (multi-character)</button>
+            <button type="button" class="nav-subitem" data-open="studio" data-mode="photo-art" data-i18n="navBildPhotoArt">Photo art</button>
+            <button type="button" class="nav-subitem" data-open="studio" data-mode="background" data-i18n="navBildBackground">Background / scene plate</button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="video">
+          <button type="button" class="scenes-nav nav-group-toggle" aria-expanded="false">
+            <span class="nav-glyph">▷</span><span data-i18n="navGroupVideo">Video</span>
+            <span class="nav-chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-body" hidden>
+            <button type="button" class="nav-subitem" data-open="video" data-mode="character" data-i18n="navVideoCharacter">Animate a character</button>
+            <button type="button" class="nav-subitem" data-open="video" data-mode="scene" data-i18n="navVideoScene">Scene (multi-character)</button>
+            <button type="button" class="nav-subitem" data-open="video" data-mode="motion-comic" data-i18n="navVideoMotionComic">Motion comic</button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="ton">
+          <button type="button" class="scenes-nav nav-group-toggle" aria-expanded="false">
+            <span class="nav-glyph">♪</span><span data-i18n="navGroupTon">Audio</span>
+            <span class="nav-chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-body" hidden>
+            <button type="button" class="nav-subitem" data-open="audio" data-mode="single" data-i18n="navTonSingle">Single voice</button>
+            <button type="button" class="nav-subitem" data-open="audio" data-mode="dialogue" data-i18n="navTonDialogue">Dialogue</button>
+          </div>
+        </div>
+
+        <button id="open-script" class="scenes-nav"><span class="nav-glyph">✎</span><span data-i18n="navScript">Idea → Script</span></button>
+      </nav>
     </aside>
 
     <section class="detail" id="detail">
