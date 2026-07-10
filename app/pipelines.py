@@ -633,15 +633,26 @@ def overlay_video(video_url: str, overlay_png: bytes) -> dict:
         vp, op, out_p = f"{d}/v.mp4", f"{d}/overlay.png", f"{d}/out.mp4"
         Path(vp).write_bytes(video)
         Path(op).write_bytes(overlay_png)
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", vp, "-i", op,
-             "-filter_complex",
-             "[1:v][0:v]scale2ref[ovr][base];[base][ovr]overlay=0:0[vout]",
-             "-map", "[vout]", "-map", "0:a?",
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy",
-             out_p],
-            check=True, capture_output=True, timeout=300,
-        )
+        try:
+            subprocess.run(
+                # No explicit -c:v: the container's default mp4 encoder is
+                # used, same as the motion-comic slideshow — the deployed
+                # ffmpeg build's codec set isn't guaranteed (see
+                # _draw_caption's libfreetype note), so don't demand one by
+                # name. format=yuv420p rides at the end of the filter chain
+                # for player compatibility instead of -pix_fmt.
+                ["ffmpeg", "-y", "-i", vp, "-i", op,
+                 "-filter_complex",
+                 "[1:v][0:v]scale2ref[ovr][base];[base][ovr]overlay=0:0,format=yuv420p[vout]",
+                 "-map", "[vout]", "-map", "0:a?", "-c:a", "copy",
+                 out_p],
+                check=True, capture_output=True, timeout=300,
+            )
+        except subprocess.CalledProcessError as e:
+            # capture_output swallows stderr into the exception — surface it,
+            # or prod failures are undiagnosable from the logs.
+            logger.error("ffmpeg overlay failed: %s", (e.stderr or b"").decode(errors="replace")[-2000:])
+            raise
         out = Path(out_p).read_bytes()
     url, sha = upload_bytes(f"videos/overlay/{_uuid.uuid4().hex}.mp4", out, "video/mp4")
     return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
