@@ -602,18 +602,36 @@
 
         <div class="generate-card canvas-toolbar">
           <label class="model-row">
+            <span class="model-label" data-i18n="canvasLayoutLabel">Layout</span>
+            <select id="canvas-layout-select">
+              <option value="none" data-i18n="canvasLayoutNone">Single background</option>
+              <option value="2x2" data-i18n="canvasLayout2x2">Manga page — 2×2 panels</option>
+              <option value="row3" data-i18n="canvasLayoutRow3">Manga page — 3 panels in a row</option>
+              <option value="strip4" data-i18n="canvasLayoutStrip4">Manga page — 4-panel strip</option>
+            </select>
+          </label>
+          <label class="model-row" id="canvas-background-row">
             <span class="model-label" data-i18n="canvasBackgroundLabel">Background</span>
             <select id="canvas-background-select"></select>
           </label>
+          <p id="canvas-panel-hint" class="generate-hint" hidden></p>
+          <details class="composer">
+            <summary><span data-i18n="canvasStickersTitle">Stickers</span></summary>
+            <div id="canvas-sticker-grid" class="canvas-sticker-grid"></div>
+          </details>
           <div class="canvas-tool-buttons">
             <button type="button" id="canvas-add-text" class="button small" data-i18n="canvasAddText">+ Text</button>
             <button type="button" id="canvas-add-rect" class="button small" data-i18n="canvasAddRect">+ Rectangle</button>
             <button type="button" id="canvas-add-circle" class="button small" data-i18n="canvasAddCircle">+ Circle</button>
             <button type="button" id="canvas-add-line" class="button small" data-i18n="canvasAddLine">+ Line</button>
             <button type="button" id="canvas-add-arrow" class="button small" data-i18n="canvasAddArrow">+ Arrow</button>
+            <button type="button" id="canvas-add-bubble" class="button small" data-i18n="canvasAddBubble">+ Speech bubble</button>
+            <select id="canvas-soundword-select" class="filter-select" aria-label="Soundword"></select>
+            <button type="button" id="canvas-add-soundword" class="button small" data-i18n="canvasAddSoundword">+ Soundword</button>
             <button type="button" id="canvas-duplicate" class="button small" data-i18n="canvasDuplicate">Duplicate</button>
             <button type="button" id="canvas-delete" class="button small" data-i18n="canvasDelete">Delete</button>
           </div>
+          <p class="generate-hint" data-i18n="canvasEditHint">Double-click a speech bubble or soundword to edit its text.</p>
         </div>
 
         <div class="canvas-stage-wrap">

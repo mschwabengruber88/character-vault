@@ -1,0 +1,15 @@
+Twemoji v14.0.2
+https://github.com/twitter/twemoji
+
+Copyright 2020 Twitter, Inc and other contributors.
+Graphics licensed under CC-BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
+This directory contains a curated subset (~80 icons — hearts, stars,
+emotions, effects, arrows) of Twemoji's SVG graphics, fetched from the
+official GitHub repository (github.com/twitter/twemoji, tag v14.0.2) and
+vendored unmodified for local, no-build-step use in the Canvas editor's
+sticker picker. Filenames are the emoji's Unicode codepoint(s) in hex,
+Twemoji's own naming convention.
+
+Attribution per CC-BY 4.0: graphics by Twitter, Inc and other contributors,
+licensed under CC-BY 4.0.
