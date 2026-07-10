@@ -993,6 +993,92 @@ def test_canvas_templates_isolated_between_workspaces(client, other_client):
     assert other_client.get("/canvas/templates").json() == []
 
 
+def _done_video(workspace_id):
+    from app import db
+
+    video = db.create_video(
+        workspace_id=workspace_id, character_id=None, character_name="Mara",
+        kind="character", prompt="a windswept portrait", model="Veo3-Fast",
+        duration=5, aspect_ratio="16:9",
+    )
+    db.finish_video(
+        video["id"], status="done", url="https://example.com/v.mp4",
+        original_url="https://example.com/v.mp4", sha256="vsha",
+        mime_type="video/mp4", cost_usd=0.2, manifest_verified=True,
+    )
+    return video["id"]
+
+
+def test_video_poster_returns_frame_and_dimensions(client):
+    video_id = _done_video(client.workspace_id)
+    with patch("app.main.extract_poster_frame") as mock_poster, \
+         patch("app.main.presign_asset_url", return_value="https://signed.example.com/p.png"):
+        mock_poster.return_value = {
+            "url": "https://example.com/p.png", "sha256": "psha",
+            "width": 1280, "height": 720,
+        }
+        resp = client.get(f"/videos/{video_id}/poster")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["width"] == 1280 and body["height"] == 720
+    assert body["signed_url"] == "https://signed.example.com/p.png"
+    mock_poster.assert_called_once_with("https://example.com/v.mp4")
+
+
+def test_video_poster_unfinished_video_rejected(client):
+    from app import db
+
+    video = db.create_video(
+        workspace_id=client.workspace_id, character_id=None, character_name=None,
+        kind="text", prompt="still running", model="Veo3-Fast", duration=5, aspect_ratio="16:9",
+    )
+    assert client.get(f"/videos/{video['id']}/poster").status_code == 400
+    assert client.get("/videos/999999/poster").status_code == 404
+
+
+def test_video_overlay_creates_new_video_row(client):
+    video_id = _done_video(client.workspace_id)
+    with patch("app.main.overlay_video") as mock_overlay:
+        mock_overlay.return_value = {
+            "url": "https://example.com/ov.mp4", "sha256": "ovsha", "mime_type": "video/mp4",
+        }
+        resp = client.post(
+            f"/videos/{video_id}/overlay",
+            json={"overlay_base64": _tiny_png_data_url()},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] != video_id
+    assert body["kind"] == "overlay"
+    assert body["model"] == "canvas-overlay"
+    assert body["status"] == "done"
+    assert body["cost_usd"] == 0.0
+    # local ffmpeg compositing — no genblaze Pipeline, so no manifest to verify
+    assert body["manifest_verified"] == 0
+    assert body["prompt"].startswith("Overlay on: ")
+    assert mock_overlay.call_args.args[0] == "https://example.com/v.mp4"
+
+    assert any(v["id"] == body["id"] for v in client.get("/videos").json())
+
+
+def test_video_overlay_rejects_bad_data_url(client):
+    video_id = _done_video(client.workspace_id)
+    resp = client.post(
+        f"/videos/{video_id}/overlay",
+        json={"overlay_base64": "https://example.com/not-a-data-url.png"},
+    )
+    assert resp.status_code == 400
+
+
+def test_video_overlay_isolated_between_workspaces(client, other_client):
+    video_id = _done_video(client.workspace_id)
+    resp = other_client.post(
+        f"/videos/{video_id}/overlay",
+        json={"overlay_base64": _tiny_png_data_url()},
+    )
+    assert resp.status_code == 404
+
+
 def test_audio_generation_with_catalog_voice(client):
     with patch("app.main.generate_audio") as mock_gen:
         mock_gen.return_value = {

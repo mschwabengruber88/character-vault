@@ -1513,3 +1513,16 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
   color: var(--ink-faint);
   margin-right: auto;
 }
+
+.canvas-template-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.canvas-template-name-row input {
+  flex: 1;
+  min-width: 160px;
+  max-width: 360px;
+}

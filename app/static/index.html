@@ -120,6 +120,7 @@
           <div class="nav-group-body" hidden>
             <button type="button" class="nav-subitem" data-open="canvas" data-mode="new" data-i18n="navCanvasNew">New template</button>
             <button type="button" class="nav-subitem" data-open="canvas" data-mode="templates" data-i18n="navCanvasTemplates">My templates</button>
+            <button type="button" class="nav-subitem" data-open="canvas" data-mode="video" data-i18n="navCanvasVideo">Video overlay</button>
           </div>
         </div>
       </nav>
@@ -610,7 +611,7 @@
         </div>
 
         <div class="generate-card canvas-toolbar">
-          <label class="model-row">
+          <label class="model-row" id="canvas-layout-row">
             <span class="model-label" data-i18n="canvasLayoutLabel">Layout</span>
             <select id="canvas-layout-select">
               <option value="none" data-i18n="canvasLayoutNone">Single background</option>
@@ -622,6 +623,10 @@
           <label class="model-row" id="canvas-background-row">
             <span class="model-label" data-i18n="canvasBackgroundLabel">Background</span>
             <select id="canvas-background-select"></select>
+          </label>
+          <label class="model-row" id="canvas-video-row" hidden>
+            <span class="model-label" data-i18n="canvasVideoLabel">Video</span>
+            <select id="canvas-video-select"></select>
           </label>
           <p id="canvas-panel-hint" class="generate-hint" hidden></p>
           <details class="composer">
@@ -656,6 +661,12 @@
           <button type="button" id="canvas-save-template" class="button small" data-i18n="canvasSaveTemplate">Save as template</button>
           <button type="button" id="canvas-save-template-changes" class="button small" data-i18n="canvasSaveTemplateChanges" hidden>Save changes</button>
           <button type="button" id="canvas-export-button" class="button primary" data-i18n="canvasExportBtn">Export</button>
+          <button type="button" id="canvas-apply-overlay" class="button primary" data-i18n="canvasApplyOverlay" hidden>Apply overlay to video</button>
+        </div>
+        <div id="canvas-template-name-row" class="canvas-template-name-row" hidden>
+          <input type="text" id="canvas-template-name-input" maxlength="120" data-i18n-ph="canvasTemplateNamePrompt" placeholder="Template name">
+          <button type="button" id="canvas-template-name-confirm" class="button small primary" data-i18n="canvasTemplateNameConfirm">Save</button>
+          <button type="button" id="canvas-template-name-cancel" class="button small" data-i18n="cancel">Cancel</button>
         </div>
         <div id="canvas-status" class="generation-status" hidden></div>
       </div>

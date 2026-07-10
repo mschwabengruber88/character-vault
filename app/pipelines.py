@@ -589,6 +589,64 @@ def mux_video_with_audio(video_url: str, audio_url: str) -> dict:
     return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
 
 
+def extract_poster_frame(video_url: str) -> dict:
+    """Grab the first frame of a clip as a PNG (ffmpeg), upload it to B2 and
+    return {url, sha256, width, height}. The canvas editor uses it as the
+    locked background for overlay editing, so the pixel size matters: the
+    overlay PNG is exported at exactly these dimensions."""
+    import io
+    import subprocess
+    import uuid as _uuid
+
+    from PIL import Image
+
+    from app.storage import download_bytes, upload_bytes
+
+    video = download_bytes(video_url)
+    with tempfile.TemporaryDirectory() as d:
+        vp, fp = f"{d}/v.mp4", f"{d}/poster.png"
+        Path(vp).write_bytes(video)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", vp, "-frames:v", "1", fp],
+            check=True, capture_output=True, timeout=60,
+        )
+        out = Path(fp).read_bytes()
+    with Image.open(io.BytesIO(out)) as img:
+        width, height = img.size
+    url, sha = upload_bytes(f"videos/posters/{_uuid.uuid4().hex}.png", out, "image/png")
+    return {"url": url, "sha256": sha, "width": width, "height": height}
+
+
+def overlay_video(video_url: str, overlay_png: bytes) -> dict:
+    """Composite a transparent overlay PNG onto every frame of a clip
+    (ffmpeg overlay filter), upload the result to B2 and return
+    {url, sha256, mime_type}. The overlay is scaled to the video's size via
+    scale2ref, so a slightly-off export resolution can't misalign it; audio
+    is passed through untouched when the clip has any ('0:a?')."""
+    import subprocess
+    import uuid as _uuid
+
+    from app.storage import download_bytes, upload_bytes
+
+    video = download_bytes(video_url)
+    with tempfile.TemporaryDirectory() as d:
+        vp, op, out_p = f"{d}/v.mp4", f"{d}/overlay.png", f"{d}/out.mp4"
+        Path(vp).write_bytes(video)
+        Path(op).write_bytes(overlay_png)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", vp, "-i", op,
+             "-filter_complex",
+             "[1:v][0:v]scale2ref[ovr][base];[base][ovr]overlay=0:0[vout]",
+             "-map", "[vout]", "-map", "0:a?",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy",
+             out_p],
+            check=True, capture_output=True, timeout=300,
+        )
+        out = Path(out_p).read_bytes()
+    url, sha = upload_bytes(f"videos/overlay/{_uuid.uuid4().hex}.mp4", out, "video/mp4")
+    return {"url": url, "sha256": sha, "mime_type": "video/mp4"}
+
+
 _video_provider_instance = None
 _video_provider_lock = threading.Lock()
 

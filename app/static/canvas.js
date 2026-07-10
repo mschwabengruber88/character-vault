@@ -472,6 +472,132 @@ async function exportCanvasComposition() {
   }
 }
 
+/* ---------- Video overlay mode (Phase D) ----------
+ * The same editor, but the locked background is a finished video's first
+ * frame (GET /videos/{id}/poster) at the clip's native resolution, and
+ * "export" sends ONLY the drawn layers as a transparent PNG to
+ * POST /videos/{id}/overlay, where ffmpeg burns them onto every frame. */
+
+let canvasVideoMode = false;
+let overlayVideoId = null;
+let overlayApplying = false;
+
+function setCanvasMode(videoMode) {
+  canvasVideoMode = videoMode;
+  el("canvas-layout-row").hidden = videoMode;
+  el("canvas-background-row").hidden = videoMode;
+  el("canvas-video-row").hidden = !videoMode;
+  el("canvas-save-template").hidden = videoMode;
+  el("canvas-export-button").hidden = videoMode;
+  el("canvas-apply-overlay").hidden = !videoMode;
+  document.querySelector(".canvas-badge-toggle").hidden = videoMode;
+  if (videoMode) {
+    el("canvas-current-template").hidden = true;
+    el("canvas-save-template-changes").hidden = true;
+  } else {
+    updateTemplateSaveButtons();
+  }
+}
+
+async function loadOverlayVideoSelect() {
+  const select = el("canvas-video-select");
+  select.innerHTML = "";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = t("canvasVideoPick");
+  select.appendChild(blank);
+  const videos = await api("/videos").catch(() => []);
+  for (const v of videos) {
+    if (v.status !== "done" || !v.url) continue;
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = `#${v.id} — ${(v.character_name ? v.character_name + ": " : "")}${(v.prompt || "").slice(0, 50)}`;
+    select.appendChild(opt);
+  }
+}
+
+async function pickOverlayVideo(videoId) {
+  overlayVideoId = null;
+  const canvas = initFabricCanvas();
+  if (!videoId) {
+    canvas.setBackgroundImage(null, () => canvas.renderAll());
+    return;
+  }
+  const status = el("canvas-status");
+  status.classList.remove("error");
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("canvasLoadingPoster")}`;
+  status.hidden = false;
+  try {
+    const poster = await api(`/videos/${videoId}/poster`);
+    const blobUrl = await fetchAssetBlobUrl(poster.signed_url);
+    await new Promise((resolve) => {
+      fabric.Image.fromURL(blobUrl, (img) => {
+        // Native resolution, unscaled — the overlay PNG must line up with
+        // the video pixel-for-pixel, unlike image mode's max-900px fit.
+        canvas.setDimensions({ width: poster.width, height: poster.height });
+        img.set({ scaleX: poster.width / img.width, scaleY: poster.height / img.height });
+        canvas.setBackgroundImage(img, () => canvas.renderAll());
+        URL.revokeObjectURL(blobUrl);
+        resolve();
+      });
+    });
+    overlayVideoId = Number(videoId);
+    status.hidden = true;
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = err.message;
+  }
+}
+
+function exportOverlayDataUrl() {
+  const canvas = initFabricCanvas();
+  canvas.discardActiveObject();
+  // Only the drawn layers: poster background and fill color stay out so the
+  // PNG is transparent wherever nothing was drawn.
+  const bg = canvas.backgroundImage;
+  const bgColor = canvas.backgroundColor;
+  canvas.backgroundImage = null;
+  canvas.backgroundColor = "rgba(0,0,0,0)";
+  let dataUrl;
+  try {
+    dataUrl = canvas.toDataURL({ format: "png" });
+  } finally {
+    canvas.backgroundImage = bg;
+    canvas.backgroundColor = bgColor;
+    canvas.renderAll();
+  }
+  return dataUrl;
+}
+
+async function applyVideoOverlay() {
+  if (overlayApplying) return;
+  if (!overlayVideoId) {
+    toast(t("canvasOverlayNoVideo"), true);
+    return;
+  }
+  overlayApplying = true;
+  const status = el("canvas-status");
+  const button = el("canvas-apply-overlay");
+  button.disabled = true;
+  status.classList.remove("error");
+  status.innerHTML = `<span class="spinner" aria-hidden="true"></span>${t("canvasOverlayApplying")}`;
+  status.hidden = false;
+  try {
+    await api(`/videos/${overlayVideoId}/overlay`, {
+      method: "POST",
+      body: JSON.stringify({ overlay_base64: exportOverlayDataUrl() }),
+    });
+    status.hidden = true;
+    toast(t("toastOverlayDone"));
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = err.message;
+  } finally {
+    overlayApplying = false;
+    button.disabled = false;
+  }
+}
+
 let currentTemplateId = null;
 let currentTemplateName = null;
 
@@ -496,12 +622,15 @@ function resetCanvasEditor() {
   canvas.setDimensions({ width: 800, height: 800 });
   canvas.backgroundColor = "#1a1730";
   el("canvas-layout-select").value = "none";
+  el("canvas-video-select").value = "";
+  overlayVideoId = null;
   currentTemplateId = null;
   currentTemplateName = null;
   updateTemplateSaveButtons();
+  closeTemplateNameRow();
 }
 
-function showCanvasView({ keepState = false } = {}) {
+function showCanvasView({ keepState = false, videoMode = false } = {}) {
   state.selectedId = null;
   renderCharacterList();
   hideScenesView();
@@ -511,13 +640,18 @@ function showCanvasView({ keepState = false } = {}) {
   hideScriptView();
   hideCanvasTemplatesView();
   setActiveNavGroup("canvas");
-  setActiveNavSubitem("canvas", "new");
+  setActiveNavSubitem("canvas", videoMode ? "video" : "new");
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("canvas-view").hidden = false;
   initFabricCanvas();
+  setCanvasMode(videoMode);
   if (!keepState) resetCanvasEditor();
-  loadCanvasBackgrounds().then(populateCanvasBackgroundSelect).catch(() => {});
+  if (videoMode) {
+    loadOverlayVideoSelect().catch(() => {});
+  } else {
+    loadCanvasBackgrounds().then(populateCanvasBackgroundSelect).catch(() => {});
+  }
 }
 
 function hideCanvasView() {
@@ -570,9 +704,24 @@ function generateThumbnailDataUrl() {
   return canvas.toDataURL({ format: "png", multiplier });
 }
 
+function openTemplateNameRow() {
+  const input = el("canvas-template-name-input");
+  input.value = currentTemplateName || "";
+  el("canvas-template-name-row").hidden = false;
+  input.focus();
+  input.select();
+}
+
+function closeTemplateNameRow() {
+  el("canvas-template-name-row").hidden = true;
+}
+
 async function saveAsNewTemplate() {
-  const name = window.prompt(t("canvasTemplateNamePrompt"), currentTemplateName || "");
-  if (!name) return;
+  const name = el("canvas-template-name-input").value.trim();
+  if (!name) {
+    el("canvas-template-name-input").focus();
+    return;
+  }
   try {
     const template = await api("/canvas/templates", {
       method: "POST",
@@ -585,6 +734,7 @@ async function saveAsNewTemplate() {
     currentTemplateId = template.id;
     currentTemplateName = template.name;
     updateTemplateSaveButtons();
+    closeTemplateNameRow();
     toast(t("toastTemplateSaved"));
   } catch (err) {
     toast(err.message, true);
@@ -592,7 +742,7 @@ async function saveAsNewTemplate() {
 }
 
 async function saveTemplateChanges() {
-  if (!currentTemplateId) return saveAsNewTemplate();
+  if (!currentTemplateId) return openTemplateNameRow();
   try {
     const template = await api(`/canvas/templates/${currentTemplateId}`, {
       method: "PUT",
@@ -711,11 +861,20 @@ function setupCanvas() {
   document.querySelectorAll('.nav-subitem[data-open="canvas"]').forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.dataset.mode === "templates") showCanvasTemplatesView();
+      else if (btn.dataset.mode === "video") showCanvasView({ videoMode: true });
       else showCanvasView();
     });
   });
-  el("canvas-save-template").addEventListener("click", saveAsNewTemplate);
+  el("canvas-video-select").addEventListener("change", (event) => pickOverlayVideo(event.target.value));
+  el("canvas-apply-overlay").addEventListener("click", applyVideoOverlay);
+  el("canvas-save-template").addEventListener("click", openTemplateNameRow);
   el("canvas-save-template-changes").addEventListener("click", saveTemplateChanges);
+  el("canvas-template-name-confirm").addEventListener("click", saveAsNewTemplate);
+  el("canvas-template-name-cancel").addEventListener("click", closeTemplateNameRow);
+  el("canvas-template-name-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") saveAsNewTemplate();
+    if (event.key === "Escape") closeTemplateNameRow();
+  });
   el("canvas-layout-select").addEventListener("change", (event) => applyCanvasLayout(event.target.value));
   el("canvas-background-select").addEventListener("change", (event) => {
     if (activePanelIndex !== null) fillActivePanel(event.target.value);

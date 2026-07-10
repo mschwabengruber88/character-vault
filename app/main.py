@@ -46,7 +46,9 @@ from app.pipelines import (
     generate_studio_image,
     generate_video,
     generate_lipsync,
+    extract_poster_frame,
     mux_video_with_audio,
+    overlay_video,
 )
 from app.storage import presign_asset_url, upload_bytes, upload_reference_image, with_signed_url
 
@@ -1188,6 +1190,72 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
 def delete_video(video_id: int, workspace: str = Depends(require_workspace)):
     if not db.delete_video(workspace, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
+
+
+def _finished_video_or_400(workspace: str, video_id: int) -> dict:
+    video = db.get_video(workspace, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+    if video.get("status") != "done" or not video.get("url"):
+        raise HTTPException(status_code=400, detail="This video isn't finished yet.")
+    return video
+
+
+@app.get("/videos/{video_id}/poster")
+def video_poster(video_id: int, workspace: str = Depends(require_workspace)):
+    """First frame of a finished clip as a PNG, for the Canvas editor's video
+    mode: it becomes the locked background the overlay is drawn against, and
+    width/height tell the client what resolution to export the overlay at.
+    Local ffmpeg work only — no provider call, so no rate limiting."""
+    video = _finished_video_or_400(workspace, video_id)
+    try:
+        poster = extract_poster_frame(video["url"])
+    except Exception:
+        logger.exception("Poster extraction failed for video %s", video_id)
+        raise HTTPException(status_code=502, detail="Could not read a frame from this video.")
+    return {
+        "signed_url": presign_asset_url(poster["url"]),
+        "width": poster["width"],
+        "height": poster["height"],
+    }
+
+
+class VideoOverlayRequest(BaseModel):
+    overlay_base64: str = Field(min_length=1)
+
+
+@app.post("/videos/{video_id}/overlay")
+def create_video_overlay(video_id: int, body: VideoOverlayRequest,
+                         workspace: str = Depends(require_workspace)):
+    """Burn a transparent overlay PNG (from the Canvas editor's video mode)
+    onto a whole clip, stored as a new video row. Same honesty rules as
+    /canvas/export: local ffmpeg compositing, no provider call — so no rate
+    limit, cost_usd=0.0, and manifest_verified stays False (no genblaze
+    Pipeline ran, so there's no C2PA manifest to verify)."""
+    if len(body.overlay_base64) > MAX_CANVAS_EXPORT_BYTES:
+        raise HTTPException(status_code=400, detail="Overlay is too large.")
+    source = _finished_video_or_400(workspace, video_id)
+    overlay_png = _decode_data_url(body.overlay_base64, "overlay_base64")
+
+    video = db.create_video(
+        workspace_id=workspace, character_id=source.get("character_id"),
+        character_name=source.get("character_name"), kind="overlay",
+        prompt=f"Overlay on: {source['prompt']}"[:500], model="canvas-overlay",
+        duration=source.get("duration"), aspect_ratio=source.get("aspect_ratio"),
+    )
+    try:
+        result = overlay_video(source["url"], overlay_png)
+    except Exception:
+        logger.exception("Overlay compositing failed for video %s", video_id)
+        db.finish_video(video["id"], status="error",
+                        error="Overlay compositing failed. Please try again.")
+        raise HTTPException(status_code=502, detail="Overlay compositing failed. Please try again.")
+    db.finish_video(
+        video["id"], status="done", url=result["url"], original_url=result["url"],
+        sha256=result["sha256"], mime_type=result["mime_type"], cost_usd=0.0,
+        manifest_verified=False,
+    )
+    return _video_with_signed_url(db.get_video(workspace, video["id"]))
 
 
 MAX_MUSIC_UPLOAD_BYTES = 15 * 1024 * 1024
