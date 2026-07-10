@@ -930,6 +930,69 @@ def test_assets_proxy_rejects_non_bucket_url(client):
     assert resp.status_code == 400
 
 
+def test_canvas_template_crud(client):
+    resp = client.post(
+        "/canvas/templates",
+        json={"name": "Manga page 1", "category": "manga-page", "layout_json": '{"objects":[]}'},
+    )
+    assert resp.status_code == 200
+    template = resp.json()
+    assert template["name"] == "Manga page 1"
+    assert template["category"] == "manga-page"
+    assert "layout_json" in template
+    assert template["signed_thumbnail_url"] is None
+
+    listed = client.get("/canvas/templates").json()
+    assert any(t["id"] == template["id"] for t in listed)
+    # the list view is thumbnail-only — no layout_json, to keep it light
+    assert "layout_json" not in listed[0]
+
+    fetched = client.get(f"/canvas/templates/{template['id']}").json()
+    assert fetched["layout_json"] == '{"objects":[]}'
+
+    updated = client.put(
+        f"/canvas/templates/{template['id']}",
+        json={"name": "Manga page 1 v2", "category": "manga-page", "layout_json": '{"objects":[1]}'},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Manga page 1 v2"
+    assert updated.json()["layout_json"] == '{"objects":[1]}'
+
+    assert client.delete(f"/canvas/templates/{template['id']}").status_code == 204
+    assert client.get(f"/canvas/templates/{template['id']}").status_code == 404
+    assert client.delete(f"/canvas/templates/{template['id']}").status_code == 404
+
+
+def test_canvas_template_with_thumbnail(client):
+    with patch("app.main.upload_bytes", return_value=("https://example.com/canvas/thumbs/x.png", "shathumb")) as mock_up:
+        resp = client.post(
+            "/canvas/templates",
+            json={
+                "name": "With thumb", "category": None,
+                "layout_json": '{"objects":[]}', "thumbnail_base64": _tiny_png_data_url(),
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.json()["thumbnail_url"] == "https://example.com/canvas/thumbs/x.png"
+    assert mock_up.call_args.args[0].startswith("canvas/thumbnails/")
+
+
+def test_canvas_template_update_not_found(client):
+    resp = client.put(
+        "/canvas/templates/999999",
+        json={"name": "x", "category": None, "layout_json": "{}"},
+    )
+    assert resp.status_code == 404
+
+
+def test_canvas_templates_isolated_between_workspaces(client, other_client):
+    client.post(
+        "/canvas/templates",
+        json={"name": "Mine", "category": None, "layout_json": "{}"},
+    )
+    assert other_client.get("/canvas/templates").json() == []
+
+
 def test_audio_generation_with_catalog_voice(client):
     with patch("app.main.generate_audio") as mock_gen:
         mock_gen.return_value = {

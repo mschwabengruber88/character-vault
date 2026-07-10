@@ -1507,3 +1507,9 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 }
 .canvas-sticker-btn:hover { border-color: var(--brass); }
 .canvas-sticker-btn img { width: 100%; height: 100%; object-fit: contain; }
+
+.canvas-current-template {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-right: auto;
+}

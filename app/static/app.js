@@ -91,7 +91,9 @@ const TRANSLATIONS = {
     navScript: "Idea → Script",
     scriptTitle: "Idea → Script",
     scriptDesc: "Describe an idea in a sentence and get a ready-to-shoot script. A story script drops straight into the Story image mode — one line becomes one panel.",
-    navCanvas: "Canvas",
+    navGroupCanvas: "Canvas",
+    navCanvasNew: "New template",
+    navCanvasTemplates: "My templates",
     canvasTitle: "Canvas",
     canvasDesc: "Bring text and shapes onto your generated images — marketing overlays, manga pages, and more.",
     canvasBackgroundLabel: "Background",
@@ -120,6 +122,18 @@ const TRANSLATIONS = {
     canvasLayoutStrip4: "Manga page — 4-panel strip",
     canvasPanelHintFilling: "Choose a background below to fill panel {n} — click another panel to fill it instead.",
     canvasStickersTitle: "Stickers",
+    canvasSaveTemplate: "Save as template",
+    canvasSaveTemplateChanges: "Save changes",
+    canvasTemplateNamePrompt: "Template name",
+    canvasEditingTemplate: "Editing: {name}",
+    toastTemplateSaved: "Template saved.",
+    toastTemplateDeleted: "Template deleted.",
+    canvasTemplatesTitle: "My templates",
+    canvasTemplatesDesc: "Reopen a saved layout and swap in different images.",
+    canvasTemplatesEmpty: "No templates saved yet — build a layout and save it from the editor.",
+    canvasTemplateOpen: "Open",
+    canvasTemplateDelete: "Delete",
+    canvasConfirmDeleteTemplate: "Delete this template?",
     scriptIdeaPh: "Describe your idea, e.g. 'a shy robot learns to dance at a city festival'",
     scriptFormat: "Format",
     fmtStory: "Story — one line per panel",
@@ -397,7 +411,9 @@ const TRANSLATIONS = {
     navScript: "Idee → Skript",
     scriptTitle: "Idee → Skript",
     scriptDesc: "Beschreibe eine Idee in einem Satz und erhalte ein drehfertiges Skript. Ein Story-Skript fließt direkt in den Story-Bildmodus – eine Zeile wird ein Panel.",
-    navCanvas: "Canvas",
+    navGroupCanvas: "Canvas",
+    navCanvasNew: "Neue Vorlage",
+    navCanvasTemplates: "Meine Vorlagen",
     canvasTitle: "Canvas",
     canvasDesc: "Text und Formen auf deine generierten Bilder bringen – Marketing-Overlays, Manga-Seiten und mehr.",
     canvasBackgroundLabel: "Hintergrund",
@@ -426,6 +442,18 @@ const TRANSLATIONS = {
     canvasLayoutStrip4: "Manga-Seite – 4er-Streifen",
     canvasPanelHintFilling: "Wähle unten einen Hintergrund für Panel {n} – klicke ein anderes Panel an, um dieses stattdessen zu füllen.",
     canvasStickersTitle: "Sticker",
+    canvasSaveTemplate: "Als Vorlage speichern",
+    canvasSaveTemplateChanges: "Änderungen speichern",
+    canvasTemplateNamePrompt: "Name der Vorlage",
+    canvasEditingTemplate: "Bearbeitet: {name}",
+    toastTemplateSaved: "Vorlage gespeichert.",
+    toastTemplateDeleted: "Vorlage gelöscht.",
+    canvasTemplatesTitle: "Meine Vorlagen",
+    canvasTemplatesDesc: "Öffne ein gespeichertes Layout und tausche die Bilder aus.",
+    canvasTemplatesEmpty: "Noch keine Vorlagen gespeichert – baue ein Layout und speichere es im Editor.",
+    canvasTemplateOpen: "Öffnen",
+    canvasTemplateDelete: "Löschen",
+    canvasConfirmDeleteTemplate: "Diese Vorlage löschen?",
     scriptIdeaPh: "Beschreibe deine Idee, z. B. 'ein schüchterner Roboter lernt auf einem Stadtfest tanzen'",
     scriptFormat: "Format",
     fmtStory: "Story – eine Zeile pro Panel",
@@ -1092,6 +1120,7 @@ function renderDetail(character) {
   hideVideoView();
   hideScriptView();
   hideCanvasView();
+  hideCanvasTemplatesView();
   setActiveNavGroup(null);
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
@@ -1850,7 +1879,7 @@ function setupKeyDialog() {
 // scannable instead of listing every mode as its own top-level button. Each
 // heading maps to one or more of the 4 underlying views; opening any view
 // expands and highlights its heading so "where am I" stays visible.
-const NAV_GROUP_OF = { scenes: "bild", studio: "bild", audio: "ton", video: "video" };
+const NAV_GROUP_OF = { scenes: "bild", studio: "bild", audio: "ton", video: "video", canvas: "canvas" };
 
 function setActiveNavGroup(openKey) {
   // Clears "current view" highlighting only — expand/collapse state (hidden,
@@ -1887,7 +1916,11 @@ function setupNavGroups() {
   });
 
   const OPEN_VIEW = { scenes: showScenesView, studio: showStudioView, audio: showAudioView, video: showVideoView };
-  document.querySelectorAll(".nav-subitem").forEach((btn) => {
+  // Canvas's sub-items (New template / My templates) open two genuinely
+  // different views rather than presetting a mode within one — wired
+  // separately in canvas.js's own setupCanvas(), which loads after this
+  // script, so it can't be referenced from this generic map yet.
+  document.querySelectorAll('.nav-subitem:not([data-open="canvas"])').forEach((btn) => {
     btn.addEventListener("click", () => {
       const { open, mode } = btn.dataset;
       if (open === "scenes") el("gen-mode").value = mode;
@@ -1907,6 +1940,7 @@ function showScenesView() {
   hideVideoView();
   hideScriptView();
   hideCanvasView();
+  hideCanvasTemplatesView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -2085,6 +2119,7 @@ function showStudioView() {
   hideVideoView();
   hideScriptView();
   hideCanvasView();
+  hideCanvasTemplatesView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
@@ -2291,6 +2326,7 @@ function showAudioView() {
   hideVideoView();
   hideScriptView();
   hideCanvasView();
+  hideCanvasTemplatesView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("audio-view").hidden = false;
@@ -2632,6 +2668,7 @@ function showVideoView() {
   hideAudioView();
   hideScriptView();
   hideCanvasView();
+  hideCanvasTemplatesView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("video-view").hidden = false;
@@ -3098,6 +3135,7 @@ function showScriptView() {
   hideVideoView();
   hideScriptView();
   hideCanvasView();
+  hideCanvasTemplatesView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("script-view").hidden = false;

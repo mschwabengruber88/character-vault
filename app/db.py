@@ -154,6 +154,23 @@ CREATE TABLE IF NOT EXISTS batch_jobs (
     error TEXT,
     created_at TEXT NOT NULL
 );
+
+-- Saved Canvas editor layouts (text/shapes/stickers over a background,
+-- or a manga-panel grid). layout_json is Fabric's canvas.toJSON() plus
+-- our own assetSlotId metadata on image layers, so a template can be
+-- reopened and have its image slots re-picked without touching the rest
+-- of the layout.
+CREATE TABLE IF NOT EXISTS canvas_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    name TEXT NOT NULL,
+    category TEXT,
+    layout_json TEXT NOT NULL,
+    thumbnail_url TEXT,
+    thumbnail_sha256 TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 MIGRATIONS = (
@@ -520,6 +537,86 @@ def delete_dialogue(workspace_id: str, dialogue_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute(
             "DELETE FROM dialogues WHERE id = ? AND workspace_id = ?", (dialogue_id, workspace_id)
+        )
+        return cur.rowcount > 0
+
+
+# ── Canvas templates ─────────────────────────────────────────────────────
+# layout_json is opaque to the backend — it's Fabric's canvas.toJSON() plus
+# our assetSlotId metadata, stored and returned as-is (a string), parsed
+# only by the frontend editor that produced it.
+
+def create_canvas_template(
+    workspace_id: str,
+    name: str,
+    category: str | None,
+    layout_json: str,
+    thumbnail_url: str | None,
+    thumbnail_sha256: str | None,
+) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO canvas_templates
+               (workspace_id, name, category, layout_json, thumbnail_url,
+                thumbnail_sha256, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, name, category, layout_json, thumbnail_url,
+             thumbnail_sha256, now(), now()),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM canvas_templates WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def list_canvas_templates(workspace_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, workspace_id, name, category, thumbnail_url, thumbnail_sha256, "
+            "created_at, updated_at FROM canvas_templates WHERE workspace_id = ? ORDER BY id DESC",
+            (workspace_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_canvas_template(workspace_id: str, template_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM canvas_templates WHERE id = ? AND workspace_id = ?",
+            (template_id, workspace_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_canvas_template(
+    workspace_id: str,
+    template_id: int,
+    name: str,
+    category: str | None,
+    layout_json: str,
+    thumbnail_url: str | None,
+    thumbnail_sha256: str | None,
+) -> dict | None:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """UPDATE canvas_templates
+               SET name = ?, category = ?, layout_json = ?, thumbnail_url = ?,
+                   thumbnail_sha256 = ?, updated_at = ?
+               WHERE id = ? AND workspace_id = ?""",
+            (name, category, layout_json, thumbnail_url, thumbnail_sha256,
+             now(), template_id, workspace_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        return dict(conn.execute(
+            "SELECT * FROM canvas_templates WHERE id = ?", (template_id,)
+        ).fetchone())
+
+
+def delete_canvas_template(workspace_id: str, template_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM canvas_templates WHERE id = ? AND workspace_id = ?",
+            (template_id, workspace_id),
         )
         return cur.rowcount > 0
 

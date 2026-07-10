@@ -787,21 +787,13 @@ def export_canvas(body: CanvasExportRequest, workspace: str = Depends(require_wo
     manifest_verified always stays False: nothing here ran through a
     genblaze Pipeline, so there's no C2PA manifest to (honestly) claim as
     verified, same reasoning as the GMI voice-line raw-REST path."""
-    import base64
-    import binascii
     import uuid as _uuid
 
     from app.disclosure import stamp_visible_badge
 
-    header, _, encoded = body.image_base64.partition(",")
-    if not encoded or "base64" not in header:
-        raise HTTPException(status_code=400, detail="image_base64 must be a data: URL.")
-    if len(encoded) > MAX_CANVAS_EXPORT_BYTES:
+    if len(body.image_base64) > MAX_CANVAS_EXPORT_BYTES:
         raise HTTPException(status_code=400, detail="Composition is too large to export.")
-    try:
-        data = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError):
-        raise HTTPException(status_code=400, detail="Could not decode image_base64.")
+    data = _decode_data_url(body.image_base64, "image_base64")
 
     if body.visible_badge:
         data = stamp_visible_badge(data)
@@ -820,6 +812,106 @@ def export_canvas(body: CanvasExportRequest, workspace: str = Depends(require_wo
         cost_usd=0.0,
         manifest_verified=False,
     ))
+
+
+class CanvasTemplateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    category: str | None = Field(default=None, max_length=40)
+    layout_json: str = Field(min_length=1)
+    thumbnail_base64: str | None = None
+
+
+def _decode_data_url(data_url: str, field_name: str) -> bytes:
+    import base64
+    import binascii
+
+    header, _, encoded = data_url.partition(",")
+    if not encoded or "base64" not in header:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a data: URL.")
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail=f"Could not decode {field_name}.")
+
+
+def _upload_canvas_thumbnail(data_url: str) -> tuple[str, str]:
+    import uuid as _uuid
+
+    data = _decode_data_url(data_url, "thumbnail_base64")
+    return upload_bytes(f"canvas/thumbnails/{_uuid.uuid4().hex}.png", data, "image/png")
+
+
+def _template_with_signed_thumbnail(template: dict) -> dict:
+    template["signed_thumbnail_url"] = None
+    if template.get("thumbnail_url"):
+        try:
+            template["signed_thumbnail_url"] = presign_asset_url(template["thumbnail_url"])
+        except Exception:
+            pass
+    return template
+
+
+# Templates are saved/reloaded editor layouts (Fabric's canvas.toJSON(), see
+# CanvasTemplateRequest.layout_json), distinct from /canvas/export's flattened
+# PNGs — a template stays editable and its image slots can be re-picked next
+# time, an export is a finished asset. No rate limiting here either: like
+# export, this is local persistence, not a provider call.
+
+@app.post("/canvas/templates")
+def create_canvas_template(body: CanvasTemplateRequest, workspace: str = Depends(require_workspace)):
+    thumb_url = thumb_sha = None
+    if body.thumbnail_base64:
+        thumb_url, thumb_sha = _upload_canvas_thumbnail(body.thumbnail_base64)
+    return _template_with_signed_thumbnail(db.create_canvas_template(
+        workspace_id=workspace,
+        name=body.name,
+        category=body.category,
+        layout_json=body.layout_json,
+        thumbnail_url=thumb_url,
+        thumbnail_sha256=thumb_sha,
+    ))
+
+
+@app.get("/canvas/templates")
+def list_canvas_templates(workspace: str = Depends(require_workspace)):
+    return [_template_with_signed_thumbnail(t) for t in db.list_canvas_templates(workspace)]
+
+
+@app.get("/canvas/templates/{template_id}")
+def get_canvas_template(template_id: int, workspace: str = Depends(require_workspace)):
+    template = db.get_canvas_template(workspace, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return _template_with_signed_thumbnail(template)
+
+
+@app.put("/canvas/templates/{template_id}")
+def update_canvas_template(template_id: int, body: CanvasTemplateRequest, workspace: str = Depends(require_workspace)):
+    thumb_url = thumb_sha = None
+    if body.thumbnail_base64:
+        thumb_url, thumb_sha = _upload_canvas_thumbnail(body.thumbnail_base64)
+    else:
+        existing = db.get_canvas_template(workspace, template_id)
+        if existing:
+            thumb_url, thumb_sha = existing["thumbnail_url"], existing["thumbnail_sha256"]
+    updated = db.update_canvas_template(
+        workspace_id=workspace,
+        template_id=template_id,
+        name=body.name,
+        category=body.category,
+        layout_json=body.layout_json,
+        thumbnail_url=thumb_url,
+        thumbnail_sha256=thumb_sha,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return _template_with_signed_thumbnail(updated)
+
+
+@app.delete("/canvas/templates/{template_id}", status_code=204)
+def delete_canvas_template(template_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_canvas_template(workspace, template_id):
+        raise HTTPException(status_code=404, detail="Template not found")
 
 
 class AudioRequest(BaseModel):

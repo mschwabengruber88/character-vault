@@ -133,12 +133,14 @@ const CANVAS_LAYOUTS = {
 };
 
 let panelSlots = [];   // fabric objects (placeholder Rect or filled Image) per panel index
+let panelAssetIds = []; // vault asset id filling each panel, so templates can restore images after reload
 let activePanelIndex = null;
 
 function clearPanelSlots() {
   const canvas = initFabricCanvas();
   panelSlots.forEach((obj) => { if (obj) canvas.remove(obj); });
   panelSlots = [];
+  panelAssetIds = [];
   activePanelIndex = null;
   el("canvas-panel-hint").hidden = true;
 }
@@ -179,11 +181,10 @@ function applyCanvasLayout(layoutKey) {
   setActivePanel(0);
 }
 
-async function fillActivePanel(bgId) {
-  if (activePanelIndex === null) return;
+async function fillPanelAt(index, bgId, layoutKey) {
   const canvas = initFabricCanvas();
-  const layout = CANVAS_LAYOUTS[el("canvas-layout-select").value];
-  const rect = layout && layout.panels[activePanelIndex];
+  const layout = CANVAS_LAYOUTS[layoutKey];
+  const rect = layout && layout.panels[index];
   const bg = canvasBackgrounds.find((b) => b.id === bgId);
   if (!rect || !bg) return;
   let blobUrl;
@@ -193,24 +194,36 @@ async function fillActivePanel(bgId) {
     toast(err.message, true);
     return;
   }
-  fabric.Image.fromURL(blobUrl, (img) => {
-    const scale = Math.min(rect.width / img.width, rect.height / img.height);
-    img.set({
-      left: rect.left + (rect.width - img.width * scale) / 2,
-      top: rect.top + (rect.height - img.height * scale) / 2,
-      scaleX: scale,
-      scaleY: scale,
-      hasControls: false,
+  await new Promise((resolve) => {
+    fabric.Image.fromURL(blobUrl, (img) => {
+      const scale = Math.min(rect.width / img.width, rect.height / img.height);
+      img.set({
+        left: rect.left + (rect.width - img.width * scale) / 2,
+        top: rect.top + (rect.height - img.height * scale) / 2,
+        scaleX: scale,
+        scaleY: scale,
+        hasControls: false,
+      });
+      img.panelIndex = index;
+      // Backed by a blob: URL that gets revoked below — never worth persisting
+      // in canvas.toJSON(); templates instead restore panels via panelAssetIds.
+      img.excludeFromExport = true;
+      const old = panelSlots[index];
+      if (old) canvas.remove(old);
+      canvas.add(img);
+      canvas.moveTo(img, 0);
+      panelSlots[index] = img;
+      panelAssetIds[index] = bgId;
+      canvas.renderAll();
+      URL.revokeObjectURL(blobUrl);
+      resolve();
     });
-    img.panelIndex = activePanelIndex;
-    const old = panelSlots[activePanelIndex];
-    if (old) canvas.remove(old);
-    canvas.add(img);
-    canvas.moveTo(img, 0);
-    panelSlots[activePanelIndex] = img;
-    canvas.renderAll();
-    URL.revokeObjectURL(blobUrl);
   });
+}
+
+async function fillActivePanel(bgId) {
+  if (activePanelIndex === null) return;
+  await fillPanelAt(activePanelIndex, bgId, el("canvas-layout-select").value);
 }
 
 function setupPanelSelection(canvas) {
@@ -459,7 +472,36 @@ async function exportCanvasComposition() {
   }
 }
 
-function showCanvasView() {
+let currentTemplateId = null;
+let currentTemplateName = null;
+
+function updateTemplateSaveButtons() {
+  const label = el("canvas-current-template");
+  const saveChanges = el("canvas-save-template-changes");
+  if (currentTemplateId) {
+    label.textContent = t("canvasEditingTemplate").replace("{name}", currentTemplateName || "");
+    label.hidden = false;
+    saveChanges.hidden = false;
+  } else {
+    label.hidden = true;
+    saveChanges.hidden = true;
+  }
+}
+
+function resetCanvasEditor() {
+  const canvas = initFabricCanvas();
+  clearPanelSlots();
+  canvas.clear();
+  canvas.setBackgroundImage(null, () => {});
+  canvas.setDimensions({ width: 800, height: 800 });
+  canvas.backgroundColor = "#1a1730";
+  el("canvas-layout-select").value = "none";
+  currentTemplateId = null;
+  currentTemplateName = null;
+  updateTemplateSaveButtons();
+}
+
+function showCanvasView({ keepState = false } = {}) {
   state.selectedId = null;
   renderCharacterList();
   hideScenesView();
@@ -467,22 +509,213 @@ function showCanvasView() {
   hideAudioView();
   hideVideoView();
   hideScriptView();
-  setActiveNavGroup(null);
+  hideCanvasTemplatesView();
+  setActiveNavGroup("canvas");
+  setActiveNavSubitem("canvas", "new");
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("canvas-view").hidden = false;
-  el("open-canvas").classList.add("active");
   initFabricCanvas();
+  if (!keepState) resetCanvasEditor();
   loadCanvasBackgrounds().then(populateCanvasBackgroundSelect).catch(() => {});
 }
 
 function hideCanvasView() {
   el("canvas-view").hidden = true;
-  el("open-canvas").classList.remove("active");
+}
+
+/* ---------- Templates: save/load a reusable layout ---------- */
+
+function serializeCanvasState() {
+  const canvas = initFabricCanvas();
+  return JSON.stringify({
+    layoutKey: el("canvas-layout-select").value,
+    width: canvas.width,
+    height: canvas.height,
+    panelAssetIds,
+    fabric: canvas.toJSON(["panelIndex"]),
+  });
+}
+
+async function loadCanvasState(stateJson) {
+  const canvas = initFabricCanvas();
+  const state = JSON.parse(stateJson);
+  clearPanelSlots();
+  canvas.setDimensions({ width: state.width, height: state.height });
+  await new Promise((resolve) => {
+    canvas.loadFromJSON(state.fabric, () => {
+      el("canvas-layout-select").value = state.layoutKey || "none";
+      canvas.getObjects().forEach((obj) => {
+        if (typeof obj.panelIndex === "number") panelSlots[obj.panelIndex] = obj;
+      });
+      if (state.layoutKey && state.layoutKey !== "none") setActivePanel(0);
+      canvas.renderAll();
+      resolve();
+    });
+  });
+  const assetIds = state.panelAssetIds || [];
+  if (assetIds.some(Boolean)) {
+    if (!canvasBackgrounds.length) {
+      await loadCanvasBackgrounds().then(populateCanvasBackgroundSelect).catch(() => {});
+    }
+    for (let i = 0; i < assetIds.length; i++) {
+      if (assetIds[i]) await fillPanelAt(i, assetIds[i], state.layoutKey);
+    }
+  }
+}
+
+function generateThumbnailDataUrl() {
+  const canvas = initFabricCanvas();
+  const multiplier = Math.min(1, 320 / Math.max(canvas.width, canvas.height));
+  return canvas.toDataURL({ format: "png", multiplier });
+}
+
+async function saveAsNewTemplate() {
+  const name = window.prompt(t("canvasTemplateNamePrompt"), currentTemplateName || "");
+  if (!name) return;
+  try {
+    const template = await api("/canvas/templates", {
+      method: "POST",
+      body: JSON.stringify({
+        name, category: null,
+        layout_json: serializeCanvasState(),
+        thumbnail_base64: generateThumbnailDataUrl(),
+      }),
+    });
+    currentTemplateId = template.id;
+    currentTemplateName = template.name;
+    updateTemplateSaveButtons();
+    toast(t("toastTemplateSaved"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function saveTemplateChanges() {
+  if (!currentTemplateId) return saveAsNewTemplate();
+  try {
+    const template = await api(`/canvas/templates/${currentTemplateId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: currentTemplateName, category: null,
+        layout_json: serializeCanvasState(),
+        thumbnail_base64: generateThumbnailDataUrl(),
+      }),
+    });
+    currentTemplateName = template.name;
+    updateTemplateSaveButtons();
+    toast(t("toastTemplateSaved"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function openTemplateInEditor(templateId) {
+  try {
+    const template = await api(`/canvas/templates/${templateId}`);
+    showCanvasView({ keepState: true });
+    await loadCanvasState(template.layout_json);
+    currentTemplateId = template.id;
+    currentTemplateName = template.name;
+    updateTemplateSaveButtons();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function showCanvasTemplatesView() {
+  state.selectedId = null;
+  renderCharacterList();
+  hideScenesView();
+  hideStudioView();
+  hideAudioView();
+  hideVideoView();
+  hideScriptView();
+  hideCanvasView();
+  setActiveNavGroup("canvas");
+  setActiveNavSubitem("canvas", "templates");
+  el("detail-placeholder").hidden = true;
+  el("detail-content").hidden = true;
+  el("canvas-templates-view").hidden = false;
+  loadCanvasTemplates();
+}
+
+function hideCanvasTemplatesView() {
+  el("canvas-templates-view").hidden = true;
+}
+
+async function loadCanvasTemplates() {
+  try {
+    renderCanvasTemplates(await api("/canvas/templates"));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderCanvasTemplates(templates) {
+  const grid = el("canvas-templates-grid");
+  grid.innerHTML = "";
+  el("canvas-templates-empty").hidden = templates.length > 0;
+  for (const template of templates) {
+    const card = document.createElement("div");
+    card.className = "asset-card";
+    if (template.signed_thumbnail_url) {
+      const img = document.createElement("img");
+      img.src = template.signed_thumbnail_url;
+      img.alt = template.name;
+      img.loading = "lazy";
+      card.appendChild(img);
+    }
+    const body = document.createElement("div");
+    body.className = "asset-body";
+    const name = document.createElement("p");
+    name.className = "asset-prompt";
+    name.textContent = template.name;
+    body.appendChild(name);
+    const meta = document.createElement("div");
+    meta.className = "asset-meta";
+    const time = document.createElement("span");
+    time.textContent = formatTimestamp(template.updated_at);
+    meta.appendChild(time);
+    const actions = document.createElement("span");
+    actions.className = "asset-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "asset-details-btn";
+    open.textContent = t("canvasTemplateOpen");
+    open.addEventListener("click", () => openTemplateInEditor(template.id));
+    actions.appendChild(open);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "asset-delete";
+    remove.textContent = t("canvasTemplateDelete");
+    remove.addEventListener("click", async () => {
+      if (!confirm(t("canvasConfirmDeleteTemplate"))) return;
+      try {
+        await api(`/canvas/templates/${template.id}`, { method: "DELETE" });
+        loadCanvasTemplates();
+        toast(t("toastTemplateDeleted"));
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+    actions.appendChild(remove);
+    meta.appendChild(actions);
+    body.appendChild(meta);
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
 }
 
 function setupCanvas() {
-  el("open-canvas").addEventListener("click", showCanvasView);
+  document.querySelectorAll('.nav-subitem[data-open="canvas"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.mode === "templates") showCanvasTemplatesView();
+      else showCanvasView();
+    });
+  });
+  el("canvas-save-template").addEventListener("click", saveAsNewTemplate);
+  el("canvas-save-template-changes").addEventListener("click", saveTemplateChanges);
   el("canvas-layout-select").addEventListener("change", (event) => applyCanvasLayout(event.target.value));
   el("canvas-background-select").addEventListener("change", (event) => {
     if (activePanelIndex !== null) fillActivePanel(event.target.value);

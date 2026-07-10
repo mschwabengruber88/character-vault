@@ -112,7 +112,16 @@
         </div>
 
         <button id="open-script" class="scenes-nav"><span class="nav-glyph">✎</span><span data-i18n="navScript">Idea → Script</span></button>
-        <button id="open-canvas" class="scenes-nav"><span class="nav-glyph">▧</span><span data-i18n="navCanvas">Canvas</span></button>
+        <div class="nav-group" data-group="canvas">
+          <button type="button" class="scenes-nav nav-group-toggle" aria-expanded="false">
+            <span class="nav-glyph">▧</span><span data-i18n="navGroupCanvas">Canvas</span>
+            <span class="nav-chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-body" hidden>
+            <button type="button" class="nav-subitem" data-open="canvas" data-mode="new" data-i18n="navCanvasNew">New template</button>
+            <button type="button" class="nav-subitem" data-open="canvas" data-mode="templates" data-i18n="navCanvasTemplates">My templates</button>
+          </div>
+        </div>
       </nav>
     </aside>
 
@@ -643,9 +652,23 @@
             <input type="checkbox" id="canvas-visible-badge">
             <span data-i18n="canvasVisibleBadge">Stamp a visible "✦ AI" badge onto the result</span>
           </label>
+          <span id="canvas-current-template" class="canvas-current-template" hidden></span>
+          <button type="button" id="canvas-save-template" class="button small" data-i18n="canvasSaveTemplate">Save as template</button>
+          <button type="button" id="canvas-save-template-changes" class="button small" data-i18n="canvasSaveTemplateChanges" hidden>Save changes</button>
           <button type="button" id="canvas-export-button" class="button primary" data-i18n="canvasExportBtn">Export</button>
         </div>
         <div id="canvas-status" class="generation-status" hidden></div>
+      </div>
+
+      <div id="canvas-templates-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2 data-i18n="canvasTemplatesTitle">My templates</h2>
+            <p class="detail-description" data-i18n="canvasTemplatesDesc">Reopen a saved layout and swap in different images.</p>
+          </div>
+        </div>
+        <div id="canvas-templates-grid" class="asset-grid"></div>
+        <p id="canvas-templates-empty" class="empty-note" hidden data-i18n="canvasTemplatesEmpty">No templates saved yet — build a layout and save it from the editor.</p>
       </div>
     </section>
 
