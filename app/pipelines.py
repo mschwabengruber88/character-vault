@@ -635,16 +635,19 @@ def overlay_video(video_url: str, overlay_png: bytes) -> dict:
         Path(op).write_bytes(overlay_png)
         try:
             subprocess.run(
-                # No explicit -c:v: the container's default mp4 encoder is
-                # used, same as the motion-comic slideshow — the deployed
-                # ffmpeg build's codec set isn't guaranteed (see
-                # _draw_caption's libfreetype note), so don't demand one by
-                # name. format=yuv420p rides at the end of the filter chain
-                # for player compatibility instead of -pix_fmt.
+                # No explicit -c:v (container default, like the motion-comic
+                # slideshow); format=yuv420p rides at the end of the filter
+                # chain for player compatibility. -threads 2 and -preset
+                # veryfast are load-bearing on the Railway container: x264
+                # otherwise sizes itself for the HOST's 40 cores
+                # (threads=40, rc_lookahead=40) and the allocation alone
+                # blows the container memory limit — the kernel SIGKILLs
+                # ffmpeg before frame 1 (seen live on prod, 2026-07-11).
                 ["ffmpeg", "-y", "-i", vp, "-i", op,
                  "-filter_complex",
                  "[1:v][0:v]scale2ref[ovr][base];[base][ovr]overlay=0:0,format=yuv420p[vout]",
                  "-map", "[vout]", "-map", "0:a?", "-c:a", "copy",
+                 "-threads", "2", "-preset", "veryfast",
                  out_p],
                 check=True, capture_output=True, timeout=300,
             )
