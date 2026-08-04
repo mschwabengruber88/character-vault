@@ -3,7 +3,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from app.config import DB_PATH
+from app.config import DB_PATH, WORKSPACE_UNIT_QUOTA
 
 # Existing (pre-multitenancy) rows are backfilled to this workspace so nothing
 # is orphaned. A user can reach that legacy data by entering "default" as their
@@ -14,7 +14,10 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    created_ip TEXT,
+    units_used INTEGER NOT NULL DEFAULT 0,
+    units_quota INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS characters (
@@ -199,6 +202,14 @@ MIGRATIONS = (
     # separate from characters.seed, which can change later and would
     # otherwise misrepresent what an older image was really generated with.
     "ALTER TABLE assets ADD COLUMN seed INTEGER",
+    # Portfolio mode: a per-workspace lifetime unit budget, plus the IP that
+    # created it so one visitor can't mint budget indefinitely. Persisted
+    # here rather than in RAM so a restart doesn't reset everyone's quota.
+    "ALTER TABLE workspaces ADD COLUMN created_ip TEXT",
+    "ALTER TABLE workspaces ADD COLUMN units_used INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE workspaces ADD COLUMN units_quota INTEGER NOT NULL DEFAULT 0",
+    # Runs after the ALTER above, so the column exists on old databases too.
+    "CREATE INDEX IF NOT EXISTS idx_workspaces_created_ip ON workspaces (created_ip)",
 )
 
 
@@ -231,20 +242,67 @@ def init_db():
             "INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
             (DEFAULT_WORKSPACE, "Default", now()),
         )
+        # Workspaces that predate the quota columns read as "0 units granted"
+        # and would be locked out of generating instantly. Hand them the
+        # standard budget. Only rows that never got one are touched, so an
+        # exhausted workspace (used == quota) is not silently topped up.
+        conn.execute(
+            "UPDATE workspaces SET units_quota = ? WHERE units_quota <= 0",
+            (WORKSPACE_UNIT_QUOTA,),
+        )
 
 
 # ── Workspaces (tenants) ─────────────────────────────────────────────────
 
-def create_workspace(name: str) -> dict:
+def create_workspace(name: str, created_ip: str | None = None,
+                     units_quota: int = WORKSPACE_UNIT_QUOTA) -> dict:
     workspace_id = uuid.uuid4().hex
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
-            (workspace_id, name, now()),
+            "INSERT INTO workspaces (id, name, created_at, created_ip, units_quota) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (workspace_id, name, now(), created_ip, units_quota),
         )
         return dict(conn.execute(
             "SELECT * FROM workspaces WHERE id = ?", (workspace_id,)
         ).fetchone())
+
+
+def count_workspaces_for_ip(created_ip: str) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM workspaces WHERE created_ip = ?", (created_ip,)
+        ).fetchone()[0]
+
+
+def consume_units(workspace_id: str, units: int) -> bool:
+    """Draw `units` from a workspace's lifetime budget.
+
+    Returns False and changes nothing when the budget can't cover it. The
+    check lives in the UPDATE's WHERE clause rather than a preceding SELECT,
+    so it is atomic: two generations racing on the same workspace cannot both
+    slip through a read-then-write gap and overspend the budget.
+    """
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE workspaces SET units_used = units_used + ? "
+            "WHERE id = ? AND units_used + ? <= units_quota",
+            (units, workspace_id, units),
+        )
+        return cur.rowcount > 0
+
+
+def refund_units(workspace_id: str, units: int) -> None:
+    """Return budget when a generation failed without producing an asset.
+
+    A provider outage shouldn't cost a visitor the single video their budget
+    allows — without this, one GMI hiccup ends their whole demo.
+    """
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE workspaces SET units_used = MAX(0, units_used - ?) WHERE id = ?",
+            (units, workspace_id),
+        )
 
 
 def get_workspace(workspace_id: str) -> dict | None:

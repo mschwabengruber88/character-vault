@@ -1409,3 +1409,112 @@ def test_assign_voice_rejects_unknown_id(client):
         json={"voice_provider": "openai", "voice_id": "not-a-voice"},
     )
     assert resp.status_code == 400
+
+
+# ── Portfolio mode: per-workspace budget & per-IP workspace cap ───────────
+
+def _set_budget(workspace_id: str, quota: int, used: int = 0) -> None:
+    """Give a workspace an exact budget, independent of the suite-wide caps."""
+    from app import db
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE workspaces SET units_used = ?, units_quota = ? WHERE id = ?",
+            (used, quota, workspace_id),
+        )
+
+
+def test_budget_is_reported_and_spent_per_generation(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    _set_budget(client.workspace_id, quota=5)
+    assert client.get("/workspaces/current").json()["units_remaining"] == 5
+
+    char_id = client.post("/characters", json={"name": "Budget"}).json()["id"]
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("q")):
+        assert client.post(f"/characters/{char_id}/generate/image",
+                           json={"prompt": "one"}).status_code == 200
+    # One image costs one unit, and the counter is visible to the UI.
+    assert client.get("/workspaces/current").json()["units_remaining"] == 4
+    rate_limiter.reset()
+
+
+def test_generation_is_refused_once_the_budget_is_gone(client):
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    _set_budget(client.workspace_id, quota=1)
+    char_id = client.post("/characters", json={"name": "Exhausted"}).json()["id"]
+    with patch("app.main.generate_character_portrait", return_value=_fake_portrait("e")) as gen:
+        first = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "a"})
+        second = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "b"})
+    assert first.status_code == 200
+    assert second.status_code == 429
+    # The refused run must not reach the paid provider at all.
+    assert gen.call_count == 1
+    rate_limiter.reset()
+
+
+def test_failed_generation_hands_the_budget_back(client):
+    """A provider outage must not cost a visitor part of their one-run budget."""
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    _set_budget(client.workspace_id, quota=3)
+    char_id = client.post("/characters", json={"name": "Refunded"}).json()["id"]
+    with patch("app.main.generate_character_portrait", side_effect=RuntimeError("provider down")):
+        resp = client.post(f"/characters/{char_id}/generate/image", json={"prompt": "x"})
+    assert resp.status_code == 502
+    assert client.get("/workspaces/current").json()["units_remaining"] == 3
+    rate_limiter.reset()
+
+
+def test_batch_draws_and_refunds_per_frame(client):
+    """Batch bypasses generation_guard, so it must charge the budget itself —
+    and give back every frame that never became an image."""
+    from app.main import rate_limiter
+    rate_limiter.reset()
+    _set_budget(client.workspace_id, quota=10)
+    char_id = client.post("/characters", json={"name": "Batch"}).json()["id"]
+
+    calls = {"n": 0}
+
+    def half_failing(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 2:
+            raise RuntimeError("provider down")
+        return _fake_portrait(f"b{calls['n']}")
+
+    with patch("app.main.generate_character_portrait", side_effect=half_failing):
+        job = client.post(f"/characters/{char_id}/generate/batch",
+                          json={"mode": "variation", "prompt": "p", "count": 4}).json()
+        _await_batch(client, job["id"])
+    # 4 frames charged, 2 produced an image → 2 units come back.
+    assert client.get("/workspaces/current").json()["units_remaining"] == 10 - 2
+    rate_limiter.reset()
+
+
+def test_one_ip_can_only_mint_a_few_workspaces():
+    from fastapi.testclient import TestClient
+    import app.main as m
+    from app.main import app as fastapi_app
+    # A dedicated caller IP: every other test in the suite shares TestClient's
+    # own host, which by now has minted plenty of workspaces.
+    caller = {"X-Forwarded-For": "198.51.100.42"}
+    with patch.object(m, "MAX_WORKSPACES_PER_IP", 2), TestClient(fastapi_app) as c:
+        assert c.post("/workspaces", json={"name": "A"}, headers=caller).status_code == 200
+        assert c.post("/workspaces", json={"name": "B"}, headers=caller).status_code == 200
+        # Third one from that same network is over the cap.
+        assert c.post("/workspaces", json={"name": "C"}, headers=caller).status_code == 429
+        # A different network is unaffected — one visitor can't lock out others.
+        assert c.post("/workspaces", json={"name": "E"},
+                      headers={"X-Forwarded-For": "198.51.100.99"}).status_code == 200
+        # The owner key is not subject to the cap.
+        assert c.post("/workspaces", json={"name": "D"},
+                      headers={**caller, "X-API-Key": API_KEY}).status_code == 200
+
+
+def test_workspace_response_does_not_leak_the_creating_ip():
+    from fastapi.testclient import TestClient
+    from app.main import app as fastapi_app
+    with TestClient(fastapi_app) as c:
+        body = c.post("/workspaces", json={"name": "Private"}).json()
+    assert "created_ip" not in body
+    assert body["units_remaining"] == body["units_quota"]

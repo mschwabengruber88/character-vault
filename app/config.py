@@ -34,9 +34,25 @@ def _int_env(name: str, default: int) -> int:
 # rate-limited so a leaked URL can't drain the account. Sending the correct
 # GENERATE_API_KEY bypasses all limits (owner / unlimited). Costs are counted
 # in "units" — roughly one draft image = 1 unit, a video = VIDEO_UNITS.
-# All configurable via Railway env without a redeploy.
+# All configurable via the host's env without a redeploy.
 RATE_IP_PER_HOUR = _int_env("RATE_IP_PER_HOUR", 25)        # units / IP / hour
 RATE_GLOBAL_PER_DAY = _int_env("RATE_GLOBAL_PER_DAY", 400)  # units / day (all users)
 RATE_VIDEO_PER_DAY = _int_env("RATE_VIDEO_PER_DAY", 12)     # videos / day (all users)
 VIDEO_UNITS = _int_env("VIDEO_UNITS", 20)                   # cost weight of one video
 MAX_KEYLESS_BATCH = _int_env("MAX_KEYLESS_BATCH", 10)       # frames per batch without the key
+
+# Portfolio mode: the app is linked publicly, so a visitor should be able to
+# try it end-to-end exactly once without being able to drain the account.
+# Each workspace therefore carries its own *lifetime* unit budget, persisted
+# in SQLite — the RateLimiter above lives in RAM and resets on restart, which
+# on an auto-restarting VM would hand out fresh budget for free.
+#
+# The default budget of 40 units buys roughly one full pass through the
+# product: a character with a reference portrait (1), a handful of images
+# (1 each), a voice line (1) and one video (VIDEO_UNITS = 20).
+WORKSPACE_UNIT_QUOTA = _int_env("WORKSPACE_UNIT_QUOTA", 40)
+
+# Workspaces one IP may create. Deliberately not 1: several people behind a
+# single corporate NAT share one public IP, and a hard 1:1 would silently
+# lock out every colleague after the first visitor from that company.
+MAX_WORKSPACES_PER_IP = _int_env("MAX_WORKSPACES_PER_IP", 3)

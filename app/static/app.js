@@ -88,6 +88,9 @@ const TRANSLATIONS = {
     wsError: "Could not create the workspace. Try again.",
     wsCopied: "Workspace token copied.",
     wsRecent: "Continue in a workspace",
+    budgetLeft: "credits left",
+    budgetGone: "credits used up",
+    budgetTitle: "Free generation credits in this workspace — an image costs 1, a video 20.",
     navScript: "Idea → Script",
     scriptTitle: "Idea → Script",
     scriptDesc: "Describe an idea in a sentence and get a ready-to-shoot script. A story script drops straight into the Story image mode — one line becomes one panel.",
@@ -417,6 +420,9 @@ const TRANSLATIONS = {
     wsError: "Workspace konnte nicht erstellt werden. Bitte erneut versuchen.",
     wsCopied: "Workspace-Token kopiert.",
     wsRecent: "In einem Workspace weiter",
+    budgetLeft: "Credits übrig",
+    budgetGone: "Credits aufgebraucht",
+    budgetTitle: "Freie Generierungs-Credits in diesem Workspace — ein Bild kostet 1, ein Video 20.",
     navScript: "Idee → Skript",
     scriptTitle: "Idee → Skript",
     scriptDesc: "Beschreibe eine Idee in einem Satz und erhalte ein drehfertiges Skript. Ein Story-Skript fließt direkt in den Story-Bildmodus – eine Zeile wird ein Panel.",
@@ -725,6 +731,10 @@ async function api(path, options = {}) {
     ...rest,
     headers: { "Content-Type": "application/json", "X-Workspace-Id": workspaceId(), ...(headers || {}) },
   });
+  // Keep the credit counter honest after anything that spends — including a
+  // refusal, where the 429 itself is what tells the visitor they are out.
+  const method = (rest.method || "GET").toUpperCase();
+  if (method !== "GET" && SPENDING_PATH.test(path)) refreshBudget();
   if (resp.status === 204) return null;
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {
@@ -853,7 +863,38 @@ function setWorkspaceChip(ws) {
   chip.dataset.token = ws.id;
   chip.dataset.name = ws.name;
   chip.hidden = false;
+  setBudgetChip(ws);
 }
+
+/* ---------- Free-credit counter ----------
+ * Generation is keyless but each workspace has a fixed budget, so the count
+ * has to be visible — otherwise a visitor hits a 429 with no warning. The
+ * owner key lifts the budget, so the chip stays hidden while it is set.
+ */
+
+function setBudgetChip(ws) {
+  const chip = el("budget-chip");
+  if (!chip) return;
+  const quota = Number(ws?.units_quota ?? 0);
+  const left = Number(ws?.units_remaining ?? 0);
+  if (!quota || apiKey()) { chip.hidden = true; return; }
+  chip.textContent = left > 0 ? `✦ ${left} ${t("budgetLeft")}` : `✦ ${t("budgetGone")}`;
+  chip.title = t("budgetTitle");
+  chip.classList.toggle("budget-chip-low", left > 0 && left <= 5);
+  chip.classList.toggle("budget-chip-empty", left <= 0);
+  chip.hidden = false;
+}
+
+async function refreshBudget() {
+  const id = workspaceId();
+  if (!id) return;
+  const ws = await validateWorkspace(id);
+  if (ws) setBudgetChip(ws);
+}
+
+// Paths whose POSTs actually spend credits. A plain character or template
+// save costs nothing, so it must not trigger a needless round-trip.
+const SPENDING_PATH = /\/(generate|reference)|^\/(videos|scenes|studio|audio|scripts)\b/;
 
 function setupWorkspace() {
   el("ws-create").addEventListener("click", async () => {

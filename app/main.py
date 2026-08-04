@@ -20,10 +20,12 @@ from app.config import (
     CORS_ORIGINS,
     GENERATE_API_KEY,
     MAX_KEYLESS_BATCH,
+    MAX_WORKSPACES_PER_IP,
     RATE_GLOBAL_PER_DAY,
     RATE_IP_PER_HOUR,
     RATE_VIDEO_PER_DAY,
     VIDEO_UNITS,
+    WORKSPACE_UNIT_QUOTA,
 )
 from app.pipelines import (
     DEFAULT_IMAGE_MODEL,
@@ -125,9 +127,34 @@ def enforce_rate(request: Request, x_api_key: str, kind: str, units: int = 1) ->
         )
 
 
+def enforce_quota(request: Request, x_api_key: str, workspace_id: str, units: int) -> None:
+    """Draw a run's cost from the workspace's lifetime budget.
+
+    This — not the RateLimiter above — is what actually protects the account
+    behind a public link: the limiter lives in RAM and hands everyone fresh
+    budget on every restart, while this budget is persisted per workspace.
+
+    Units are drawn *before* the work runs, so anything that fails afterwards
+    has to hand them back: `refund_quota_on_failure` covers work that finishes
+    inside the request, and the video/batch workers refund from their thread.
+    """
+    if _is_owner(x_api_key):
+        return
+    if not db.consume_units(workspace_id, units):
+        raise HTTPException(
+            status_code=429,
+            detail="This workspace has used up its free generation budget — it covers "
+                   "one full run through the app. Thanks for trying it out!",
+        )
+    request.state.quota_workspace = workspace_id
+    request.state.quota_units = units
+
+
 def generation_guard(kind: str, units: int = 1):
-    def dep(request: Request, x_api_key: str = Header(default="")):
+    def dep(request: Request, x_api_key: str = Header(default=""),
+            x_workspace_id: str = Header(default="")):
         enforce_rate(request, x_api_key, kind, units)
+        enforce_quota(request, x_api_key, x_workspace_id, units)
     return dep
 
 
@@ -206,6 +233,38 @@ async def revalidate_frontend(request: Request, call_next):
     path = request.url.path
     if path == "/" or path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+def _refund_pending_quota(request: Request) -> None:
+    """Hand back units the guard drew for a run that produced nothing.
+    Idempotent — the pending amount is cleared before the refund lands."""
+    units = getattr(request.state, "quota_units", 0)
+    workspace = getattr(request.state, "quota_workspace", "")
+    if units and workspace:
+        request.state.quota_units = 0
+        db.refund_units(workspace, units)
+
+
+@app.middleware("http")
+async def refund_quota_on_failure(request: Request, call_next):
+    """Return budget whenever a generation request ends in an error.
+
+    Units are drawn before the endpoint body runs, so without this a rejected
+    duplicate run (409 from the in-flight guard) or a provider outage would
+    quietly eat part of a visitor's single-run budget. Any non-2xx means no
+    asset was stored, so the whole amount goes back.
+
+    Only covers work that completes inside the request — video and batch
+    return early and refund from the thread that does the real work.
+    """
+    try:
+        response = await call_next(request)
+    except Exception:
+        _refund_pending_quota(request)
+        raise
+    if response.status_code >= 400:
+        _refund_pending_quota(request)
     return response
 
 
@@ -364,17 +423,53 @@ class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
 
 
+def _workspace_public(ws: dict) -> dict:
+    """Client-facing shape of a workspace. Deliberately drops created_ip and
+    exposes the budget as a remaining count, which is what the UI shows."""
+    used, quota = ws.get("units_used") or 0, ws.get("units_quota") or 0
+    return {
+        "id": ws["id"],
+        "name": ws["name"],
+        "created_at": ws["created_at"],
+        "units_used": used,
+        "units_quota": quota,
+        "units_remaining": max(0, quota - used),
+    }
+
+
 @app.post("/workspaces")
-def create_workspace(body: WorkspaceCreate):
+def create_workspace(body: WorkspaceCreate, request: Request,
+                     x_api_key: str = Header(default="")):
     """Create a new tenant. The returned id is the token the client stores and
-    sends as X-Workspace-Id on every request."""
-    return db.create_workspace(body.name)
+    sends as X-Workspace-Id on every request.
+
+    On a public link each workspace carries a fixed generation budget, and one
+    IP may only mint a few of them — enough that colleagues behind a shared
+    corporate NAT each get their own, few enough that a single visitor can't
+    mint fresh budget at will. The owner key skips the cap entirely.
+    """
+    if _is_owner(x_api_key):
+        return _workspace_public(db.create_workspace(body.name))
+    ip = _client_ip(request)
+    if db.count_workspaces_for_ip(ip) >= MAX_WORKSPACES_PER_IP:
+        raise HTTPException(
+            status_code=429,
+            detail="This network has already created the maximum number of demo "
+                   "workspaces. Reopen an existing one with its token.",
+        )
+    return _workspace_public(
+        db.create_workspace(body.name, created_ip=ip, units_quota=WORKSPACE_UNIT_QUOTA)
+    )
 
 
 @app.get("/workspaces/current")
 def current_workspace(workspace: str = Depends(require_workspace)):
-    """Validate a stored workspace token and return its name (used on load)."""
-    return db.get_workspace(workspace)
+    """Validate a stored workspace token and return its name plus how much of
+    the free budget is left (used on load, and after every generation)."""
+    ws = db.get_workspace(workspace)
+    if ws is None:
+        raise HTTPException(status_code=401, detail="Unknown workspace.")
+    return _workspace_public(ws)
 
 
 @app.post("/characters")
@@ -519,7 +614,8 @@ def generate_image(character_id: int, body: PortraitRequest, workspace: str = De
 
 
 def _run_batch(job_id: int, character_id: int, prompts: list[str], references: list[dict],
-               body: BatchRequest, personality: str | None, base_seed: int | None) -> None:
+               body: BatchRequest, personality: str | None, base_seed: int | None,
+               workspace: str = "", quota_units: int = 0) -> None:
     """Background worker: generate each frame in turn, recording every image as
     a normal asset tagged with this batch. A cancelled job stops between frames
     so a runaway 100-image run can be halted without wasting the rest."""
@@ -551,6 +647,13 @@ def _run_batch(job_id: int, character_id: int, prompts: list[str], references: l
             done = final["completed"] > 0
             db.finish_batch(job_id, "done" if done else "error",
                             None if done else "No frames were generated.")
+        # The whole batch was charged up front. Give back every frame that
+        # never became an image — failed ones, and the tail of a cancelled
+        # run — so stopping a runaway batch actually returns the budget.
+        if quota_units and workspace and final:
+            unused = max(0, len(prompts) - (final["completed"] or 0))
+            if unused:
+                db.refund_units(workspace, unused)
     finally:
         _release_slot(character_id, "image")
 
@@ -577,6 +680,11 @@ def generate_batch(character_id: int, body: BatchRequest, request: Request,
         prompts = prompts[:MAX_KEYLESS_BATCH]
     # Rate-limit the whole batch by its frame count (owner bypasses).
     enforce_rate(request, x_api_key, "image", units=len(prompts))
+    # Batch can't use generation_guard: the cost is only known here, once the
+    # prompt list exists. Draw it explicitly — otherwise a visitor generates
+    # ten frames per call without ever touching their workspace budget.
+    enforce_quota(request, x_api_key, workspace, units=len(prompts))
+    drawn_units = getattr(request.state, "quota_units", 0)
 
     unit = per_image_cost(body.model, body.quality)
     estimate = round(unit * len(prompts), 4) if unit is not None else None
@@ -596,6 +704,7 @@ def generate_batch(character_id: int, body: BatchRequest, request: Request,
         target=_run_batch,
         args=(job["id"], character_id, prompts, references, body,
               character.get("personality"), character.get("seed")),
+        kwargs={"workspace": workspace, "quota_units": drawn_units},
         daemon=True,
     )
     thread.start()
@@ -1064,7 +1173,7 @@ class VideoRequest(BaseModel):
 def _run_video(scope, video_id: int, prompt: str, model: str, reference: dict | None,
                duration: int, aspect_ratio: str, character_id: int | None = None,
                speech: str | None = None, voice_provider: str | None = None,
-               voice_id: str | None = None) -> None:
+               voice_id: str | None = None, quota_units: int = 0) -> None:
     """Background worker — video generation takes minutes, so it runs off the
     request thread and the row's status is polled by the client. If `speech`
     is set, the character's fixed voice is generated and muxed onto the clip so
@@ -1095,6 +1204,10 @@ def _run_video(scope, video_id: int, prompt: str, model: str, reference: dict | 
     except Exception:
         logger.exception("Video %s failed", video_id)
         db.finish_video(video_id, status="error", error="Video generation failed. Please try again.")
+        # A video is half the free budget — a provider outage must not end the
+        # visitor's demo. `scope` is the workspace id for video runs.
+        if quota_units:
+            db.refund_units(scope, quota_units)
     finally:
         _release_slot(scope, "video")
 
@@ -1121,7 +1234,8 @@ def get_video(video_id: int, workspace: str = Depends(require_workspace)):
 
 
 @app.post("/videos", dependencies=[Depends(generation_guard("video", VIDEO_UNITS))])
-def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)):
+def create_video(body: VideoRequest, request: Request,
+                 workspace: str = Depends(require_workspace)):
     if body.model not in {m["slug"] for m in available_video_models()}:
         raise HTTPException(
             status_code=400,
@@ -1180,6 +1294,8 @@ def create_video(body: VideoRequest, workspace: str = Depends(require_workspace)
         target=_run_video,
         args=(workspace, video["id"], motion_prompt, body.model, reference, body.duration,
               body.aspect_ratio, character_id, speech, voice_provider, voice_id),
+        # 0 for the owner, who never had units drawn — so nothing to refund.
+        kwargs={"quota_units": getattr(request.state, "quota_units", 0)},
         daemon=True,
     )
     thread.start()

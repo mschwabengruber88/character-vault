@@ -1,0 +1,32 @@
+# Replace with your own hostname before the first start. Caddy requests and
+# renews a Let's Encrypt certificate for it automatically — but only once the
+# domain's A record already points at this VM's public IP.
+#
+# No domain yet? A free DuckDNS subdomain (loomina.duckdns.org) works fine.
+# For a first smoke test without any DNS, replace the line below with `:80`
+# and drop TLS — but don't share that URL: the API key would travel in clear.
+loomina.example.com {
+	encode zstd gzip
+
+	# Video generation runs 1–4 minutes with the client polling throughout,
+	# so Caddy's default proxy timeouts would cut long runs off mid-flight.
+	reverse_proxy app:8000 {
+		transport http {
+			response_header_timeout 10m
+			read_timeout 10m
+		}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Reference photos and background-music uploads. Keeps a stray huge upload
+	# from filling the boot volume.
+	request_body {
+		max_size 50MB
+	}
+}

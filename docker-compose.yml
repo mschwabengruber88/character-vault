@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # The SQLite file must live on the named volume below, not in the image
+      # layer — otherwise every redeploy wipes the characters *and* the
+      # workspace tokens, which would silently break links already shared.
+      DB_PATH: /data/character_vault.db
+      PORT: "8000"
+    volumes:
+      - vault-data:/data
+    # Deliberately not published to the host: Caddy is the only way in, so the
+    # app is never reachable over plain HTTP on the public IP.
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data      # certificates — wiping this re-requests them
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  vault-data:
+  caddy-data:
+  caddy-config:

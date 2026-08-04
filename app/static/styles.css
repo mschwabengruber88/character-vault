@@ -1124,6 +1124,31 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 }
 .workspace-chip:hover { background: color-mix(in srgb, var(--brass) 18%, transparent); }
 
+/* Free-credit counter. Reads as calm information until the budget runs low,
+   so it informs rather than nags for the whole visit. */
+.budget-chip {
+  border: 1px solid color-mix(in srgb, var(--brass-deep) 70%, transparent);
+  border-radius: var(--radius);
+  padding: 6px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--brass) 85%, white);
+  background: color-mix(in srgb, var(--brass) 6%, transparent);
+}
+
+.budget-chip-low {
+  color: #FFC53D;
+  border-color: color-mix(in srgb, #FFC53D 55%, transparent);
+  background: color-mix(in srgb, #FFC53D 12%, transparent);
+}
+
+.budget-chip-empty {
+  color: #FF6B8A;
+  border-color: color-mix(in srgb, #FF6B8A 55%, transparent);
+  background: color-mix(in srgb, #FF6B8A 12%, transparent);
+}
+
 .workspace-gate { max-width: 420px; }
 .workspace-gate input { margin-bottom: 0; }
 .ws-gate-block { display: flex; flex-direction: column; gap: 10px; }
