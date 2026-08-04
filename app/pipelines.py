@@ -45,14 +45,34 @@ def _asset_result(result) -> dict:
     }
 
 
+# Style is per character, always. A photoreal person and a drawn character
+# share the frame the way Meister Eder and Pumuckl do — neither is converted
+# into the other's medium.
+#
+# This used to demand ONE art style across the whole image, which was aimed at
+# a different bug: the model would colour a single character's hair while the
+# rest of a manga panel stayed monochrome. That rule is kept below, but scoped
+# to *arbitrary* recolouring rather than to the medium itself — otherwise it
+# flattens exactly the mix we want.
 SCENE_INSTRUCTION = (
     "Compose a single new image containing ALL of these characters together in "
     "one scene, each matching their own reference image exactly (same face, hair, "
     "colors, and outfit). Do not merge or swap their features. "
-    "Apply ONE consistent art style and color treatment across the ENTIRE image — "
-    "if it's black-and-white/monochrome, render every character and the background "
-    "in grayscale too; never selectively color in just one character's hair or "
-    "clothing while the rest stays monochrome. If the scene includes speech "
+    "CRITICAL — every character keeps the art style and medium of their OWN "
+    "reference: a character referenced by a photograph stays fully "
+    "photorealistic, and a character referenced by a cartoon, painting or "
+    "illustration stays drawn in exactly that style, down to line weight and "
+    "shading. Never harmonise, average or convert them into one shared style; "
+    "do not make the drawn character photoreal, and do not make the "
+    "photographed character drawn. Mixed media in one frame is intended. "
+    "What they DO share is the place: one lighting direction and colour "
+    "temperature, one perspective and horizon, consistent relative scale, and "
+    "contact with the same ground, with shadows to match — so the composite "
+    "reads as a single scene rather than cut-out figures pasted together. "
+    "Keep each character's own palette as it appears in their reference; never "
+    "invent colour for a character whose reference has none, and never leave "
+    "one character's clothing or hair oddly recoloured against their own "
+    "reference. If the scene includes speech "
     "bubbles, draw each bubble's tail pointing clearly at the character who is "
     "speaking it, positioned near their mouth, so it's unambiguous who says what. "
 )
