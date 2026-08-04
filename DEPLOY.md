@@ -69,8 +69,8 @@ packages:
   - git
   - iptables-persistent
 runcmd:
-  - [ iptables, -I, INPUT, "6", -m, state, --state, NEW, -p, tcp, --dport, "80", -j, ACCEPT ]
-  - [ iptables, -I, INPUT, "6", -m, state, --state, NEW, -p, tcp, --dport, "443", -j, ACCEPT ]
+  - [ iptables, -I, INPUT, "5", -m, state, --state, NEW, -p, tcp, --dport, "80", -j, ACCEPT ]
+  - [ iptables, -I, INPUT, "5", -m, state, --state, NEW, -p, tcp, --dport, "443", -j, ACCEPT ]
   - [ netfilter-persistent, save ]
   - [ usermod, -aG, docker, ubuntu ]
   - [ systemctl, enable, --now, docker ]
@@ -78,6 +78,21 @@ runcmd:
 
 This also installs Docker and opens the VM-side firewall, so those steps are
 already done when the machine boots.
+
+**The position `5` matters.** Oracle's Ubuntu image ships an INPUT chain that
+ends in `REJECT ... icmp-host-prohibited` — on a fresh image that REJECT sits
+at position 5, right after the rule for port 22. Insert *after* it and the new
+ACCEPT rules are never reached: the port stays closed while `iptables -L`
+still lists your rules, which makes it look like a cloud-side problem. Verify
+on the running VM:
+
+```bash
+sudo iptables -L INPUT -n --line-numbers
+```
+
+The ACCEPT lines for 80 and 443 must appear **above** the REJECT line. If they
+don't, delete and re-insert them at the REJECT's position, then
+`sudo netfilter-persistent save`.
 
 Get your key with `cat ~/.ssh/id_ed25519.pub`. Only the **public** key goes
 here — never the private one.
