@@ -54,6 +54,11 @@ def _asset_result(result) -> dict:
 # rest of a manga panel stayed monochrome. That rule is kept below, but scoped
 # to *arbitrary* recolouring rather than to the medium itself — otherwise it
 # flattens exactly the mix we want.
+#
+# "Cartoon" alone is not enough to keep a drawn character drawn: image models
+# read it as 3D CGI (Pixar-style), which is what most of their cartoon training
+# data looks like, so a flat children's-book fox came back sculpted and glossy.
+# The medium rule therefore names the 3D look explicitly and rules it out.
 SCENE_INSTRUCTION = (
     "Compose a single new image containing ALL of these characters together in "
     "one scene, each matching their own reference image exactly (same face, hair, "
@@ -65,6 +70,12 @@ SCENE_INSTRUCTION = (
     "shading. Never harmonise, average or convert them into one shared style; "
     "do not make the drawn character photoreal, and do not make the "
     "photographed character drawn. Mixed media in one frame is intended. "
+    "A flat 2D drawing must stay flat 2D: keep the reference's visible linework, "
+    "its flat or hand-shaded colour, and its drawn-on-paper surface. Do NOT "
+    "re-render a drawn character as a 3D model, CGI or Pixar/DreamWorks-style "
+    "animation — no sculpted volume, no glossy or plastic surfaces, no rendered "
+    "fur or skin shading, no smooth digital gradients or ray-traced highlights "
+    "on a character whose reference has none of them. "
     "What they DO share is the place: one lighting direction and colour "
     "temperature, one perspective and horizon, consistent relative scale, and "
     "contact with the same ground, with shadows to match — so the composite "
