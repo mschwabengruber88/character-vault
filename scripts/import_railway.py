@@ -37,6 +37,13 @@ def _insert(db: sqlite3.Connection, table: str, row: dict, extra: dict | None = 
     values = {k: v for k, v in row.items() if k in columns and k != "id"}
     if extra:
         values.update({k: v for k, v in extra.items() if k in columns})
+    # The API hands back JSON columns already decoded — a scene's character_ids
+    # and a motion comic's script arrive as real lists. sqlite3 refuses to bind
+    # those, so put them back the way the column stores them.
+    values = {
+        k: json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+        for k, v in values.items()
+    }
     keys = list(values)
     placeholders = ",".join("?" * len(keys))
     cur = db.execute(
