@@ -1,9 +1,14 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-genblaze-core
-genblaze-s3
-genblaze-openai
-genblaze-gmicloud
+# Pinned deliberately. Unpinned, a fresh install pulls the newest of each and
+# they are not mutually compatible: genblaze-openai 0.3.3 imports
+# `local_file_url` from genblaze_core._utils, which core 0.3.6 no longer
+# exports — the app then dies on import with nothing pointing at a version
+# mismatch. This combination is the one that actually runs.
+genblaze-core==0.3.4
+genblaze-s3==0.3.4
+genblaze-openai==0.3.1
+genblaze-gmicloud==0.3.2
 python-dotenv==1.0.1
 pydantic==2.10.4
 pillow==12.3.0
