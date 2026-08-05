@@ -877,7 +877,108 @@ def _load_voice_catalog() -> dict:
 
 VOICE_CATALOG = _load_voice_catalog()
 OPENAI_VOICES = VOICE_CATALOG.get("openai", [])
-GMI_VOICES = VOICE_CATALOG.get("gmi", [])
+
+# Which voices GMI offers is a property of the provider, not of which samples
+# we happen to have recorded. Deriving the roster from the sample catalog made
+# those two inseparable and produced a deadlock: _apply_voice rejects any voice
+# missing from the catalog, and a voice only enters the catalog once recorded —
+# which required passing that very check. No new voice could ever be
+# introduced. The roster therefore lives here; the catalog contributes only
+# sample-derived metadata.
+#
+# inworld-tts-2 ships 65 voices across 16 languages, and a voice speaks the
+# language it was built for — language is part of its identity, not a request
+# parameter. Gender is filled in where the name is unambiguous and left as None
+# where it is not; a wrong value is worse than an empty filter. Age and tone are
+# undocumented for the non-English voices and carry a neutral placeholder.
+GMI_VOICE_ROSTER = [
+    ("Alex", "male", "adult", "energetic, mid-range", "en"),
+    ("Ashley", "female", "adult", "warm, natural", "en"),
+    ("Blake", "male", "adult", "rich, intimate", "en"),
+    ("Carter", "male", "mature", "radio announcer", "en"),
+    ("Clive", "male", "adult", "British, calm", "en"),
+    ("Craig", "male", "mature", "older British, refined", "en"),
+    ("Deborah", "female", "mature", "gentle, elegant", "en"),
+    ("Dennis", "male", "adult", "smooth, calm", "en"),
+    ("Dominus", "male", "adult", "robotic, deep", "en"),
+    ("Edward", "male", "adult", "fast-talking, emphatic", "en"),
+    ("Elizabeth", "female", "adult", "professional", "en"),
+    ("Hades", "male", "mature", "commanding, gruff", "en"),
+    ("Hana", "female", "young", "bright, expressive", "en"),
+    ("Julia", "female", "young", "quirky, high-pitched", "en"),
+    ("Luna", "female", "adult", "calm, relaxing", "en"),
+    ("Mark", "male", "adult", "energetic, rapid-fire", "en"),
+    ("Olivia", "female", "young", "British, upbeat", "en"),
+    ("Pixie", "female", "child", "childlike", "en"),
+    ("Priya", "female", "adult", "Indian accent", "en"),
+    ("Ronald", "male", "mature", "British, deep", "en"),
+    ("Sarah", "female", "young", "young adult, natural", "en"),
+    ("Shaun", "male", "adult", "friendly, dynamic", "en"),
+    ("Theodore", "male", "mature", "gravelly, elderly", "en"),
+    ("Timothy", "male", "young", "lively American", "en"),
+    ("Wendy", "female", "adult", "British, posh", "en"),
+    ("Johanna", "female", "adult", "native German", "de"),
+    ("Josef", "male", "adult", "native German", "de"),
+    ("Alain", "male", "adult", "native French", "fr"),
+    ("Hélène", "female", "adult", "native French", "fr"),
+    ("Mathieu", "male", "adult", "native French", "fr"),
+    ("Étienne", "male", "adult", "native French", "fr"),
+    ("Diego", "male", "adult", "native Spanish", "es"),
+    ("Lupita", "female", "adult", "native Spanish", "es"),
+    ("Miguel", "male", "adult", "native Spanish", "es"),
+    ("Rafael", "male", "adult", "native Spanish", "es"),
+    ("Gianni", "male", "adult", "native Italian", "it"),
+    ("Orietta", "female", "adult", "native Italian", "it"),
+    ("Heitor", "male", "adult", "native Brazilian Portuguese", "pt"),
+    ("Maitê", "female", "adult", "native Brazilian Portuguese", "pt"),
+    ("Erik", "male", "adult", "native Dutch", "nl"),
+    ("Katrien", "female", "adult", "native Dutch", "nl"),
+    ("Lennart", "male", "adult", "native Dutch", "nl"),
+    ("Lore", "female", "adult", "native Dutch", "nl"),
+    ("Szymon", "male", "adult", "native Polish", "pl"),
+    ("Wojciech", "male", "adult", "native Polish", "pl"),
+    ("Svetlana", "female", "adult", "native Russian", "ru"),
+    ("Elena", "female", "adult", "native Russian", "ru"),
+    ("Dmitry", "male", "adult", "native Russian", "ru"),
+    ("Nikolai", "male", "adult", "native Russian", "ru"),
+    ("Yichen", None, "adult", "native Mandarin", "zh"),
+    ("Xiaoyin", "female", "adult", "native Mandarin", "zh"),
+    ("Xinyi", "female", "adult", "native Mandarin", "zh"),
+    ("Jing", "female", "adult", "native Mandarin", "zh"),
+    ("Asuka", "female", "adult", "native Japanese", "ja"),
+    ("Satoshi", "male", "adult", "native Japanese", "ja"),
+    ("Hyunwoo", "male", "adult", "native Korean", "ko"),
+    ("Minji", "female", "adult", "native Korean", "ko"),
+    ("Seojun", "male", "adult", "native Korean", "ko"),
+    ("Yoona", "female", "adult", "native Korean", "ko"),
+    ("Riya", "female", "adult", "native Hindi", "hi"),
+    ("Manoj", "male", "adult", "native Hindi", "hi"),
+    ("Yael", "female", "adult", "native Hebrew", "he"),
+    ("Oren", "male", "adult", "native Hebrew", "he"),
+    ("Nour", None, "adult", "native Arabic", "ar"),
+    ("Omar", "male", "adult", "native Arabic", "ar"),
+]
+
+
+def _gmi_voice_list() -> list[dict]:
+    """The roster, enriched with catalog metadata wherever a sample exists.
+
+    `has_sample` tells the UI whether a preview clip can be played. A voice is
+    fully usable without one — it just cannot be auditioned yet."""
+    recorded = {v["id"]: v for v in VOICE_CATALOG.get("gmi", [])}
+    out = []
+    for vid, gender, age, style, language in GMI_VOICE_ROSTER:
+        entry = dict(recorded.get(vid) or {
+            "id": vid, "name": vid, "provider": "gmi",
+            "gender": gender, "age": age, "style": style,
+        })
+        entry.setdefault("language", language)
+        entry["has_sample"] = vid in recorded
+        out.append(entry)
+    return out
+
+
+GMI_VOICES = _gmi_voice_list()
 _OPENAI_VOICE_IDS = {v["id"] for v in OPENAI_VOICES}
 
 

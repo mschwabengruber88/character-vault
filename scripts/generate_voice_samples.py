@@ -69,104 +69,14 @@ OPENAI = [
     ("cedar", "Cedar", "male", "adult", "natural, high quality"),
 ]
 
-# GMI's Inworld TTS voices (id doubles as display name — GMI doesn't expose
-# separate ids, see app/pipelines.py GMI_TTS_MODEL). Transcribed from GMI's
-# public docs (docs.gmicloud.ai), which is the only place this catalog is
-# documented.
-#
-# inworld-tts-2 ships 65 voices across 16 languages, and a voice speaks the
-# language it was built for — there is no language parameter that makes an
-# English voice read German well. Offering only the 25 English ones therefore
-# left every non-English character sounding like an American doing an accent,
-# which is the real reason the picker felt thin.
-#
-# For the non-English voices the docs give the name and language only. Gender is
-# filled in where the name makes it unambiguous and left as None where it does
-# not (Yichen, Nour) — a wrong value is worse than an empty filter. Age and tone
-# are undocumented for them, so they carry a neutral placeholder rather than an
-# invented description.
-GMI = [
-    # ── English ──
-    ("Alex", "male", "adult", "energetic, mid-range", "en"),
-    ("Ashley", "female", "adult", "warm, natural", "en"),
-    ("Blake", "male", "adult", "rich, intimate", "en"),
-    ("Carter", "male", "mature", "radio announcer", "en"),
-    ("Clive", "male", "adult", "British, calm", "en"),
-    ("Craig", "male", "mature", "older British, refined", "en"),
-    ("Deborah", "female", "mature", "gentle, elegant", "en"),
-    ("Dennis", "male", "adult", "smooth, calm", "en"),
-    ("Dominus", "male", "adult", "robotic, deep", "en"),
-    ("Edward", "male", "adult", "fast-talking, emphatic", "en"),
-    ("Elizabeth", "female", "adult", "professional", "en"),
-    ("Hades", "male", "mature", "commanding, gruff", "en"),
-    ("Hana", "female", "young", "bright, expressive", "en"),
-    ("Julia", "female", "young", "quirky, high-pitched", "en"),
-    ("Luna", "female", "adult", "calm, relaxing", "en"),
-    ("Mark", "male", "adult", "energetic, rapid-fire", "en"),
-    ("Olivia", "female", "young", "British, upbeat", "en"),
-    ("Pixie", "female", "child", "childlike", "en"),
-    ("Priya", "female", "adult", "Indian accent", "en"),
-    ("Ronald", "male", "mature", "British, deep", "en"),
-    ("Sarah", "female", "young", "young adult, natural", "en"),
-    ("Shaun", "male", "adult", "friendly, dynamic", "en"),
-    ("Theodore", "male", "mature", "gravelly, elderly", "en"),
-    ("Timothy", "male", "young", "lively American", "en"),
-    ("Wendy", "female", "adult", "British, posh", "en"),
-    # ── German ──
-    ("Johanna", "female", "adult", "native German", "de"),
-    ("Josef", "male", "adult", "native German", "de"),
-    # ── French ──
-    ("Alain", "male", "adult", "native French", "fr"),
-    ("Hélène", "female", "adult", "native French", "fr"),
-    ("Mathieu", "male", "adult", "native French", "fr"),
-    ("Étienne", "male", "adult", "native French", "fr"),
-    # ── Spanish ──
-    ("Diego", "male", "adult", "native Spanish", "es"),
-    ("Lupita", "female", "adult", "native Spanish", "es"),
-    ("Miguel", "male", "adult", "native Spanish", "es"),
-    ("Rafael", "male", "adult", "native Spanish", "es"),
-    # ── Italian ──
-    ("Gianni", "male", "adult", "native Italian", "it"),
-    ("Orietta", "female", "adult", "native Italian", "it"),
-    # ── Portuguese (Brazil) ──
-    ("Heitor", "male", "adult", "native Brazilian Portuguese", "pt"),
-    ("Maitê", "female", "adult", "native Brazilian Portuguese", "pt"),
-    # ── Dutch ──
-    ("Erik", "male", "adult", "native Dutch", "nl"),
-    ("Katrien", "female", "adult", "native Dutch", "nl"),
-    ("Lennart", "male", "adult", "native Dutch", "nl"),
-    ("Lore", "female", "adult", "native Dutch", "nl"),
-    # ── Polish ──
-    ("Szymon", "male", "adult", "native Polish", "pl"),
-    ("Wojciech", "male", "adult", "native Polish", "pl"),
-    # ── Russian ──
-    ("Svetlana", "female", "adult", "native Russian", "ru"),
-    ("Elena", "female", "adult", "native Russian", "ru"),
-    ("Dmitry", "male", "adult", "native Russian", "ru"),
-    ("Nikolai", "male", "adult", "native Russian", "ru"),
-    # ── Chinese ──
-    ("Yichen", None, "adult", "native Mandarin", "zh"),
-    ("Xiaoyin", "female", "adult", "native Mandarin", "zh"),
-    ("Xinyi", "female", "adult", "native Mandarin", "zh"),
-    ("Jing", "female", "adult", "native Mandarin", "zh"),
-    # ── Japanese ──
-    ("Asuka", "female", "adult", "native Japanese", "ja"),
-    ("Satoshi", "male", "adult", "native Japanese", "ja"),
-    # ── Korean ──
-    ("Hyunwoo", "male", "adult", "native Korean", "ko"),
-    ("Minji", "female", "adult", "native Korean", "ko"),
-    ("Seojun", "male", "adult", "native Korean", "ko"),
-    ("Yoona", "female", "adult", "native Korean", "ko"),
-    # ── Hindi ──
-    ("Riya", "female", "adult", "native Hindi", "hi"),
-    ("Manoj", "male", "adult", "native Hindi", "hi"),
-    # ── Hebrew ──
-    ("Yael", "female", "adult", "native Hebrew", "he"),
-    ("Oren", "male", "adult", "native Hebrew", "he"),
-    # ── Arabic ──
-    ("Nour", None, "adult", "native Arabic", "ar"),
-    ("Omar", "male", "adult", "native Arabic", "ar"),
-]
+# Single source of truth: the roster lives in app.pipelines, which is also what
+# the server validates a chosen voice against. Keeping a second copy here is
+# exactly what let the two drift apart — and what made a new voice unusable
+# until it had already been recorded.
+import sys as _sys  # noqa: E402
+
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.pipelines import GMI_VOICE_ROSTER as GMI  # noqa: E402
 
 
 def entry(provider, vid, name, gender, age, style, language):

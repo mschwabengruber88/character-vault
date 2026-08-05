@@ -244,6 +244,7 @@ const TRANSLATIONS = {
     filterNeutral: "Neutral",
     filterAnyAge: "Any age",
     filterAnyLanguage: "Any language",
+    voiceNoSample: "no preview yet",
     filterChild: "Child",
     filterYoung: "Young / teen",
     filterAdult: "Adult",
@@ -588,6 +589,7 @@ const TRANSLATIONS = {
     filterNeutral: "Neutral",
     filterAnyAge: "Beliebiges Alter",
     filterAnyLanguage: "Alle Sprachen",
+    voiceNoSample: "noch keine Hörprobe",
     filterChild: "Kind",
     filterYoung: "Jung / Teenager",
     filterAdult: "Erwachsen",
@@ -999,7 +1001,11 @@ async function loadVoices() {
 }
 
 function voiceOptionLabel(voice) {
-  return voice.style ? `${voice.name} — ${voice.style}` : voice.name;
+  const base = voice.style ? `${voice.name} — ${voice.style}` : voice.name;
+  // A voice with no recorded sample is fully usable, it just can't be
+  // auditioned — say so in the list rather than letting the preview button
+  // fail after the fact.
+  return voice.has_sample === false ? `${base} (${t("voiceNoSample")})` : base;
 }
 
 // Human label for a stored provider:id voice (falls back to the raw id).
