@@ -119,6 +119,22 @@ Szene 2 und 4 mit **Kling 2.1 (image→video)** animieren — das Modell hält d
 Identität. Szenen 1 und 3 als Standbilder mit langsamem Zoom dazwischen
 schneiden. Spart Rechenzeit und wirkt trotzdem wie ein Film.
 
+Zwei Dinge, die der erste Anlauf gekostet hat:
+
+**Format 1:1, nicht 16:9.** Die Szenen entstehen quadratisch (1024×1024). Im
+Querformat beschneidet Kling das Bild, und bei einer Mixed-Media-Szene trifft
+der Beschnitt ausgerechnet die Paarung, auf die es ankommt.
+
+**Keine Kamerafahrt.** „Slow push-in" hat zusammen mit dem Beschnitt Lena
+komplett aus dem Bild geschoben — übrig blieb der Rabe allein auf dem Papier,
+also genau nicht der Shot. Mit `Static locked-off camera, no zoom, no push-in.
+Lena and the little raven both stay fully in frame the whole time.` bleiben
+beide drin. Die Bewegung soll aus den Figuren kommen, nicht aus der Kamera.
+
+Erfreulich: Fips blieb in **beiden** Versuchen eine flache Tuschezeichnung.
+Kling hält das Medium besser als Nano Banana bei der Standbild-Komposition —
+die Medien-Zusage im Prompt gehört trotzdem hinein.
+
 ## Stimmen
 
 Falls gesprochen wird: für deutsche Sprache **Johanna** oder **Josef**
