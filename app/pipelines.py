@@ -226,7 +226,12 @@ def generate_character_portrait(
         if seed is not None:
             step_kwargs["seed"] = seed
     else:
-        provider = DalleProvider()
+        # DalleProvider defaults to a 60s HTTP timeout, which only ever fit
+        # drafts. Measured against gpt-image-2: a draft generate returns in
+        # ~20s, but a *final* edit conditioned on a reference portrait takes
+        # ~160s — so every final-quality portrait died on the timeout rather
+        # than on anything OpenAI did wrong.
+        provider = DalleProvider(http_timeout=300.0)
         step_kwargs["size"] = "1024x1024"
         step_kwargs["quality"] = QUALITY_TIERS[quality]
 
@@ -240,7 +245,7 @@ def generate_character_portrait(
                 modality=Modality.IMAGE,
                 **step_kwargs,
             )
-            .run(sink=get_storage_sink(), timeout=180)
+            .run(sink=get_storage_sink(), timeout=360)
         )
     finally:
         for path in temps:
