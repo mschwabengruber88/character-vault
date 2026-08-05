@@ -399,6 +399,19 @@ def delete_character(workspace_id: str, character_id: int) -> bool:
         if owned is None:
             return False
         conn.execute("DELETE FROM assets WHERE character_id = ?", (character_id,))
+        # batch_jobs also carries a NOT NULL foreign key onto characters, and
+        # foreign keys are enforced (see get_conn). Leaving those rows behind
+        # made the DELETE fail with "FOREIGN KEY constraint failed" — surfacing
+        # as a 500 and a character that could not be removed — for anyone who
+        # had ever started a batch for them.
+        conn.execute("DELETE FROM batch_jobs WHERE character_id = ?", (character_id,))
+        # videos.character_id has no foreign key, so it never blocked the
+        # delete, but it would dangle afterwards. The clip keeps its stored
+        # character_name and stays viewable; only the dead id is cleared.
+        conn.execute(
+            "UPDATE videos SET character_id = NULL WHERE character_id = ?",
+            (character_id,),
+        )
         cur = conn.execute("DELETE FROM characters WHERE id = ?", (character_id,))
         return cur.rowcount > 0
 

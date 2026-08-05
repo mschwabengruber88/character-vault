@@ -112,6 +112,52 @@ def test_delete_character(client):
     assert client.get(f"/characters/{char_id}").status_code == 404
 
 
+def test_delete_character_with_batch_job(client):
+    """A character that has ever been batched must still be deletable.
+
+    batch_jobs holds a NOT NULL foreign key onto characters and foreign keys are
+    enforced, so leaving its rows behind turned the DELETE into a 500 and left
+    the character stuck in the workspace for good."""
+    from app import db
+
+    char_id = client.post("/characters", json={"name": "Batched"}).json()["id"]
+    db.create_batch(
+        workspace_id=client.workspace_id,
+        character_id=char_id,
+        mode="photo-art",
+        prompt="four portraits",
+        requested=4,
+        quality="draft",
+        model="gpt-image-1",
+        disclosure="invisible",
+        cost_estimate=0.044,
+    )
+
+    assert client.delete(f"/characters/{char_id}").status_code == 204
+    assert client.get(f"/characters/{char_id}").status_code == 404
+
+
+def test_delete_character_clears_video_reference(client):
+    """videos.character_id has no foreign key, so it never blocked the delete —
+    it would just dangle. The clip keeps its character_name and stays listed."""
+    from app import db
+
+    char_id = client.post("/characters", json={"name": "Filmed"}).json()["id"]
+    video = db.create_video(
+        workspace_id=client.workspace_id,
+        character_id=char_id,
+        character_name="Filmed",
+        kind="image2video",
+        prompt="a slow zoom",
+        model="Kling-Image2Video-V2.1-Master",
+        duration=5,
+        aspect_ratio="16:9",
+    )
+
+    assert client.delete(f"/characters/{char_id}").status_code == 204
+    assert db.get_video(client.workspace_id, video["id"])["character_id"] is None
+
+
 def test_delete_character_not_found(client):
     resp = client.delete("/characters/999999")
     assert resp.status_code == 404
