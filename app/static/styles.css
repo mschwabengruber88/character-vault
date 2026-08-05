@@ -1065,6 +1065,41 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 
 .detail-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 
+.portrait-pick-dialog { max-width: 720px; }
+
+.portrait-pick-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+
+/* Four across on a desktop, two on a phone. Fixed track counts rather than
+   auto-fit: at 375px the grid is 289px wide and a 140px minimum misses two
+   columns by three pixels, dropping the options into a single scrolling
+   column — which defeats the picker, whose whole point is comparing them
+   side by side. */
+.portrait-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 14px 0;
+}
+
+@media (max-width: 760px) {
+  .portrait-pick-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.portrait-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.portrait-option img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .detail-dialog h3 { margin: 0 0 14px; padding-right: 24px; }
 
 .detail-dialog-list {

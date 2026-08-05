@@ -203,6 +203,17 @@ const TRANSLATIONS = {
     assetsHeading: "Assets",
     detailsBtn: "Details",
     detailsTitle: "Generation details",
+    portraitPickTitle: "Choose the reference portrait",
+    portraitPickBody: "Four options are being generated. The one you pick becomes this character's reference — the others are discarded.",
+    portraitPickKeepAll: "Keep all of them",
+    portraitPickClose: "Close",
+    portraitPickUse: "Use this one",
+    portraitPickWaiting: "Generating four options…",
+    portraitPickReady: "Pick the one you want to keep.",
+    portraitPickNone: "No portrait could be generated. You can add one anytime from the Images tab.",
+    portraitPickNeedDescription: "Add a short description to have portraits generated automatically.",
+    portraitPickKept: "Portrait saved as the reference.",
+    portraitPickKeptAll: "All options kept.",
     detailPrompt: "Prompt",
     detailScript: "Script",
     detailWho: "Character(s)",
@@ -535,6 +546,17 @@ const TRANSLATIONS = {
     assetsHeading: "Assets",
     detailsBtn: "Details",
     detailsTitle: "Generierungs-Details",
+    portraitPickTitle: "Referenzbild auswählen",
+    portraitPickBody: "Es werden vier Varianten erzeugt. Die ausgewählte wird zum Referenzbild dieser Figur — die anderen werden verworfen.",
+    portraitPickKeepAll: "Alle behalten",
+    portraitPickClose: "Schließen",
+    portraitPickUse: "Diese verwenden",
+    portraitPickWaiting: "Vier Varianten werden erzeugt…",
+    portraitPickReady: "Wähle die Variante, die bleiben soll.",
+    portraitPickNone: "Es konnte kein Bild erzeugt werden. Du kannst jederzeit im Bilder-Tab eines hinzufügen.",
+    portraitPickNeedDescription: "Ergänze eine kurze Beschreibung, damit Bilder automatisch erzeugt werden.",
+    portraitPickKept: "Bild als Referenz gespeichert.",
+    portraitPickKeptAll: "Alle Varianten behalten.",
     detailPrompt: "Prompt",
     detailScript: "Skript",
     detailWho: "Charakter(e)",
@@ -1448,13 +1470,21 @@ function setupCreateForm() {
         }),
       });
       const fileInput = el("create-image");
-      if (fileInput.files.length) {
+      const uploadedOwnImage = fileInput.files.length > 0;
+      if (uploadedOwnImage) {
         await uploadReferenceImage(created.id, fileInput.files[0]);
       }
+      // Read before reset() wipes the form — it seeds the portrait prompts.
+      const description = el("create-description").value.trim();
       form.reset();
       form.hidden = true;
       await loadCharacters(created.id);
       toast(`Created “${created.name}”`);
+      // Someone who brought their own reference already has one; generating
+      // alternatives would only spend credits on images they didn't ask for.
+      if (!uploadedOwnImage) {
+        await offerPortraitOptions(created, description);
+      }
     } catch (err) {
       toast(err.message, true);
     }
@@ -1884,6 +1914,147 @@ async function cancelBatch() {
   try { await api(`/batches/${batchCancelId}/cancel`, { method: "POST" }); }
   catch (err) { toast(err.message, true); }
   finally { el("batch-cancel").disabled = false; }
+}
+
+/* ---------- Reference portrait, picked at creation ---------- */
+
+// A character without a portrait is a dead end: scenes, videos and image
+// batches all condition on a reference image, so creating one used to hand
+// back something no other feature could act on — the portrait had to be
+// brought in from outside. Creation now generates four variants straight away
+// and keeps whichever one is chosen, leaving the character with exactly one
+// reference. Variants are drafts: four finals cost roughly fifteen times as
+// much, and the pick is about composition and likeness, not pixel polish.
+const PORTRAIT_OPTION_COUNT = 4;
+
+let portraitPickBatchId = null;
+
+async function offerPortraitOptions(character, description) {
+  // The description *is* the prompt. Without one there is nothing to draw from,
+  // and inventing an appearance would defeat the point of a reference.
+  if (!description) {
+    toast(t("portraitPickNeedDescription"));
+    return;
+  }
+
+  const dialog = el("portrait-pick-dialog");
+  const note = el("portrait-pick-note");
+  el("portrait-pick-grid").innerHTML = "";
+  note.hidden = true;
+  el("portrait-pick-progress").hidden = false;
+  el("portrait-pick-keep-all").hidden = true;
+  el("portrait-pick-close").hidden = true;
+  el("portrait-pick-label").textContent = t("portraitPickWaiting");
+  el("portrait-pick-bar").style.width = "0%";
+  dialog.showModal();
+
+  try {
+    const job = await api(`/characters/${character.id}/generate/batch`, {
+      method: "POST",
+      headers: { "X-API-Key": apiKey() },
+      body: JSON.stringify({
+        mode: "variation",
+        prompt: description,
+        count: PORTRAIT_OPTION_COUNT,
+        quality: "draft",
+        model: el("image-model")?.value || "gpt-image-1",
+        disclosure: "invisible",
+      }),
+    });
+    portraitPickBatchId = job.id;
+
+    let status = job;
+    while (!["done", "error", "cancelled"].includes(status.status)) {
+      await new Promise((r) => setTimeout(r, 1500));
+      status = await api(`/batches/${job.id}`);
+      const settled = (status.completed || 0) + (status.failed || 0);
+      el("portrait-pick-bar").style.width =
+        `${Math.round((settled / PORTRAIT_OPTION_COUNT) * 100)}%`;
+      el("portrait-pick-label").textContent =
+        `${status.completed || 0} / ${PORTRAIT_OPTION_COUNT}`;
+    }
+    // A stopped batch still shows whatever finished — those images exist and
+    // were paid for, so throwing them away would be the wrong call.
+    await showPortraitOptions(character.id, job.id);
+  } catch (err) {
+    el("portrait-pick-progress").hidden = true;
+    if (err.status === 401) {
+      dialog.close();
+      openKeyDialog();
+      toast(t("toastNeedKey"), true);
+    } else {
+      note.textContent = err.message;
+      note.hidden = false;
+      el("portrait-pick-close").hidden = false;
+    }
+  } finally {
+    portraitPickBatchId = null;
+  }
+}
+
+async function showPortraitOptions(characterId, batchId) {
+  el("portrait-pick-progress").hidden = true;
+  const note = el("portrait-pick-note");
+  const grid = el("portrait-pick-grid");
+  grid.innerHTML = "";
+
+  const character = await api(`/characters/${characterId}`);
+  const options = character.assets.filter(
+    (a) => a.kind === "image" && a.batch_id === batchId && a.signed_url,
+  );
+
+  if (!options.length) {
+    note.textContent = t("portraitPickNone");
+    note.hidden = false;
+    el("portrait-pick-close").hidden = false;
+    return;
+  }
+
+  el("portrait-pick-label").textContent = t("portraitPickReady");
+  el("portrait-pick-keep-all").hidden = false;
+  for (const asset of options) {
+    const figure = document.createElement("figure");
+    figure.className = "portrait-option";
+
+    const img = document.createElement("img");
+    img.src = asset.signed_url;
+    img.alt = "";
+    img.loading = "lazy";
+    figure.appendChild(img);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button primary small";
+    button.textContent = t("portraitPickUse");
+    button.addEventListener("click", () => keepOnePortrait(characterId, asset.id, options));
+    figure.appendChild(button);
+
+    grid.appendChild(figure);
+  }
+}
+
+async function keepOnePortrait(characterId, keepAssetId, options) {
+  const buttons = el("portrait-pick-grid").querySelectorAll("button");
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    for (const asset of options) {
+      if (asset.id !== keepAssetId) await api(`/assets/${asset.id}`, { method: "DELETE" });
+    }
+    toast(t("portraitPickKept"));
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    el("portrait-pick-dialog").close();
+    await loadCharacters(characterId);
+  }
+}
+
+async function cancelPortraitBatch() {
+  if (portraitPickBatchId == null) return;
+  el("portrait-pick-cancel").disabled = true;
+  try { await api(`/batches/${portraitPickBatchId}/cancel`, { method: "POST" }); }
+  catch (err) { toast(err.message, true); }
+  finally { el("portrait-pick-cancel").disabled = false; }
 }
 
 // The picked character's own asset gallery, shown inside the Images tab
@@ -3368,6 +3539,12 @@ function init() {
   el("gen-count").addEventListener("input", updateCostEstimate);
   el("image-prompt").addEventListener("input", () => { if (currentMode() === "story") updateCostEstimate(); });
   el("batch-cancel").addEventListener("click", cancelBatch);
+  el("portrait-pick-cancel").addEventListener("click", cancelPortraitBatch);
+  el("portrait-pick-close").addEventListener("click", () => el("portrait-pick-dialog").close());
+  el("portrait-pick-keep-all").addEventListener("click", () => {
+    el("portrait-pick-dialog").close();
+    toast(t("portraitPickKeptAll"));
+  });
   document.querySelectorAll('input[name="quality"]').forEach((r) => r.addEventListener("change", updateCostEstimate));
   updateModeUI();
   el("create-voice-preview").addEventListener("click", () => previewPickerVoice("create-voice", "create-voice-preview"));

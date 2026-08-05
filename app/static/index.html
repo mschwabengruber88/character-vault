@@ -698,6 +698,24 @@
     <dl id="detail-dialog-body" class="detail-dialog-list"></dl>
   </dialog>
 
+  <dialog id="portrait-pick-dialog" class="key-dialog portrait-pick-dialog">
+    <h3 data-i18n="portraitPickTitle">Choose the reference portrait</h3>
+    <p data-i18n="portraitPickBody">Four options are being generated. The one you pick becomes this character's reference — the others are discarded.</p>
+    <div id="portrait-pick-progress" class="batch-progress">
+      <div class="batch-bar"><div id="portrait-pick-bar" class="batch-bar-fill"></div></div>
+      <div class="batch-progress-row">
+        <span id="portrait-pick-label"></span>
+        <button type="button" id="portrait-pick-cancel" class="button danger small" data-i18n="stop">Stop</button>
+      </div>
+    </div>
+    <div id="portrait-pick-grid" class="portrait-pick-grid"></div>
+    <p id="portrait-pick-note" class="generate-hint" hidden></p>
+    <div class="form-row">
+      <button type="button" id="portrait-pick-keep-all" class="button small" data-i18n="portraitPickKeepAll">Keep all of them</button>
+      <button type="button" id="portrait-pick-close" class="button small" data-i18n="portraitPickClose">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="key-dialog" class="key-dialog">
     <form method="dialog">
       <h3 data-i18n="keyDialogTitle">Generation API key</h3>
