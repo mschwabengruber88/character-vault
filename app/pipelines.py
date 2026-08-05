@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 import os
 import tempfile
@@ -16,6 +18,8 @@ from app.config import (
     B2_REGION,
     GMI_API_KEY,
     OPENAI_API_KEY,
+    SEQUENCE_CACHE_DIR,
+    SEQUENCE_CACHE_MAX_MB,
 )
 
 logger = logging.getLogger("character_vault.pipelines")
@@ -1225,6 +1229,31 @@ def _draw_caption(image_bytes: bytes, text: str) -> bytes:
 
 
 @lru_cache(maxsize=1)
+def _ffmpeg_filters() -> frozenset:
+    """Names of the filters this machine's ffmpeg actually has."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-filters"],
+            capture_output=True, text=True, timeout=20,
+        ).stdout
+    except Exception:
+        return frozenset()
+    names = set()
+    for line in out.splitlines():
+        parts = line.split()
+        # Rows look like " T.. name  in->out  description"; the flags column
+        # comes first, so the filter's name is the second field.
+        if len(parts) >= 2 and not line.startswith(" ---"):
+            names.add(parts[1])
+    return frozenset(names)
+
+
+def ffmpeg_has_filter(name: str) -> bool:
+    return name in _ffmpeg_filters()
+
+
 def ffmpeg_has_drawtext() -> bool:
     """Whether this machine's ffmpeg was built with libfreetype.
 
@@ -1238,16 +1267,7 @@ def ffmpeg_has_drawtext() -> bool:
     app should not ship. Any future change tempted to reach for drawtext has to
     pass this check first.
     """
-    import subprocess
-
-    try:
-        out = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-filters"],
-            capture_output=True, text=True, timeout=20,
-        ).stdout
-    except Exception:
-        return False
-    return any(line.split()[1:2] == ["drawtext"] for line in out.splitlines() if line.strip())
+    return ffmpeg_has_filter("drawtext")
 
 
 # ── Timeline: cut existing vault assets into one sequence ────────────────
@@ -1256,24 +1276,77 @@ def ffmpeg_has_drawtext() -> bool:
 # provider is called and nothing is billed — local ffmpeg work, like the canvas
 # overlay.
 #
-# Every clip is encoded to its own normalised segment first and the segments
-# are then joined with the concat demuxer (`-c copy`). The alternative — one
-# large filter_complex with xfade — would allow true cross-dissolves, but it
-# holds every input open at once, and this app already learned on the small
-# production container that a filtergraph sized for the host rather than the
-# container gets SIGKILLed before frame 1 (see overlay_video). Sequential
-# segments keep peak memory at one clip, whatever the cut's length.
+# A cut is built out of PIECES, not whole clips. Each piece is a short, fully
+# self-contained MP4 — a clip's body, or the half-second where two clips meet —
+# and the finished film is those pieces joined with the concat demuxer.
 #
-# The price of that choice is the shape of a "fade": a dip to black (out on the
-# ending clip's tail, in on the starting clip's head), not a cross-dissolve.
-# That is a real transition, just not a blended one.
+# That shape buys two things a naive "one segment per clip" design cannot:
+#
+# 1. Real cross-dissolves. The obvious way to dissolve is one big
+#    filter_complex chaining xfade across every clip, but it holds every input
+#    open at once, and this app already learned on the small production
+#    container that a filtergraph sized for the host gets SIGKILLed before
+#    frame 1 (see overlay_video). Here a dissolve is a single xfade over two
+#    HALF-SECOND inputs — the tail of one clip and the head of the next — so
+#    peak memory is a fraction of one clip no matter how long the film is.
+#
+# 2. A cache that actually helps. A piece depends only on its own inputs, so
+#    nudging clip 5's length re-encodes clip 5 and the two joins touching it,
+#    and reuses everything else verbatim.
 
-SEQUENCE_SIZES = {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}
+SEQUENCE_RESOLUTIONS = {
+    # (long edge, short edge). 720p is the default because the production VM in
+    # DEPLOY.md is small; 1080p is offered for a final deliverable and is
+    # roughly twice the encode time.
+    "720p": (1280, 720),
+    "1080p": (1920, 1080),
+}
+SEQUENCE_ASPECTS = ("16:9", "9:16", "1:1")
+DEFAULT_SEQUENCE_RESOLUTION = "720p"
+
+# Kept as a name for the three canvases at the default resolution — the editor
+# and /capabilities both talk about aspect ratios, not pixel pairs.
+SEQUENCE_SIZES = {
+    aspect: None for aspect in SEQUENCE_ASPECTS
+}
+
+
+def sequence_size(aspect_ratio: str, resolution: str = DEFAULT_SEQUENCE_RESOLUTION) -> tuple:
+    """Output frame for an aspect ratio at a resolution tier.
+
+    A square canvas uses the SHORT edge for both sides: taking the long edge
+    would make 1:1 the largest, slowest format of the three, which is the
+    opposite of what picking "square" implies.
+    """
+    long_edge, short_edge = SEQUENCE_RESOLUTIONS.get(
+        resolution, SEQUENCE_RESOLUTIONS[DEFAULT_SEQUENCE_RESOLUTION])
+    if aspect_ratio == "9:16":
+        return short_edge, long_edge
+    if aspect_ratio == "1:1":
+        return short_edge, short_edge
+    return long_edge, short_edge
+
+
 SEQUENCE_FPS = 24
 SEQUENCE_MAX_FADE = 2.0
-# A fade may never eat more than this share of the clip it sits on, or a 0.5s
-# fade on a 0.4s title card would start after the card is already over.
-SEQUENCE_FADE_SHARE = 0.4
+# A transition may never eat more than this share of either clip it touches. A
+# clip with a transition on both sides therefore always keeps at least 30% of
+# itself as untouched body, and a 0.5s fade can't outlive a 0.4s title card.
+SEQUENCE_FADE_SHARE = 0.35
+# Below this, a body piece is shorter than a few frames and not worth cutting
+# in; the transition is shortened until the body clears it.
+SEQUENCE_MIN_BODY = 0.12
+
+# "cut" is no transition at all. "fade" dips through black — the outgoing clip
+# darkens, the incoming one lifts, and the film's total length is unchanged.
+# "dissolve" blends the two directly, so it OVERLAPS: a 0.5s dissolve makes the
+# finished cut half a second shorter than the sum of its clips.
+SEQUENCE_TRANSITIONS = ("cut", "fade", "dissolve")
+
+# Text panels come as finished designs rather than a pile of knobs — position,
+# alignment, weight and rule are chosen together per style, which is what keeps
+# them from looking assembled by accident.
+SEQUENCE_TITLE_STYLES = ("center", "lower_third", "left", "end_card")
 
 # Colour looks. Deliberately built from ffmpeg's own primitives rather than
 # shipped LUT files: no binary assets to license or version, and every look
@@ -1297,18 +1370,33 @@ SEQUENCE_LOOKS = {
 SEQUENCE_MOTIONS = ("none", "zoom_in", "zoom_out", "pan_left", "pan_right", "pan_up", "pan_down")
 
 
-def _render_title_card(text: str, subtitle: str | None, width: int, height: int) -> bytes:
+_TITLE_INK = (255, 255, 255)
+_TITLE_ACCENT = (168, 255, 53)   # the app's lime, as in the badge and the UI
+_TITLE_BG = (11, 10, 22)
+
+
+def _render_title_card(text: str, subtitle: str | None, width: int, height: int,
+                       style: str = "center") -> bytes:
     """A text panel as a PNG, drawn with Pillow — see ffmpeg_has_drawtext() for
-    why this never goes through ffmpeg's drawtext filter."""
+    why this never goes through ffmpeg's drawtext filter.
+
+    The four styles are finished designs, not parameters: each fixes size,
+    position, alignment and rule together. Exposing those individually is how
+    title cards end up looking assembled rather than designed.
+    """
     from io import BytesIO
 
     from PIL import Image, ImageDraw, ImageFont
 
-    img = Image.new("RGB", (width, height), (11, 10, 22))
+    if style not in SEQUENCE_TITLE_STYLES:
+        style = "center"
+
+    img = Image.new("RGB", (width, height), _TITLE_BG)
     draw = ImageDraw.Draw(img)
+    unit = min(width, height)
 
     def _font(size: int, bold: bool):
-        font = ImageFont.truetype(str(_CAPTION_FONT), size)
+        font = ImageFont.truetype(str(_CAPTION_FONT), max(12, size))
         if bold:
             try:
                 font.set_variation_by_name("Bold")
@@ -1318,7 +1406,7 @@ def _render_title_card(text: str, subtitle: str | None, width: int, height: int)
 
     def _wrap(content: str, font, max_width: int) -> list[str]:
         lines, current = [], ""
-        for word in content.split():
+        for word in (content or "").split():
             trial = f"{current} {word}".strip()
             if draw.textlength(trial, font=font) <= max_width or not current:
                 current = trial
@@ -1329,31 +1417,68 @@ def _render_title_card(text: str, subtitle: str | None, width: int, height: int)
             lines.append(current)
         return lines
 
-    max_width = int(width * 0.82)
-    title_font = _font(max(24, width // 16), bold=True)
-    title_lines = _wrap(text, title_font, max_width)
-    title_step = int(title_font.size * 1.25)
+    # style -> (title size, subtitle size, text box width, horizontal anchor,
+    #           vertical placement, accent rule, subtitle above the title)
+    spec = {
+        "center":      (unit // 9,  unit // 26, 0.82, "center", "middle", False, False),
+        "lower_third": (unit // 13, unit // 30, 0.62, "left",   "lower",  True,  False),
+        "left":        (unit // 8,  unit // 26, 0.70, "left",   "middle", True,  False),
+        "end_card":    (unit // 12, unit // 30, 0.70, "center", "middle", True,  True),
+    }[style]
+    title_size, sub_size, box_share, anchor, placement, rule, sub_first = spec
 
-    sub_font = sub_lines = None
-    sub_step = 0
+    box_width = int(width * box_share)
+    margin = int(width * (0.09 if anchor == "center" else 0.08))
+
+    title_font = _font(title_size, bold=True)
+    title_lines = _wrap(text, title_font, box_width)
+    title_step = int(title_font.size * 1.22)
+
+    sub_font, sub_lines, sub_step = None, [], 0
     if subtitle:
-        sub_font = _font(max(16, width // 30), bold=False)
-        sub_lines = _wrap(subtitle, sub_font, max_width)
+        sub_font = _font(sub_size, bold=False)
+        sub_lines = _wrap(subtitle, sub_font, box_width)
         sub_step = int(sub_font.size * 1.35)
 
-    gap = int(height * 0.045) if sub_lines else 0
-    block = title_step * len(title_lines) + gap + sub_step * len(sub_lines or [])
-    y = (height - block) / 2
+    gap = int(unit * 0.035) if sub_lines else 0
+    rule_gap = int(unit * 0.03) if rule else 0
+    rule_height = max(2, unit // 220) if rule else 0
+    block = (title_step * len(title_lines) + gap + sub_step * len(sub_lines)
+             + (rule_height + rule_gap if rule else 0))
 
+    if placement == "lower":
+        y = height - int(height * 0.14) - block
+    else:
+        y = (height - block) / 2
+
+    def _draw_line(line, font, fill):
+        text_width = draw.textlength(line, font=font)
+        x = (width - text_width) / 2 if anchor == "center" else margin
+        draw.text((x, y), line, font=font, fill=fill)
+
+    def _draw_rule():
+        nonlocal y
+        rule_width = int(box_width * 0.28)
+        x = (width - rule_width) / 2 if anchor == "center" else margin
+        draw.rectangle([x, y, x + rule_width, y + rule_height], fill=_TITLE_ACCENT)
+        y += rule_height + rule_gap
+
+    if rule and not sub_first:
+        _draw_rule()
+    if sub_first and sub_lines:
+        for line in sub_lines:
+            _draw_line(line, sub_font, _TITLE_ACCENT)
+            y += sub_step
+        y += gap
+        if rule:
+            _draw_rule()
     for line in title_lines:
-        draw.text(((width - draw.textlength(line, font=title_font)) / 2, y),
-                  line, font=title_font, fill=(255, 255, 255))
+        _draw_line(line, title_font, _TITLE_INK)
         y += title_step
-    if sub_lines:
+    if sub_lines and not sub_first:
         y += gap
         for line in sub_lines:
-            draw.text(((width - draw.textlength(line, font=sub_font)) / 2, y),
-                      line, font=sub_font, fill=(168, 255, 53))
+            _draw_line(line, sub_font, _TITLE_ACCENT)
             y += sub_step
 
     out = BytesIO()
@@ -1439,33 +1564,44 @@ def _fit_chain(width: int, height: int) -> str:
     )
 
 
-def _kenburns_chain(motion: str, width: int, height: int, frames: int) -> str:
+def _kenburns_chain(motion: str, width: int, height: int, piece_frames: int,
+                    clip_frames: int, frame_offset: int) -> str:
     """A slow camera move over a still, via zoompan.
 
-    zoompan expands ONE input frame into `frames` output frames, so the caller
-    must feed a single image (not `-loop 1`) — looping would multiply the move
-    once per looped frame and produce a stutter. The source is first scaled to
-    twice the output: zoompan steps its crop window in integer pixels, and on a
-    frame-sized input those steps are visible as judder.
+    zoompan expands ONE input frame into `piece_frames` output frames, so the
+    caller must feed a single image (not `-loop 1`) — looping would multiply the
+    move once per looped frame and produce a stutter. The source is first scaled
+    to twice the output: zoompan steps its crop window in integer pixels, and on
+    a frame-sized input those steps read as judder.
+
+    Every expression is ABSOLUTE in the clip's own frame index rather than
+    accumulating from the previous frame (`zoom+step`). That is what lets a
+    still be cut into pieces at all: a piece starting 2 seconds into the clip
+    renders with `frame_offset` set and lands exactly where the accumulating
+    version would have been, so the move continues across a join instead of
+    snapping back to the start.
     """
-    over = f"scale={width * 2}:{height * 2}:force_original_aspect_ratio=decrease," \
-           f"pad={width * 2}:{height * 2}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
-    step = 0.12 / max(1, frames)  # ~12% travel across the whole clip, regardless of length
+    over = (f"scale={width * 2}:{height * 2}:force_original_aspect_ratio=decrease,"
+            f"pad={width * 2}:{height * 2}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1")
+    span = max(1, clip_frames - 1)
+    # Progress through the WHOLE clip, evaluated at this piece's frames.
+    at = f"min(1,(on+{frame_offset})/{span})"
     centre_x, centre_y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+    peak = 1.12
+
     if motion == "zoom_in":
-        z, x, y = f"min(zoom+{step:.6f},1.12)", centre_x, centre_y
+        z, x, y = f"1+{peak - 1:.4f}*{at}", centre_x, centre_y
     elif motion == "zoom_out":
-        z, x, y = f"if(lte(zoom,1.0),1.12,max(1.0,zoom-{step:.6f}))", centre_x, centre_y
+        z, x, y = f"{peak}-{peak - 1:.4f}*{at}", centre_x, centre_y
     elif motion in ("pan_left", "pan_right"):
-        travel = f"(iw-iw/zoom)*(on/{max(1, frames)})"
-        x = travel if motion == "pan_right" else f"(iw-iw/zoom)*(1-on/{max(1, frames)})"
-        z, y = "1.12", centre_y
+        progress = at if motion == "pan_right" else f"(1-{at})"
+        z, x, y = str(peak), f"(iw-iw/zoom)*{progress}", centre_y
     else:  # pan_up / pan_down
-        travel = f"(ih-ih/zoom)*(on/{max(1, frames)})"
-        y = travel if motion == "pan_down" else f"(ih-ih/zoom)*(1-on/{max(1, frames)})"
-        z, x = "1.12", centre_x
+        progress = at if motion == "pan_down" else f"(1-{at})"
+        z, x, y = str(peak), centre_x, f"(ih-ih/zoom)*{progress}"
+
     return (f"{over},zoompan=z='{z}':x='{x}':y='{y}'"
-            f":d={frames}:s={width}x{height}:fps={SEQUENCE_FPS}")
+            f":d={piece_frames}:s={width}x{height}:fps={SEQUENCE_FPS}")
 
 
 _X264 = ["-c:v", "libx264", "-preset", "veryfast", "-threads", "2",
@@ -1495,51 +1631,188 @@ def _join_chain(*parts: str) -> str:
     return ",".join(p for p in parts if p)
 
 
-def _encode_still_segment(clip: dict, image_path: Path, out_path: Path, length: float,
-                          width: int, height: int, fade_in: float, fade_out: float) -> None:
-    motion = clip.get("motion") or "none"
-    video_fade, _ = _fade_filters(fade_in, fade_out, length)
-    frames = max(2, int(round(length * SEQUENCE_FPS)))
-
-    args = ["ffmpeg", "-y"]
-    if motion in SEQUENCE_MOTIONS and motion != "none":
-        args += ["-i", str(image_path)]  # single frame — zoompan expands it
-        geometry = _kenburns_chain(motion, width, height, frames)
-    else:
-        args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(image_path)]
-        geometry = f"{_fit_chain(width, height)},fps={SEQUENCE_FPS}"
-    args += ["-f", "lavfi", "-t", f"{length:.3f}", "-i", _SILENCE,
-             "-vf", _join_chain(geometry, _grade_chain(clip), video_fade, "format=yuv420p"),
-             "-map", "0:v:0", "-map", "1:a:0",
-             *_X264, *_AAC, "-t", f"{length:.3f}", str(out_path)]
-    _run_ffmpeg(args, "still segment", timeout=420)
+# ── The piece cache ──────────────────────────────────────────────────────
+# Bump whenever an encoder flag or a filter chain changes, or a stale piece
+# encoded by the previous version will be served as a cache hit and the film
+# will quietly mix two generations of settings.
+_PIECE_CACHE_VERSION = 1
 
 
-def _encode_video_segment(clip: dict, source: Path, out_path: Path, start: float, length: float,
-                          width: int, height: int, fade_in: float, fade_out: float) -> None:
-    video_fade, audio_fade = _fade_filters(fade_in, fade_out, length)
-    has_audio = _has_audio_stream(source)
-    volume = float(clip.get("volume") if clip.get("volume") is not None else 1.0)
-    volume = max(0.0, min(4.0, volume))
+def _cache_dir() -> Path:
+    path = Path(SEQUENCE_CACHE_DIR)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
-    args = ["ffmpeg", "-y"]
-    if start > 0:
-        args += ["-ss", f"{start:.3f}"]
-    args += ["-i", str(source)]
-    if not has_audio:
-        args += ["-f", "lavfi", "-i", _SILENCE]
-    args += ["-t", f"{length:.3f}",
-             "-map", "0:v:0", "-map", "0:a:0" if has_audio else "1:a:0",
-             "-vf", _join_chain(f"{_fit_chain(width, height)},fps={SEQUENCE_FPS}",
-                                _grade_chain(clip), video_fade, "format=yuv420p")]
+
+def _cache_key(payload: dict) -> str:
+    blob = json.dumps({**payload, "v": _PIECE_CACHE_VERSION},
+                      sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:40]
+
+
+def _cached(prefix: str, key: str, suffix: str, build) -> Path:
+    """Return a cached artefact, building it on a miss.
+
+    The suffix stays at the END of both the final and the temporary name:
+    ffmpeg picks its output muxer from the file extension, and a name like
+    `piece.mp4-<hash>` leaves it with nothing to go on ("Unable to choose an
+    output format").
+
+    The build writes to that temporary name and is only then moved into place,
+    so a render killed mid-encode — which the production container does under
+    memory pressure — can never leave a truncated file that later reads as a
+    valid hit.
+    """
+    path = _cache_dir() / f"{prefix}-{key}{suffix}"
+    if path.exists() and path.stat().st_size > 0:
+        os.utime(path, None)  # touch: the cache evicts by last use, not by age
+        return path
+    partial = path.with_name(f"{prefix}-{key}.partial{suffix}")
+    try:
+        build(partial)
+        partial.replace(path)
+    finally:
+        partial.unlink(missing_ok=True)
+    return path
+
+
+def prune_piece_cache(max_bytes: int | None = None) -> int:
+    """Drop least-recently-used pieces until the cache fits. Returns bytes freed."""
+    limit = max_bytes if max_bytes is not None else SEQUENCE_CACHE_MAX_MB * 1024 * 1024
+    try:
+        files = [p for p in _cache_dir().iterdir() if p.is_file() and not p.name.endswith(".partial")]
+    except OSError:
+        return 0
+    stats = []
+    for path in files:
+        try:
+            stats.append((path.stat().st_mtime, path.stat().st_size, path))
+        except OSError:
+            continue
+    total = sum(size for _, size, _ in stats)
+    freed = 0
+    for _, size, path in sorted(stats):
+        if total - freed <= limit:
+            break
+        try:
+            path.unlink()
+            freed += size
+        except OSError:
+            continue
+    return freed
+
+
+def _cached_source(url: str, sha256: str | None, suffix: str) -> Path:
+    """The bytes behind a clip, downloaded once and kept.
+
+    Re-downloading a 10 MB clip from B2 on every render is the slowest part of
+    iterating, and unlike an encode it buys nothing new — the object is
+    immutable under its URL.
+    """
+    from app.storage import download_bytes
+
+    key = _cache_key({"url": url, "sha": sha256})
+    return _cached("src", key, suffix, lambda out: out.write_bytes(download_bytes(url)))
+
+
+# ── Encoding one piece ───────────────────────────────────────────────────
+# A piece is a slice [offset, offset+length) of one clip, rendered complete:
+# scaled, graded, moved, with its own audio, and optionally faded at one end.
+# Pieces never depend on their neighbours' content, only on the transition
+# lengths, which is what makes them cacheable.
+
+def _audio_inputs_for(clip: dict, source: Path | None, has_audio: bool,
+                      offset: float, length: float, voice: Path | None) -> tuple:
+    """Input arguments and a filter graph producing a single [aout] label.
+
+    Every piece carries an audio track — silence for a bare still — because the
+    concat demuxer needs the same stream layout in every part, and a cut mixing
+    talking clips with stills would otherwise lose its audio at the first still.
+    """
+    args, labels, graph = [], [], []
+    next_index = 1 if source is not None else 0
+
+    volume = max(0.0, min(4.0, float(clip.get("volume") if clip.get("volume") is not None else 1.0)))
     if has_audio:
-        audio_chain = _join_chain(
-            f"volume={volume:.3f}" if abs(volume - 1.0) > 1e-6 else "", audio_fade,
-        )
-        if audio_chain:
-            args += ["-af", audio_chain]
-    args += [*_X264, *_AAC, str(out_path)]
-    _run_ffmpeg(args, "video segment", timeout=600)
+        graph.append(f"[0:a]volume={volume:.3f}[clipa]")
+        labels.append("[clipa]")
+
+    if voice is not None:
+        voice_volume = max(0.0, min(4.0, float(clip.get("voice_volume") or 1.0)))
+        args += ["-ss", f"{offset:.3f}", "-i", str(voice)]
+        # apad, then the output -t, so a voice shorter than the clip leaves
+        # silence rather than truncating the picture with -shortest.
+        graph.append(f"[{next_index}:a]volume={voice_volume:.3f},apad[voicea]")
+        labels.append("[voicea]")
+        next_index += 1
+
+    if not labels:
+        args += ["-f", "lavfi", "-t", f"{length:.3f}", "-i", _SILENCE]
+        return args, f"[{next_index}:a]anull[aout]"
+    if len(labels) == 1:
+        return args, ";".join(graph + [f"{labels[0]}anull[aout]"])
+    joined = "".join(labels)
+    return args, ";".join(
+        graph + [f"{joined}amix=inputs={len(labels)}:duration=longest:normalize=0[aout]"])
+
+
+def _encode_piece(clip: dict, out_path: Path, *, source: Path | None, offset: float,
+                  length: float, width: int, height: int, fade_in: float, fade_out: float,
+                  clip_length: float, voice: Path | None) -> None:
+    is_still = clip["source"] == "title" or clip.get("_still", False)
+    motion = (clip.get("motion") or "none") if is_still else "none"
+    video_fade, audio_fade = _fade_filters(fade_in, fade_out, length)
+    piece_frames = max(2, int(round(length * SEQUENCE_FPS)))
+
+    args = ["ffmpeg", "-y"]
+    if is_still:
+        if motion != "none":
+            args += ["-i", str(source)]  # a single frame — zoompan expands it
+            geometry = _kenburns_chain(
+                motion, width, height, piece_frames,
+                clip_frames=max(2, int(round(clip_length * SEQUENCE_FPS))),
+                frame_offset=int(round(offset * SEQUENCE_FPS)),
+            )
+        else:
+            args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(source)]
+            geometry = f"{_fit_chain(width, height)},fps={SEQUENCE_FPS}"
+        has_audio = False
+    else:
+        if offset > 0:
+            args += ["-ss", f"{offset:.3f}"]
+        args += ["-i", str(source)]
+        geometry = f"{_fit_chain(width, height)},fps={SEQUENCE_FPS}"
+        has_audio = _has_audio_stream(source)
+
+    audio_args, audio_graph = _audio_inputs_for(clip, source, has_audio, offset, length, voice)
+    args += audio_args
+
+    video_chain = _join_chain(geometry, _grade_chain(clip), video_fade, "format=yuv420p")
+    if audio_fade:
+        audio_graph = audio_graph.replace("[aout]", "[apre]") + f";[apre]{audio_fade}[aout]"
+
+    args += ["-filter_complex", f"[0:v]{video_chain}[vout];{audio_graph}",
+             "-map", "[vout]", "-map", "[aout]",
+             *_X264, *_AAC, "-t", f"{length:.3f}", str(out_path)]
+    _run_ffmpeg(args, "piece", timeout=600)
+
+
+def _encode_dissolve(tail: Path, head: Path, out_path: Path, length: float) -> None:
+    """The half-second where two clips overlap.
+
+    xfade sees exactly two inputs, each `length` long, so this is the smallest
+    possible form of a cross-dissolve — the reason a blended transition is
+    affordable here at all. acrossfade does the same for the sound; both
+    produce exactly `length` seconds out of 2×`length` seconds in.
+    """
+    _run_ffmpeg(
+        ["ffmpeg", "-y", "-i", str(tail), "-i", str(head),
+         "-filter_complex",
+         f"[0:v][1:v]xfade=transition=fade:duration={length:.3f}:offset=0[vout];"
+         f"[0:a][1:a]acrossfade=d={length:.3f}:c1=tri:c2=tri[aout]",
+         "-map", "[vout]", "-map", "[aout]", *_X264, *_AAC, str(out_path)],
+        "dissolve", timeout=300,
+    )
 
 
 def _ffmetadata_escape(value: str) -> str:
@@ -1558,7 +1831,7 @@ def _write_ffmetadata(path: Path, tags: dict[str, str]) -> None:
 
 
 def _build_sequence_manifest(name: str, entries: list[dict], total: float, width: int,
-                             height: int, audio_tracks: list[dict]) -> dict:
+                             height: int, resolution: str, audio_tracks: list[dict]) -> dict:
     """The merged provenance manifest: what this cut is made of.
 
     Each source keeps its own record — model, prompt, hash, disclosure mode and
@@ -1586,12 +1859,14 @@ def _build_sequence_manifest(name: str, entries: list[dict], total: float, width
             "duration_s": round(total, 3),
             "width": width,
             "height": height,
+            "resolution": resolution,
             "fps": SEQUENCE_FPS,
             "clip_count": len(entries),
         },
         "assembly": {
             "tool": "ffmpeg",
-            "method": "per-clip encode + concat demuxer",
+            "method": "per-piece encode + concat demuxer",
+            "transitions": sorted({e.get("transition_in", "cut") for e in entries}),
             "text_panels": "pillow",
             "provider_calls": 0,
             "cost_usd": 0.0,
@@ -1613,11 +1888,101 @@ def _build_sequence_manifest(name: str, entries: list[dict], total: float, width
     }
 
 
+def _plan_transitions(clips: list[dict], lengths: list[float]) -> tuple[list, list, list]:
+    """Settle every join before a single frame is encoded.
+
+    Returns (kinds, spans, cuts) where cuts[i] is (head, tail) — how much of
+    clip i is consumed by the transitions on either side of it. A span is
+    clamped by BOTH clips it touches and by what is left of them afterwards, so
+    a half-second dissolve can never swallow a third of a short title card or
+    leave a body piece thinner than a few frames. A span squeezed below a
+    perceptible length degrades to a hard cut rather than rendering a
+    transition nobody can see.
+    """
+    kinds, spans = [], []
+    for index, clip in enumerate(clips):
+        kind = clip.get("transition") or "cut"
+        if kind not in SEQUENCE_TRANSITIONS:
+            kind = "cut"
+        # There is nothing before the first clip to dissolve from; the only
+        # thing that shape can mean is opening out of black.
+        if index == 0 and kind == "dissolve":
+            kind = "fade"
+        if kind == "cut":
+            kinds.append("cut")
+            spans.append(0.0)
+            continue
+
+        span = min(float(clip.get("fade_duration") or 0.5), SEQUENCE_MAX_FADE,
+                   SEQUENCE_FADE_SHARE * lengths[index],
+                   (lengths[index] - SEQUENCE_MIN_BODY) / 2)
+        if index > 0:
+            span = min(span, SEQUENCE_FADE_SHARE * lengths[index - 1],
+                       (lengths[index - 1] - SEQUENCE_MIN_BODY) / 2)
+        # Under about three frames there is nothing to see — the transition
+        # reads as a flicker, not as a transition. Tie the floor to the frame
+        # rate rather than to a guessed number of milliseconds.
+        if span < 3 / SEQUENCE_FPS:
+            kinds.append("cut")
+            spans.append(0.0)
+            continue
+        kinds.append(kind)
+        spans.append(round(span, 3))
+
+    cuts = [[0.0, 0.0] for _ in clips]
+    for index, kind in enumerate(kinds):
+        if kind == "cut":
+            continue
+        cuts[index][0] = spans[index]          # head of the incoming clip
+        if index > 0:
+            cuts[index - 1][1] = spans[index]  # tail of the outgoing clip
+    return kinds, spans, cuts
+
+
+def _duck_graph(track_count: int, volumes: list[float], duck_flags: list[bool]) -> str:
+    """Mix the added tracks under the cut's own audio.
+
+    Where a track is ducked, the film's own sound drives a compressor on it, so
+    music steps back the moment someone speaks and comes back up over a silent
+    still — which is the difference between a bed and a track fighting the
+    voice. Without sidechaincompress in the build, the level is simply static;
+    the mix is quieter but never wrong.
+    """
+    can_duck = ffmpeg_has_filter("sidechaincompress")
+    ducked = [i for i in range(track_count) if duck_flags[i] and can_duck]
+    if not can_duck and any(duck_flags):
+        logger.info("ffmpeg has no sidechaincompress — laying tracks at a static level instead")
+
+    parts, mix_labels = [], []
+    if ducked:
+        keys = "".join(f"[key{i}]" for i in ducked)
+        parts.append(f"[0:a]asplit={len(ducked) + 1}[main]{keys}")
+        mix_labels.append("[main]")
+    else:
+        mix_labels.append("[0:a]")
+
+    for index in range(track_count):
+        source = f"[{index + 1}:a]"
+        parts.append(f"{source}volume={volumes[index]:.3f}[lvl{index}]")
+        if index in ducked:
+            parts.append(
+                f"[lvl{index}][key{index}]sidechaincompress="
+                f"threshold=0.05:ratio=8:attack=20:release=350[trk{index}]")
+        else:
+            parts.append(f"[lvl{index}]anull[trk{index}]")
+        mix_labels.append(f"[trk{index}]")
+
+    parts.append(f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}"
+                 f":duration=first:dropout_transition=0:normalize=0[aout]")
+    return ";".join(parts)
+
+
 def render_sequence(
     name: str,
     clips: list[dict],
     aspect_ratio: str = "16:9",
     audio_tracks: list[dict] | None = None,
+    resolution: str = DEFAULT_SEQUENCE_RESOLUTION,
 ) -> dict:
     """Cut `clips` into one MP4 and store it in B2 with a merged manifest.
 
@@ -1628,92 +1993,124 @@ def render_sequence(
     for a moving clip, anything else for a still.
 
     `audio_tracks` are laid UNDER the finished cut — music or a voiceover added
-    after the fact: [{url, volume, provenance}]. The clips keep their own
-    audio; the tracks are mixed beneath it.
+    after the fact: [{url, volume, duck, provenance}]. The clips keep their own
+    audio; a ducked track steps back whenever the film itself is loud.
 
     Returns {url, sha256, mime_type, duration, manifest, manifest_url}.
     """
-    import json
     import uuid as _uuid
 
     from app.storage import download_bytes, upload_bytes
 
     if not clips:
         raise ValueError("A sequence needs at least one clip.")
-    width, height = SEQUENCE_SIZES.get(aspect_ratio, SEQUENCE_SIZES["16:9"])
+    width, height = sequence_size(aspect_ratio, resolution)
     audio_tracks = audio_tracks or []
 
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
 
-        # Pass 1 — fetch every source and settle its real length. A video's
-        # length comes from the clip itself (trimmed by in/out), never from the
-        # requested duration, so the timeline can't claim time the clip doesn't
-        # have.
-        prepared = []
-        for index, clip in enumerate(clips):
+        # Pass 1 — get every source onto disk and settle its real length. A
+        # video's length comes from the clip itself (trimmed by in/out), never
+        # from the requested duration, so the timeline can't claim time the
+        # clip doesn't have. Sources are cached by URL: the object behind one
+        # is immutable, so re-downloading it on every render buys nothing.
+        prepared, lengths = [], []
+        for clip in clips:
+            voice = None
+            if clip.get("voice_url"):
+                voice = _cached_source(clip["voice_url"], None, ".audio")
+
             if clip["source"] == "title":
-                path = tmp / f"src{index}.png"
-                path.write_bytes(_render_title_card(
-                    clip.get("text") or "", clip.get("subtitle"), width, height,
-                ))
-                prepared.append({"clip": clip, "path": path, "kind": "still",
-                                 "start_in_source": 0.0,
-                                 "length": max(0.2, float(clip.get("duration") or 3.0))})
+                style = clip.get("title_style") or "center"
+                key = _cache_key({"t": clip.get("text"), "s": clip.get("subtitle"),
+                                  "st": style, "w": width, "h": height})
+                path = _cached("title", key, ".png", lambda out, s=style, c=clip: out.write_bytes(
+                    _render_title_card(c.get("text") or "", c.get("subtitle"), width, height, s)))
+                length = max(0.2, float(clip.get("duration") or 3.0))
+                prepared.append({"clip": {**clip, "_still": True}, "path": path,
+                                 "still": True, "start": 0.0, "voice": voice})
             elif clip["source"] == "video":
-                path = tmp / f"src{index}.mp4"
-                path.write_bytes(download_bytes(clip["url"]))
+                path = _cached_source(clip["url"], (clip.get("provenance") or {}).get("sha256"), ".mp4")
                 available = _probe_duration_s(path)
                 start = min(max(0.0, float(clip.get("in_point") or 0.0)),
                             max(0.0, available - 0.2))
                 end = clip.get("out_point")
                 end = available if end is None else min(float(end), available)
-                prepared.append({"clip": clip, "path": path, "kind": "video",
-                                 "start_in_source": start, "length": max(0.2, end - start),
+                length = max(0.2, end - start)
+                prepared.append({"clip": clip, "path": path, "still": False,
+                                 "start": start, "voice": voice,
                                  "source_duration": available})
             else:
-                path = tmp / f"src{index}.png"
-                path.write_bytes(_still_png(download_bytes(clip["url"]), clip.get("text")))
-                prepared.append({"clip": clip, "path": path, "kind": "still",
-                                 "start_in_source": 0.0,
-                                 "length": max(0.2, float(clip.get("duration") or 3.0))})
+                sha = (clip.get("provenance") or {}).get("sha256")
+                key = _cache_key({"url": clip["url"], "sha": sha, "cap": clip.get("text")})
+                path = _cached("still", key, ".png", lambda out, c=clip: out.write_bytes(
+                    _still_png(download_bytes(c["url"]), c.get("text"))))
+                length = max(0.2, float(clip.get("duration") or 3.0))
+                prepared.append({"clip": {**clip, "_still": True}, "path": path,
+                                 "still": True, "start": 0.0, "voice": voice})
+            lengths.append(length)
 
-        # A fade belongs to the cut BETWEEN two clips, so it is drawn on both
-        # sides: out on the clip that ends, in on the clip that begins. A fade
-        # on clip 0 has no predecessor and simply opens the film from black.
-        for item in prepared:
-            item["fade_in"] = item["fade_out"] = 0.0
-        for i, item in enumerate(prepared):
-            if item["clip"].get("transition") != "fade":
-                continue
-            span = min(float(item["clip"].get("fade_duration") or 0.5),
-                       SEQUENCE_MAX_FADE, item["length"] * SEQUENCE_FADE_SHARE)
-            if i > 0:
-                span = min(span, prepared[i - 1]["length"] * SEQUENCE_FADE_SHARE)
-                prepared[i - 1]["fade_out"] = max(prepared[i - 1]["fade_out"], span)
-            item["fade_in"] = max(item["fade_in"], span)
+        kinds, spans, cuts = _plan_transitions(clips, lengths)
 
-        # Pass 2 — one normalised segment per clip.
-        segments, entries, timeline_at = [], [], 0.0
-        for index, item in enumerate(prepared):
-            seg = tmp / f"seg{index}.mp4"
+        def piece(index: int, offset: float, span: float,
+                  fade_in: float = 0.0, fade_out: float = 0.0) -> Path:
+            """One cached slice of clip `index`, ready to be concatenated."""
+            item = prepared[index]
             clip = item["clip"]
-            if item["kind"] == "video":
-                _encode_video_segment(clip, item["path"], seg, item["start_in_source"],
-                                      item["length"], width, height,
-                                      item["fade_in"], item["fade_out"])
-            else:
-                _encode_still_segment(clip, item["path"], seg, item["length"],
-                                      width, height, item["fade_in"], item["fade_out"])
-            segments.append(seg)
+            key = _cache_key({
+                "src": clip.get("url") or str(item["path"].name),
+                "sha": (clip.get("provenance") or {}).get("sha256"),
+                "still": item["still"], "start": round(item["start"] + offset, 3),
+                "off": round(offset, 3), "len": round(span, 3),
+                "clip_len": round(lengths[index], 3),
+                "w": width, "h": height, "fps": SEQUENCE_FPS,
+                "fi": round(fade_in, 3), "fo": round(fade_out, 3),
+                "look": clip.get("look"), "motion": clip.get("motion"),
+                "b": clip.get("brightness"), "c": clip.get("contrast"),
+                "s": clip.get("saturation"), "vol": clip.get("volume"),
+                "voice": clip.get("voice_url"), "vvol": clip.get("voice_volume"),
+                "cap": clip.get("text"), "title": clip.get("title_style"),
+            })
+            return _cached("piece", key, ".mp4", lambda out: _encode_piece(
+                clip, out, source=item["path"],
+                offset=(item["start"] + offset) if not item["still"] else offset,
+                length=span, width=width, height=height,
+                fade_in=fade_in, fade_out=fade_out,
+                clip_length=lengths[index], voice=item["voice"],
+            ))
+
+        # Pass 2 — lay out the pieces in order. A fade emits a darkened tail and
+        # a lifting head as separate pieces (total length unchanged); a dissolve
+        # emits ONE piece that is both clips at once (total length shortened by
+        # the overlap). Everything between is untouched body.
+        pieces, entries, at = [], [], 0.0
+        for index, item in enumerate(prepared):
+            clip, length, span = item["clip"], lengths[index], spans[index]
+            head_cut, tail_cut = cuts[index]
+
+            if kinds[index] == "fade":
+                pieces.append(piece(index, 0.0, span, fade_in=span))
+            elif kinds[index] == "dissolve":
+                tail = piece(index - 1, lengths[index - 1] - span, span)
+                head = piece(index, 0.0, span)
+                blend_key = _cache_key({"tail": tail.name, "head": head.name, "d": round(span, 3)})
+                pieces.append(_cached("blend", blend_key, ".mp4",
+                                      lambda out, a=tail, b=head, s=span: _encode_dissolve(a, b, out, s)))
+                at -= span  # a dissolve overlaps, so the film gets shorter here
+
+            body = length - head_cut - tail_cut
+            if body > 0.01:
+                pieces.append(piece(index, head_cut, body))
 
             entry = {
                 "index": index,
                 "source": clip["source"],
                 "ref_id": clip.get("ref_id"),
-                "starts_at_s": round(timeline_at, 3),
-                "duration_s": round(item["length"], 3),
-                "transition_in": clip.get("transition") or "cut",
+                "starts_at_s": round(at, 3),
+                "duration_s": round(length, 3),
+                "transition_in": kinds[index],
+                "transition_s": round(span, 3) if kinds[index] != "cut" else 0.0,
                 "look": clip.get("look") or "none",
                 "motion": clip.get("motion") or "none",
                 "provenance": dict(clip.get("provenance") or {}),
@@ -1721,23 +2118,34 @@ def render_sequence(
             if clip["source"] == "title":
                 entry["text"] = clip.get("text")
                 entry["subtitle"] = clip.get("subtitle")
+                entry["title_style"] = clip.get("title_style") or "center"
             else:
                 entry["url"] = clip["url"]
                 if clip.get("text"):
                     entry["burned_in_caption"] = clip["text"]
-            if item["kind"] == "video":
+            if not item["still"]:
                 entry["trimmed_from"] = {
-                    "in_s": round(item["start_in_source"], 3),
-                    "out_s": round(item["start_in_source"] + item["length"], 3),
+                    "in_s": round(item["start"], 3),
+                    "out_s": round(item["start"] + length, 3),
                     "source_duration_s": round(item["source_duration"], 3),
                 }
+            if clip.get("voice_url"):
+                entry["voiceover"] = {
+                    "url": clip["voice_url"],
+                    "volume": clip.get("voice_volume") or 1.0,
+                }
             entries.append(entry)
-            timeline_at += item["length"]
+            at += length
 
-        # Pass 3 — join. Every segment shares codec, rate, size and channel
+            # A fade out of this clip into the next belongs after its body.
+            if index + 1 < len(prepared) and kinds[index + 1] == "fade":
+                next_span = spans[index + 1]
+                pieces.append(piece(index, length - next_span, next_span, fade_out=next_span))
+
+        # Pass 3 — join. Every piece shares codec, rate, size and channel
         # layout, so the concat demuxer can stream-copy them.
-        list_path = tmp / "segments.txt"
-        list_path.write_text("\n".join(f"file '{seg}'" for seg in segments) + "\n")
+        list_path = tmp / "pieces.txt"
+        list_path.write_text("\n".join(f"file '{p}'" for p in pieces) + "\n")
         joined = tmp / "joined.mp4"
         _run_ffmpeg(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
@@ -1747,8 +2155,9 @@ def render_sequence(
 
         total = _probe_duration_s(joined)
         manifest = _build_sequence_manifest(
-            name, entries, total, width, height,
+            name, entries, total, width, height, resolution,
             [{"url": t.get("url"), "volume": t.get("volume", 0.25),
+              "ducked": bool(t.get("duck", True)),
               "provenance": t.get("provenance") or {}} for t in audio_tracks],
         )
 
@@ -1770,20 +2179,14 @@ def render_sequence(
         out_path = tmp / "out.mp4"
         args = ["ffmpeg", "-y", "-i", str(joined)]
         for track_index, track in enumerate(audio_tracks):
-            track_path = tmp / f"track{track_index}.src"
-            track_path.write_bytes(download_bytes(track["url"]))
+            track_path = _cached_source(track["url"], None, f".track{track_index}")
             args += ["-stream_loop", "-1", "-i", str(track_path)]
         args += ["-f", "ffmetadata", "-i", str(meta_path)]
 
         if audio_tracks:
-            mix = []
-            for track_index, track in enumerate(audio_tracks):
-                volume = max(0.0, min(2.0, float(track.get("volume") or 0.25)))
-                mix.append(f"[{track_index + 1}:a]volume={volume:.3f}[t{track_index}]")
-            labels = "[0:a]" + "".join(f"[t{i}]" for i in range(len(audio_tracks)))
-            mix.append(f"{labels}amix=inputs={len(audio_tracks) + 1}"
-                       f":duration=first:dropout_transition=0:normalize=0[aout]")
-            args += ["-filter_complex", ";".join(mix),
+            volumes = [max(0.0, min(2.0, float(t.get("volume") or 0.25))) for t in audio_tracks]
+            ducks = [bool(t.get("duck", True)) for t in audio_tracks]
+            args += ["-filter_complex", _duck_graph(len(audio_tracks), volumes, ducks),
                      "-map", "0:v:0", "-map", "[aout]",
                      "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                      "-map_metadata", str(len(audio_tracks) + 1)]
@@ -1794,6 +2197,10 @@ def render_sequence(
 
         data = out_path.read_bytes()
         duration = _probe_duration_s(out_path)
+
+    # Keep the cache within its budget once the render owns no temp files —
+    # doing it earlier could evict a piece this very render still needs.
+    prune_piece_cache()
 
     stem = _uuid.uuid4().hex
     url, sha = upload_bytes(f"videos/sequence/{stem}.mp4", data, "video/mp4")
@@ -1892,12 +2299,15 @@ _PLANNER_SYSTEM = (
 _PLANNER_SCHEMA = (
     'Return ONLY JSON of the form {"name": string, "clips": [clip, ...]} where a '
     'clip is either {"key": "<shot key from the list>", "duration": number, '
-    '"transition": "cut"|"fade", "look": "none"|"enhance"|"warm"|"cool"|"noir"|'
-    '"vivid"|"vintage"|"soft", "motion": "none"|"zoom_in"|"zoom_out"|"pan_left"|'
-    '"pan_right", "text": string|null} or a title card {"key": "title", '
-    '"duration": number, "transition": "cut"|"fade", "text": string, '
-    '"subtitle": string|null}. "motion" applies to stills only. "text" on a '
-    'non-title clip is a caption burned into the frame — use it sparingly.'
+    '"transition": "cut"|"fade"|"dissolve", "look": "none"|"enhance"|"warm"|'
+    '"cool"|"noir"|"vivid"|"vintage"|"soft", "motion": "none"|"zoom_in"|'
+    '"zoom_out"|"pan_left"|"pan_right", "text": string|null} or a title card '
+    '{"key": "title", "duration": number, "transition": "cut"|"fade"|"dissolve", '
+    '"text": string, "subtitle": string|null, "title_style": "center"|'
+    '"lower_third"|"left"|"end_card"}. "motion" applies to stills only. '
+    '"dissolve" blends two shots and suits a soft change of place or time; '
+    '"fade" dips through black and suits a real break. "text" on a non-title '
+    'clip is a caption burned into the frame — use it sparingly.'
 )
 
 

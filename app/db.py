@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS sequences (
     name TEXT NOT NULL,
     clips_json TEXT NOT NULL,
     aspect_ratio TEXT NOT NULL DEFAULT '16:9',
+    resolution TEXT NOT NULL DEFAULT '720p',
     -- Music/voiceover laid under the finished cut, added after the fact:
     -- [{url, volume, label}]. A list rather than one column because a spot
     -- routinely wants a bed AND a voiceover, at different levels.
@@ -240,6 +241,9 @@ MIGRATIONS = (
     "ALTER TABLE workspaces ADD COLUMN units_quota INTEGER NOT NULL DEFAULT 0",
     # Runs after the ALTER above, so the column exists on old databases too.
     "CREATE INDEX IF NOT EXISTS idx_workspaces_created_ip ON workspaces (created_ip)",
+    # Output resolution per cut. Sequences created before this existed render
+    # at the default tier, which is what they were rendered at anyway.
+    "ALTER TABLE sequences ADD COLUMN resolution TEXT NOT NULL DEFAULT '720p'",
 )
 
 
@@ -756,16 +760,17 @@ def create_sequence(
     clips: list[dict],
     aspect_ratio: str,
     audio_tracks: list[dict],
+    resolution: str = "720p",
 ) -> dict:
     import json
 
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO sequences
-               (workspace_id, name, clips_json, aspect_ratio, audio_json,
+               (workspace_id, name, clips_json, aspect_ratio, resolution, audio_json,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (workspace_id, name, json.dumps(clips), aspect_ratio,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, name, json.dumps(clips), aspect_ratio, resolution,
              json.dumps(audio_tracks), now(), now()),
         )
         return _sequence_row(conn.execute(
@@ -798,6 +803,7 @@ def update_sequence(
     clips: list[dict],
     aspect_ratio: str,
     audio_tracks: list[dict],
+    resolution: str = "720p",
 ) -> dict | None:
     """Save an edit. A render in flight is left alone — editing the clip list
     while ffmpeg is working would otherwise make the resulting manifest
@@ -807,11 +813,11 @@ def update_sequence(
     with get_conn() as conn:
         cur = conn.execute(
             """UPDATE sequences
-               SET name = ?, clips_json = ?, aspect_ratio = ?, audio_json = ?,
-                   updated_at = ?
+               SET name = ?, clips_json = ?, aspect_ratio = ?, resolution = ?,
+                   audio_json = ?, updated_at = ?
                WHERE id = ? AND workspace_id = ? AND status != 'rendering'""",
-            (name, json.dumps(clips), aspect_ratio, json.dumps(audio_tracks), now(),
-             sequence_id, workspace_id),
+            (name, json.dumps(clips), aspect_ratio, resolution,
+             json.dumps(audio_tracks), now(), sequence_id, workspace_id),
         )
         if cur.rowcount == 0:
             return None

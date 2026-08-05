@@ -1,4 +1,5 @@
 import os
+import tempfile
 
 from dotenv import load_dotenv
 
@@ -56,3 +57,13 @@ WORKSPACE_UNIT_QUOTA = _int_env("WORKSPACE_UNIT_QUOTA", 40)
 # single corporate NAT share one public IP, and a hard 1:1 would silently
 # lock out every colleague after the first visitor from that company.
 MAX_WORKSPACES_PER_IP = _int_env("MAX_WORKSPACES_PER_IP", 3)
+
+# Timeline: encoded pieces of a cut are cached on disk between renders, keyed by
+# everything that determines their bytes. Without it, nudging one clip's length
+# re-encodes the whole film — which is what decides whether someone iterates
+# three times or fifteen. Lives outside the repo tree so a redeploy can't serve
+# stale pieces, and is capped so it can't fill the VM's disk.
+SEQUENCE_CACHE_DIR = os.environ.get(
+    "SEQUENCE_CACHE_DIR", os.path.join(tempfile.gettempdir(), "loomina-pieces")
+)
+SEQUENCE_CACHE_MAX_MB = _int_env("SEQUENCE_CACHE_MAX_MB", 1536)

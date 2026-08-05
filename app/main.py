@@ -52,11 +52,16 @@ from app.pipelines import (
     extract_poster_frame,
     mux_video_with_audio,
     overlay_video,
+    DEFAULT_SEQUENCE_RESOLUTION,
+    SEQUENCE_ASPECTS,
     SEQUENCE_LOOKS,
     SEQUENCE_MAX_FADE,
     SEQUENCE_MOTIONS,
-    SEQUENCE_SIZES,
+    SEQUENCE_RESOLUTIONS,
+    SEQUENCE_TITLE_STYLES,
+    SEQUENCE_TRANSITIONS,
     ffmpeg_has_drawtext,
+    ffmpeg_has_filter,
     plan_sequence,
     probe_media,
     read_embedded_manifest,
@@ -407,19 +412,27 @@ def capabilities():
         "image_models": available_image_models(),
         "video_models": available_video_models(),
         "sequence": {
-            "aspect_ratios": list(SEQUENCE_SIZES),
+            "aspect_ratios": list(SEQUENCE_ASPECTS),
+            "resolutions": list(SEQUENCE_RESOLUTIONS),
+            "transitions": list(SEQUENCE_TRANSITIONS),
             "looks": list(SEQUENCE_LOOKS),
             "motions": list(SEQUENCE_MOTIONS),
+            "title_styles": list(SEQUENCE_TITLE_STYLES),
             "max_clips": MAX_SEQUENCE_CLIPS,
             "max_seconds": MAX_SEQUENCE_SECONDS,
             "max_audio_tracks": MAX_AUDIO_TRACKS,
             "auto_cut": bool(OPENAI_API_KEY),
         },
-        # Reported, not acted on: the timeline draws every piece of text with
-        # Pillow precisely so it does not depend on this. Surfacing it makes
-        # the deployed image's actual build inspectable instead of assumed —
-        # see pipelines.ffmpeg_has_drawtext.
-        "ffmpeg": {"drawtext": ffmpeg_has_drawtext()},
+        # Reported, not acted on. drawtext: the timeline draws every piece of
+        # text with Pillow precisely so it does not depend on it (see
+        # pipelines.ffmpeg_has_drawtext). sidechaincompress: without it a
+        # soundtrack cannot duck under speech and is laid at a static level
+        # instead — the mix still works, it just doesn't step back. Both are
+        # surfaced so the deployed image's build is inspectable, not assumed.
+        "ffmpeg": {
+            "drawtext": ffmpeg_has_drawtext(),
+            "sidechaincompress": ffmpeg_has_filter("sidechaincompress"),
+        },
     }
 
 
@@ -1667,10 +1680,19 @@ MAX_AUDIO_TRACKS = 4
 
 SequenceLook = Literal["none", "enhance", "warm", "cool", "noir", "vivid", "vintage", "soft"]
 SequenceMotion = Literal["none", "zoom_in", "zoom_out", "pan_left", "pan_right", "pan_up", "pan_down"]
-# The request schema and the renderer must offer exactly the same set — a look
-# accepted here but unknown there would silently render ungraded.
+SequenceTransition = Literal["cut", "fade", "dissolve"]
+SequenceTitleStyle = Literal["center", "lower_third", "left", "end_card"]
+SequenceAspect = Literal["16:9", "9:16", "1:1"]
+SequenceResolution = Literal["720p", "1080p"]
+# The request schema and the renderer must offer exactly the same sets — an
+# option accepted here but unknown there would silently render as its default,
+# which is the worst kind of bug: it looks like the feature simply didn't work.
 assert set(SequenceLook.__args__) == set(SEQUENCE_LOOKS)
 assert set(SequenceMotion.__args__) == set(SEQUENCE_MOTIONS)
+assert set(SequenceTransition.__args__) == set(SEQUENCE_TRANSITIONS)
+assert set(SequenceTitleStyle.__args__) == set(SEQUENCE_TITLE_STYLES)
+assert set(SequenceAspect.__args__) == set(SEQUENCE_ASPECTS)
+assert set(SequenceResolution.__args__) == set(SEQUENCE_RESOLUTIONS)
 
 
 class TimelineClip(BaseModel):
@@ -1683,7 +1705,9 @@ class TimelineClip(BaseModel):
     duration: float = Field(default=3.5, ge=0.2, le=60)
     in_point: float | None = Field(default=None, ge=0)
     out_point: float | None = Field(default=None, ge=0)
-    transition: Literal["cut", "fade"] = "cut"
+    # "fade" dips through black and keeps the film's length; "dissolve" blends
+    # the two clips and therefore SHORTENS it by the overlap.
+    transition: SequenceTransition = "cut"
     fade_duration: float = Field(default=0.5, ge=0.1, le=SEQUENCE_MAX_FADE)
     look: SequenceLook = "none"
     motion: SequenceMotion = "none"
@@ -1694,17 +1718,26 @@ class TimelineClip(BaseModel):
     volume: float = Field(default=1.0, ge=0.0, le=4.0)
     text: str | None = Field(default=None, max_length=300)
     subtitle: str | None = Field(default=None, max_length=300)
+    title_style: SequenceTitleStyle = "center"
+    # A voice line for THIS clip, on top of whatever audio it already has —
+    # the motion comic's one-voice-per-panel idea, available per clip here.
+    voice_url: str | None = Field(default=None, max_length=2000)
+    voice_volume: float = Field(default=1.0, ge=0.0, le=4.0)
 
 
 class TimelineAudioTrack(BaseModel):
     url: str = Field(min_length=1, max_length=2000)
     volume: float = Field(default=0.25, ge=0.0, le=2.0)
+    # Ducked by default: a bed that doesn't step back for speech is the single
+    # most common way an otherwise good cut sounds amateurish.
+    duck: bool = True
     label: str | None = Field(default=None, max_length=120)
 
 
 class SequenceRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+    aspect_ratio: SequenceAspect = "16:9"
+    resolution: SequenceResolution = DEFAULT_SEQUENCE_RESOLUTION
     clips: list[TimelineClip] = Field(default_factory=list, max_length=MAX_SEQUENCE_CLIPS)
     audio_tracks: list[TimelineAudioTrack] = Field(default_factory=list, max_length=MAX_AUDIO_TRACKS)
 
@@ -1749,6 +1782,13 @@ def _resolve_clip(workspace: str, index: int, clip: TimelineClip) -> dict:
     provenance of whatever is behind it. Every lookup is workspace-scoped, so a
     guessed row id from another tenant resolves to nothing."""
     data = clip.model_dump()
+    # A voice line is fetched server-side like any other input, so it may only
+    # ever name an object in our own bucket.
+    if clip.voice_url and not is_bucket_url(clip.voice_url):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Clip {index + 1}: a voiceover must be audio from this workspace.")
+
     if clip.source == "title":
         if not (clip.text or "").strip():
             raise HTTPException(
@@ -1804,6 +1844,11 @@ def _resolve_sequence(workspace: str, body: SequenceRequest) -> tuple[list[dict]
             estimate += (clip.get("out_point") or clip.get("duration") or 5.0) - (clip.get("in_point") or 0.0)
         else:
             estimate += clip.get("duration") or 3.5
+        # A dissolve overlaps its two clips, so it makes the film shorter —
+        # the estimate has to say so, or a cut right on the limit is refused
+        # for length it will not actually have.
+        if clip.get("transition") == "dissolve":
+            estimate -= min(float(clip.get("fade_duration") or 0.5), SEQUENCE_MAX_FADE)
     if estimate > MAX_SEQUENCE_SECONDS:
         raise HTTPException(
             status_code=400,
@@ -1854,6 +1899,7 @@ def create_sequence_endpoint(body: SequenceRequest, workspace: str = Depends(req
         clips=[c.model_dump() for c in body.clips],
         aspect_ratio=body.aspect_ratio,
         audio_tracks=tracks,
+        resolution=body.resolution,
     ))
 
 
@@ -1876,6 +1922,7 @@ def update_sequence(sequence_id: int, body: SequenceRequest,
         clips=[c.model_dump() for c in body.clips],
         aspect_ratio=body.aspect_ratio,
         audio_tracks=[t.model_dump() for t in body.audio_tracks],
+        resolution=body.resolution,
     )
     if updated is None:
         existing = db.get_sequence(workspace, sequence_id)
@@ -1895,13 +1942,15 @@ def delete_sequence(sequence_id: int, workspace: str = Depends(require_workspace
 
 
 def _run_sequence_render(workspace: str, sequence_id: int, name: str, clips: list[dict],
-                         aspect_ratio: str, tracks: list[dict]) -> None:
+                         aspect_ratio: str, tracks: list[dict],
+                         resolution: str = DEFAULT_SEQUENCE_RESOLUTION) -> None:
     """Background worker — a 30-second cut is a minute or two of ffmpeg, well
     past a request's patience, so the row's status is polled instead (same
-    shape as _run_video)."""
+    shape as _run_video). Re-renders are far quicker: the piece cache means
+    only what actually changed is encoded again."""
     video_id = None
     try:
-        result = render_sequence(name, clips, aspect_ratio, tracks)
+        result = render_sequence(name, clips, aspect_ratio, tracks, resolution)
         video = db.create_video(
             workspace_id=workspace, character_id=None,
             character_name=None, kind="sequence",
@@ -1944,6 +1993,7 @@ def render_sequence_endpoint(sequence_id: int, workspace: str = Depends(require_
 
     body = SequenceRequest(
         name=sequence["name"], aspect_ratio=sequence["aspect_ratio"],
+        resolution=sequence.get("resolution") or DEFAULT_SEQUENCE_RESOLUTION,
         clips=sequence["clips"], audio_tracks=sequence["audio_tracks"],
     )
     clips, tracks = _resolve_sequence(workspace, body)
@@ -1955,7 +2005,7 @@ def render_sequence_endpoint(sequence_id: int, workspace: str = Depends(require_
     threading.Thread(
         target=_run_sequence_render,
         args=(workspace, sequence_id, sequence["name"], clips,
-              sequence["aspect_ratio"], tracks),
+              sequence["aspect_ratio"], tracks, body.resolution),
         daemon=True,
     ).start()
     return _sequence_public(db.get_sequence(workspace, sequence_id))
@@ -2131,6 +2181,7 @@ def auto_cut(body: AutoCutRequest, workspace: str = Depends(require_workspace)):
             "motion": raw.get("motion"),
             "text": raw.get("text"),
             "subtitle": raw.get("subtitle"),
+            "title_style": raw.get("title_style"),
         }
         fields = {k: v for k, v in fields.items() if v not in (None, "")}
         if key == "title":

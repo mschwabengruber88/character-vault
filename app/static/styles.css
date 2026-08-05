@@ -1977,3 +1977,149 @@ input:focus-visible, textarea:focus-visible, button:focus-visible {
 .tl-prov-actions { margin-top: 10px; display: flex; gap: 8px; }
 
 .tl-sequence-facts { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-faint); }
+
+/* ---------- Timeline: preview stage ----------
+ * Two stacked layers so a dissolve has something to dissolve between, plus a
+ * black sheet above them for dip-through-black fades. Only opacity and filter
+ * change per frame, which keeps the player on the compositor rather than
+ * relayouting sixty times a second. */
+
+.tl-preview {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.tl-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  /* The text panel sizes itself in cqw so it scales with the stage, exactly as
+     the Pillow version scales with the output frame. Those units need a query
+     container to resolve against. It has to be inline-size, not size: the
+     stage's height comes from aspect-ratio, and asking the container to be
+     size-queried in both axes leaves that height unresolvable — cqw then
+     computes against nothing and every panel collapses to the clamp's floor. */
+  container-type: inline-size;
+}
+
+.tl-stage-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.tl-stage-layer img,
+.tl-stage-layer video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  /* The camera move is a transform on the media itself, so it scales about the
+     frame's centre exactly as zoompan crops about the source's centre. */
+  transform-origin: center center;
+}
+
+.tl-stage-black {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The preview's stand-in for a Pillow-drawn text panel: same four
+   arrangements, same palette, so timing and weight can be judged before a
+   render exists. */
+.tl-stage-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 8% 9%;
+  background: #0B0A16;
+  color: #fff;
+  text-align: center;
+  justify-content: center;
+  align-items: center;
+}
+.tl-stage-card strong { font-size: clamp(16px, 6cqw, 44px); line-height: 1.2; }
+.tl-stage-card span { font-size: clamp(11px, 3cqw, 20px); color: var(--lime); }
+.tl-stage-card.left,
+.tl-stage-card.lower_third { text-align: left; align-items: flex-start; }
+.tl-stage-card.lower_third { justify-content: flex-end; padding-bottom: 12%; }
+.tl-stage-card.end_card { flex-direction: column-reverse; }
+
+.tl-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.tl-play {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-inset);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+}
+.tl-play:hover:not(:disabled) { border-color: var(--brass); color: var(--brass); }
+.tl-play:disabled { opacity: 0.4; cursor: default; }
+
+.tl-scrubber {
+  position: relative;
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.tl-playhead {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--brass);
+  box-shadow: 0 0 0 3px rgba(157, 91, 255, 0.25);
+  pointer-events: none;
+}
+
+.tl-preview-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 96px;
+  text-align: right;
+}
+
+/* A dissolve reads differently from a dip to black, so the marker does too. */
+.tl-join.dissolve { color: var(--pink); }
+
+.tl-audio-duck {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+#tl-undo:disabled, #tl-redo:disabled { opacity: 0.35; cursor: default; }

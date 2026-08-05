@@ -2130,3 +2130,286 @@ def test_render_sequence_gives_a_silent_still_an_audio_track(tmp_path):
     assert kinds == {"video", "audio"}
     video = next(s for s in probe["streams"] if s["codec_type"] == "video")
     assert (video["width"], video["height"]) == (720, 720)
+
+
+# ── Timeline: transitions, cache, grading, audio ─────────────────────────
+
+def test_transitions_are_clamped_and_degrade_to_a_cut():
+    """A transition may never outlive the clips it touches, and one squeezed
+    below a perceptible length should become an honest cut rather than a
+    flicker nobody can see."""
+    from app.pipelines import _plan_transitions
+
+    clips = [
+        {"transition": "cut"},
+        {"transition": "dissolve", "fade_duration": 2.0},   # asks for more than it may have
+        {"transition": "fade", "fade_duration": 0.5},       # neighbour is far too short
+    ]
+    kinds, spans, cuts = _plan_transitions(clips, [4.0, 4.0, 0.25])
+
+    assert kinds[0] == "cut" and spans[0] == 0.0
+    # Capped by the 35% share of a 4s clip, not by the 2.0s requested.
+    assert kinds[1] == "dissolve"
+    assert spans[1] == pytest.approx(1.4, abs=0.01)
+    # A 0.25s clip has no room left after its own head/tail budget.
+    assert kinds[2] == "cut"
+    # Clip 0 gives up its tail to the dissolve, clip 1 its head.
+    assert cuts[0] == [0.0, spans[1]]
+    assert cuts[1] == [spans[1], 0.0]
+
+
+def test_a_dissolve_on_the_first_clip_becomes_an_opening_fade():
+    """There is nothing before clip one to dissolve from; the only thing that
+    shape can mean is opening out of black."""
+    from app.pipelines import _plan_transitions
+
+    kinds, _, _ = _plan_transitions([{"transition": "dissolve"}], [4.0])
+    assert kinds[0] == "fade"
+
+
+def test_sequence_size_matrix_covers_both_tiers():
+    from app.pipelines import sequence_size
+
+    assert sequence_size("16:9", "720p") == (1280, 720)
+    assert sequence_size("16:9", "1080p") == (1920, 1080)
+    assert sequence_size("9:16", "1080p") == (1080, 1920)
+    # Square uses the SHORT edge, or picking "square" would silently make the
+    # slowest of the three formats.
+    assert sequence_size("1:1", "1080p") == (1080, 1080)
+
+
+def test_ducking_falls_back_to_a_static_level_without_the_filter(monkeypatch):
+    from app import pipelines
+
+    monkeypatch.setattr(pipelines, "ffmpeg_has_filter", lambda name: True)
+    graph = pipelines._duck_graph(1, [0.3], [True])
+    assert "sidechaincompress" in graph
+    assert "asplit=2" in graph
+
+    monkeypatch.setattr(pipelines, "ffmpeg_has_filter", lambda name: False)
+    fallback = pipelines._duck_graph(1, [0.3], [True])
+    assert "sidechaincompress" not in fallback
+    # The mix still happens — quieter, never wrong.
+    assert "amix=inputs=2" in fallback
+    assert "volume=0.300" in fallback
+
+
+def test_title_styles_produce_genuinely_different_cards():
+    from app.pipelines import SEQUENCE_TITLE_STYLES, _render_title_card
+
+    rendered = {
+        style: _render_title_card("Loomina", "one character, every medium", 640, 360, style)
+        for style in SEQUENCE_TITLE_STYLES
+    }
+    assert len(set(rendered.values())) == len(SEQUENCE_TITLE_STYLES)
+    # An unknown style falls back to the centred design rather than failing.
+    assert (_render_title_card("x", None, 320, 180, "nonsense")
+            == _render_title_card("x", None, 320, 180, "center"))
+
+
+def test_kenburns_expressions_are_absolute_so_a_piece_can_start_mid_move():
+    """A still cut into pieces must continue its camera move across the join.
+    Accumulating expressions (`zoom+step`) restart at 1.0 in every piece and
+    snap the move back to the start; absolute ones do not."""
+    from app.pipelines import _kenburns_chain
+
+    start = _kenburns_chain("zoom_in", 640, 360, 24, clip_frames=96, frame_offset=0)
+    middle = _kenburns_chain("zoom_in", 640, 360, 24, clip_frames=96, frame_offset=48)
+    assert "zoom+" not in start and "zoom+" not in middle
+    assert "(on+0)" in start and "(on+48)" in middle
+
+
+@needs_ffmpeg
+def test_a_dissolve_overlaps_and_shortens_the_finished_cut(tmp_path, monkeypatch):
+    """A cross-dissolve blends two clips, so the film is shorter than the sum
+    of its parts by exactly the overlap — and the manifest has to say so."""
+    import io
+
+    from PIL import Image
+
+    from app import pipelines
+
+    monkeypatch.setattr(pipelines, "SEQUENCE_CACHE_DIR", str(tmp_path / "cache"))
+    still = io.BytesIO()
+    Image.new("RGB", (400, 300), (200, 60, 40)).save(still, format="PNG")
+    stored = {}
+
+    def fake_upload(key, data, content_type):
+        stored[key] = data
+        return f"https://bucket/{key}", "sha"
+
+    def render(transition):
+        with patch("app.storage.download_bytes", side_effect=lambda url: still.getvalue()), \
+             patch("app.storage.upload_bytes", side_effect=fake_upload):
+            return pipelines.render_sequence("Blend", [
+                {"source": "studio", "ref_id": 1, "url": "https://bucket/a.png",
+                 "duration": 2.0, "provenance": {"ai_generated": True, "model": "gpt-image-2"}},
+                {"source": "studio", "ref_id": 2, "url": "https://bucket/b.png",
+                 "duration": 2.0, "transition": transition, "fade_duration": 0.6,
+                 "provenance": {"ai_generated": True, "model": "gpt-image-2"}},
+            ], aspect_ratio="16:9")
+
+    dissolved = render("dissolve")
+    faded = render("fade")
+
+    # A fade dips through black and keeps the length; a dissolve eats the overlap.
+    assert faded["duration"] == pytest.approx(4.0, abs=0.25)
+    assert dissolved["duration"] == pytest.approx(3.4, abs=0.25)
+    assert dissolved["duration"] < faded["duration"] - 0.3
+
+    sources = dissolved["manifest"]["sources"]
+    assert sources[1]["transition_in"] == "dissolve"
+    assert sources[1]["transition_s"] == pytest.approx(0.6, abs=0.01)
+    # Clip 2 starts BEFORE clip 1 has finished — that is what an overlap means.
+    assert sources[1]["starts_at_s"] == pytest.approx(1.4, abs=0.01)
+    assert dissolved["manifest"]["assembly"]["transitions"] == ["cut", "dissolve"]
+
+
+@needs_ffmpeg
+def test_the_piece_cache_reuses_everything_that_did_not_change(tmp_path, monkeypatch):
+    """Re-rendering after nudging one clip must not re-encode the whole film —
+    that is the difference between iterating three times and fifteen."""
+    import io
+
+    from PIL import Image
+
+    from app import pipelines
+
+    monkeypatch.setattr(pipelines, "SEQUENCE_CACHE_DIR", str(tmp_path / "cache"))
+    still = io.BytesIO()
+    Image.new("RGB", (320, 240), (30, 90, 160)).save(still, format="PNG")
+
+    encoded = []
+    real_encode = pipelines._encode_piece
+
+    def counting_encode(clip, out_path, **kwargs):
+        encoded.append(round(kwargs["length"], 3))
+        return real_encode(clip, out_path, **kwargs)
+
+    monkeypatch.setattr(pipelines, "_encode_piece", counting_encode)
+
+    def render(second_duration):
+        with patch("app.storage.download_bytes", side_effect=lambda url: still.getvalue()), \
+             patch("app.storage.upload_bytes", side_effect=lambda k, d, c: (f"https://b/{k}", "sha")):
+            return pipelines.render_sequence("Cached", [
+                {"source": "studio", "ref_id": 1, "url": "https://bucket/a.png", "duration": 1.0,
+                 "provenance": {"ai_generated": True, "model": "gpt-image-2"}},
+                {"source": "studio", "ref_id": 2, "url": "https://bucket/b.png",
+                 "duration": second_duration,
+                 "provenance": {"ai_generated": True, "model": "gpt-image-2"}},
+            ], aspect_ratio="1:1")
+
+    render(1.0)
+    first_pass = len(encoded)
+    assert first_pass == 2
+
+    encoded.clear()
+    render(1.0)          # nothing changed at all
+    assert encoded == [], "an unchanged re-render must encode nothing"
+
+    encoded.clear()
+    render(1.6)          # only the second clip moved
+    assert encoded == [1.6], "only the clip that changed may be re-encoded"
+
+
+@needs_ffmpeg
+def test_a_per_clip_voiceover_lands_on_that_clip(tmp_path, monkeypatch):
+    """A still is silent by itself; giving it a voice line is the motion
+    comic's one-voice-per-panel idea, available per clip here."""
+    import io
+    import json
+    import subprocess
+
+    from PIL import Image
+
+    from app import pipelines
+
+    monkeypatch.setattr(pipelines, "SEQUENCE_CACHE_DIR", str(tmp_path / "cache"))
+    still = io.BytesIO()
+    Image.new("RGB", (320, 320), (240, 200, 60)).save(still, format="PNG")
+    voice_path = tmp_path / "voice.mp3"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", str(voice_path)],
+        check=True, capture_output=True, timeout=120,
+    )
+    sources = {
+        "https://bucket/s.png": still.getvalue(),
+        "https://bucket/voice.mp3": voice_path.read_bytes(),
+    }
+    stored = {}
+
+    with patch("app.storage.download_bytes", side_effect=lambda url: sources[url]), \
+         patch("app.storage.upload_bytes",
+               side_effect=lambda k, d, c: (stored.setdefault(k, d), f"https://b/{k}", "sha")[1:]):
+        result = pipelines.render_sequence("Voiced", [
+            {"source": "studio", "ref_id": 1, "url": "https://bucket/s.png", "duration": 2.0,
+             "voice_url": "https://bucket/voice.mp3", "voice_volume": 1.0,
+             "provenance": {"ai_generated": True, "model": "gpt-image-2"}},
+        ], aspect_ratio="1:1")
+
+    assert result["manifest"]["sources"][0]["voiceover"]["url"] == "https://bucket/voice.mp3"
+
+    out = tmp_path / "voiced.mp4"
+    out.write_bytes(stored[next(k for k in stored if k.endswith(".mp4"))])
+    # The audio must carry actual signal, not the silence a bare still gets.
+    level = subprocess.run(
+        ["ffmpeg", "-i", str(out), "-af", "volumedetect", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=60,
+    ).stderr
+    peak = next((line for line in level.splitlines() if "max_volume" in line), "")
+    assert peak, "no volume information — the clip has no audio at all"
+    assert float(peak.split("max_volume:")[1].strip().split()[0]) > -60.0
+
+
+def test_sequence_accepts_dissolve_resolution_and_a_ducked_track(client):
+    still = _still(client)
+    with patch("app.main.is_bucket_url", return_value=True):
+        resp = client.post("/sequences", json={
+            "name": "Spot 1080",
+            "aspect_ratio": "16:9",
+            "resolution": "1080p",
+            "clips": [
+                {"source": "studio", "ref_id": still["id"], "duration": 3},
+                {"source": "title", "text": "Loomina", "duration": 2,
+                 "transition": "dissolve", "title_style": "end_card"},
+            ],
+            "audio_tracks": [{"url": "https://bucket/music.mp3", "volume": 0.3, "duck": True}],
+        })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["resolution"] == "1080p"
+    assert body["clips"][1]["transition"] == "dissolve"
+    assert body["clips"][1]["title_style"] == "end_card"
+    assert body["audio_tracks"][0]["duck"] is True
+
+
+def test_sequence_rejects_a_foreign_voiceover_url(client):
+    """A voice line is fetched server-side too, so it gets the same treatment
+    as a soundtrack — bucket URLs only."""
+    still = _still(client)
+    resp = client.post("/sequences", json={
+        "name": "Borrowed voice",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3,
+                   "voice_url": "https://evil.example.com/voice.mp3"}],
+    })
+    assert resp.status_code == 400
+    assert "voiceover" in resp.json()["detail"]
+
+
+def test_sequence_rejects_an_unknown_transition(client):
+    still = _still(client)
+    resp = client.post("/sequences", json={
+        "name": "Star wipe",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3,
+                   "transition": "star_wipe"}],
+    })
+    assert resp.status_code == 422
+
+
+def test_capabilities_report_the_new_options(client):
+    caps = client.get("/capabilities").json()["sequence"]
+    assert caps["transitions"] == ["cut", "fade", "dissolve"]
+    assert caps["resolutions"] == ["720p", "1080p"]
+    assert "lower_third" in caps["title_styles"]
+    ffmpeg = client.get("/capabilities").json()["ffmpeg"]
+    assert isinstance(ffmpeg["sidechaincompress"], bool)

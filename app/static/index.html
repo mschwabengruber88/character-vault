@@ -717,9 +717,18 @@
               <option value="1:1">1:1 — 720×720</option>
             </select>
           </label>
+          <label class="model-row">
+            <span class="model-label" data-i18n="tlResolution">Quality</span>
+            <select id="tl-resolution" class="filter-select">
+              <option value="720p" data-i18n="tlRes720">720p — quick</option>
+              <option value="1080p" data-i18n="tlRes1080">1080p — final</option>
+            </select>
+          </label>
           <span id="tl-total" class="tl-total"></span>
           <span id="tl-dirty" class="tl-dirty" hidden data-i18n="tlUnsaved">unsaved changes</span>
           <span class="tl-toolbar-spacer"></span>
+          <button type="button" id="tl-undo" class="button small" title="Undo (Ctrl+Z)">↶</button>
+          <button type="button" id="tl-redo" class="button small" title="Redo (Ctrl+Shift+Z)">↷</button>
           <button type="button" id="tl-auto-open" class="button small" data-i18n="tlAutoOpen">✦ Assisted cut</button>
           <button type="button" id="tl-new-button" class="button small" data-i18n="tlNew">New</button>
           <button type="button" id="tl-save-button" class="button small" data-i18n="tlSave">Save</button>
@@ -768,6 +777,30 @@
           </aside>
 
           <div class="tl-center">
+            <div class="tl-preview">
+              <div id="tl-stage" class="tl-stage">
+                <div id="tl-stage-a" class="tl-stage-layer">
+                  <img id="tl-stage-a-img" alt="">
+                  <video id="tl-stage-a-video" muted playsinline preload="metadata"></video>
+                  <div id="tl-stage-a-card" class="tl-stage-card" hidden></div>
+                </div>
+                <div id="tl-stage-b" class="tl-stage-layer">
+                  <img id="tl-stage-b-img" alt="">
+                  <video id="tl-stage-b-video" muted playsinline preload="metadata"></video>
+                  <div id="tl-stage-b-card" class="tl-stage-card" hidden></div>
+                </div>
+                <div id="tl-stage-black" class="tl-stage-black"></div>
+              </div>
+              <div class="tl-transport">
+                <button type="button" id="tl-preview-play" class="tl-play">▶</button>
+                <div id="tl-scrubber" class="tl-scrubber">
+                  <div id="tl-playhead" class="tl-playhead"></div>
+                </div>
+                <span id="tl-preview-time" class="tl-preview-time"></span>
+              </div>
+              <p class="generate-hint" data-i18n="tlPreviewNote">Preview — looks and camera moves are approximated in the browser; the render is the truth.</p>
+            </div>
+
             <div class="tl-strip-wrap">
               <div id="tl-strip" class="tl-strip"></div>
               <p id="tl-strip-empty" class="empty-note" data-i18n="tlStripEmpty">Click material on the left to put it on the timeline. Drag the clips to reorder them; click the marker between two clips to switch cut ↔ fade.</p>
