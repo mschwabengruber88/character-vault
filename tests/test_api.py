@@ -1564,3 +1564,569 @@ def test_workspace_response_does_not_leak_the_creating_ip():
         body = c.post("/workspaces", json={"name": "Private"}).json()
     assert "created_ip" not in body
     assert body["units_remaining"] == body["units_quota"]
+
+
+# ── Timeline: sequences, uploads, assisted cut ───────────────────────────
+
+def _still(client, prompt="a still"):
+    """A studio image row to hang timeline clips off, without generating one."""
+    from app import db
+
+    return db.create_studio_image(
+        workspace_id=client.workspace_id, kind="photo-art", prompt=prompt,
+        url="https://example.com/still.png", original_url="https://example.com/still-orig.png",
+        sha256="stillsha", model="gpt-image-2", quality="draft",
+        disclosure="invisible", cost_usd=0.006, manifest_verified=True,
+    )
+
+
+def _fake_render(duration=8.0):
+    return {
+        "url": "https://example.com/seq.mp4", "sha256": "seqsha",
+        "mime_type": "video/mp4", "duration": duration,
+        "manifest_url": "https://example.com/seq.manifest.json",
+        "manifest": {
+            "type": "loomina.sequence.provenance", "version": 1,
+            "sequence": {"name": "Spot", "duration_s": duration, "clip_count": 2},
+            "sources": [], "summary": {"ai_generated_clips": 1, "all_sources_verified": True},
+        },
+    }
+
+
+def test_sequence_crud_and_isolation(client, other_client):
+    still = _still(client)
+    body = {
+        "name": "Spot", "aspect_ratio": "16:9",
+        "clips": [
+            {"source": "studio", "ref_id": still["id"], "duration": 4, "motion": "zoom_in"},
+            {"source": "title", "text": "Loomina", "subtitle": "one character, every medium",
+             "duration": 2.5, "transition": "fade"},
+        ],
+        "audio_tracks": [],
+    }
+    created = client.post("/sequences", json=body)
+    assert created.status_code == 200
+    sequence = created.json()
+    assert sequence["status"] == "draft"
+    assert len(sequence["clips"]) == 2
+    assert sequence["clips"][0]["motion"] == "zoom_in"
+    assert sequence["manifest"] is None
+
+    fetched = client.get(f"/sequences/{sequence['id']}").json()
+    assert fetched["name"] == "Spot"
+
+    body["name"] = "Spot v2"
+    updated = client.put(f"/sequences/{sequence['id']}", json=body)
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Spot v2"
+
+    assert any(s["id"] == sequence["id"] for s in client.get("/sequences").json())
+    # Another tenant can neither see it nor reach it by guessing the id.
+    assert other_client.get("/sequences").json() == []
+    assert other_client.get(f"/sequences/{sequence['id']}").status_code == 404
+    assert other_client.delete(f"/sequences/{sequence['id']}").status_code == 404
+
+    assert client.delete(f"/sequences/{sequence['id']}").status_code == 204
+    assert client.get(f"/sequences/{sequence['id']}").status_code == 404
+
+
+def test_sequence_rejects_broken_references(client):
+    assert client.post("/sequences", json={
+        "name": "Empty", "clips": [],
+    }).status_code == 400
+
+    assert client.post("/sequences", json={
+        "name": "Ghost",
+        "clips": [{"source": "studio", "ref_id": 999999, "duration": 3}],
+    }).status_code == 404
+
+    assert client.post("/sequences", json={
+        "name": "Blank card",
+        "clips": [{"source": "title", "text": "   ", "duration": 3}],
+    }).status_code == 400
+
+    still = _still(client)
+    assert client.post("/sequences", json={
+        "name": "Backwards",
+        "clips": [{"source": "studio", "ref_id": still["id"],
+                   "in_point": 4, "out_point": 2}],
+    }).status_code == 400
+
+
+def test_sequence_rejects_an_over_long_cut(client):
+    still = _still(client)
+    resp = client.post("/sequences", json={
+        "name": "Feature film",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 60}
+                  for _ in range(6)],
+    })
+    assert resp.status_code == 400
+    assert "limit" in resp.json()["detail"]
+
+
+def test_sequence_rejects_a_foreign_soundtrack_url(client):
+    """A soundtrack is fetched server-side, so it may only ever name an object
+    in our own bucket — otherwise the endpoint is an SSRF relay."""
+    still = _still(client)
+    resp = client.post("/sequences", json={
+        "name": "Borrowed music",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3}],
+        "audio_tracks": [{"url": "https://evil.example.com/track.mp3", "volume": 0.3}],
+    })
+    assert resp.status_code == 400
+
+
+def test_sequence_render_stores_video_and_merged_manifest(client):
+    still = _still(client)
+    sequence = client.post("/sequences", json={
+        "name": "Spot",
+        "clips": [
+            {"source": "studio", "ref_id": still["id"], "duration": 4, "look": "warm"},
+            {"source": "title", "text": "Loomina", "duration": 2, "transition": "fade"},
+        ],
+    }).json()
+
+    with patch("app.main.render_sequence", return_value=_fake_render()) as mock_render:
+        assert client.post(f"/sequences/{sequence['id']}/render").status_code == 200
+        _await_sequence(client, sequence["id"])
+
+    done = client.get(f"/sequences/{sequence['id']}").json()
+    assert done["status"] == "done"
+    assert done["duration"] == 8.0
+    assert done["manifest"]["type"] == "loomina.sequence.provenance"
+
+    video = client.get(f"/videos/{done['video_id']}").json()
+    assert video["kind"] == "sequence"
+    assert video["model"] == "timeline"
+    assert video["status"] == "done"
+    # Local assembly: nothing was billed and no genblaze pipeline ran, so the
+    # video row claims no manifest of its own — the merged one lives on the
+    # sequence.
+    assert video["cost_usd"] == 0.0
+    assert video["manifest_verified"] == 0
+
+    # The renderer is handed resolved clips: real URLs and provenance, not ids.
+    resolved = mock_render.call_args.args[1]
+    assert resolved[0]["url"] == "https://example.com/still-orig.png"
+    assert resolved[0]["provenance"]["model"] == "gpt-image-2"
+    assert resolved[0]["provenance"]["ai_generated"] is True
+    assert resolved[1]["source"] == "title"
+    assert resolved[1]["provenance"]["ai_generated"] is False
+
+    manifest = client.get(f"/sequences/{sequence['id']}/manifest").json()
+    assert manifest["manifest"]["summary"]["ai_generated_clips"] == 1
+
+
+def _await_sequence(client, sequence_id, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        sequence = client.get(f"/sequences/{sequence_id}").json()
+        if sequence["status"] in ("done", "error"):
+            return sequence
+        time.sleep(0.05)
+    raise AssertionError("sequence render did not finish")
+
+
+def test_sequence_render_failure_is_reported_not_swallowed(client):
+    still = _still(client)
+    sequence = client.post("/sequences", json={
+        "name": "Doomed",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3}],
+    }).json()
+    with patch("app.main.render_sequence", side_effect=RuntimeError("ffmpeg died")):
+        client.post(f"/sequences/{sequence['id']}/render")
+        failed = _await_sequence(client, sequence["id"])
+    assert failed["status"] == "error"
+    assert failed["error"]
+    assert failed["video_id"] is None
+
+
+def test_manifest_endpoint_rejects_an_unrendered_sequence(client):
+    still = _still(client)
+    sequence = client.post("/sequences", json={
+        "name": "Draft only",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3}],
+    }).json()
+    assert client.get(f"/sequences/{sequence['id']}/manifest").status_code == 400
+    assert client.post(f"/sequences/{sequence['id']}/verify").status_code == 400
+
+
+def test_sequence_verify_reads_the_manifest_back_out_of_the_file(client):
+    still = _still(client)
+    sequence = client.post("/sequences", json={
+        "name": "Spot",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3}],
+    }).json()
+    rendered = _fake_render()
+    with patch("app.main.render_sequence", return_value=rendered):
+        client.post(f"/sequences/{sequence['id']}/render")
+        _await_sequence(client, sequence["id"])
+
+    with patch("app.main.read_embedded_manifest", return_value=rendered["manifest"]), \
+         patch("app.main.presign_asset_url", return_value="https://signed.example.com/seq.mp4"):
+        body = client.post(f"/sequences/{sequence['id']}/verify").json()
+    assert body["found"] is True
+    assert body["matches_stored"] is True
+
+    # A file that lost its embedded copy reports that, rather than passing.
+    with patch("app.main.read_embedded_manifest", return_value=None), \
+         patch("app.main.presign_asset_url", return_value="https://signed.example.com/seq.mp4"):
+        body = client.post(f"/sequences/{sequence['id']}/verify").json()
+    assert body["found"] is False
+    assert body["matches_stored"] is False
+
+
+def test_editing_a_rendering_sequence_is_refused(client):
+    from app import db
+
+    still = _still(client)
+    sequence = client.post("/sequences", json={
+        "name": "Busy",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3}],
+    }).json()
+    assert db.start_sequence_render(client.workspace_id, sequence["id"]) is True
+    # A second render of the same cut can't start either.
+    assert db.start_sequence_render(client.workspace_id, sequence["id"]) is False
+
+    resp = client.put(f"/sequences/{sequence['id']}", json={
+        "name": "Renamed mid-render",
+        "clips": [{"source": "studio", "ref_id": still["id"], "duration": 3}],
+    })
+    assert resp.status_code == 409
+
+
+def test_timeline_pool_lists_stills_and_finished_videos(client):
+    still = _still(client, prompt="a lamplit desk")
+    video_id = _done_video(client.workspace_id)
+    from app import db
+
+    db.create_video(
+        workspace_id=client.workspace_id, character_id=None, character_name=None,
+        kind="text", prompt="still rendering", model="Veo3-Fast",
+        duration=5, aspect_ratio="16:9",
+    )
+
+    pool = client.get("/timeline/pool").json()
+    keys = {entry["key"] for entry in pool}
+    assert f"studio:{still['id']}" in keys
+    assert f"video:{video_id}" in keys
+    # An unfinished clip has no file to cut, so it must not be offered.
+    assert len([e for e in pool if e["kind"] == "video"]) == 1
+
+
+def test_uploaded_photo_becomes_a_timeline_asset(client):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (10, 20, 30)).save(buf, format="PNG")
+    with patch("app.main.upload_bytes", return_value=("https://example.com/up.png", "upsha")):
+        resp = client.post(
+            "/uploads/image",
+            files={"file": ("holiday.png", buf.getvalue(), "image/png")},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "upload"
+    assert body["model"] == "upload"
+    assert body["prompt"] == "holiday.png"
+    # Not generated here — so it claims no manifest and no disclosure.
+    assert body["manifest_verified"] == 0
+    assert body["disclosure"] is None
+
+    assert any(e["key"] == f"studio:{body['id']}" for e in client.get("/timeline/pool").json())
+
+
+def test_uploaded_photo_rejects_a_wrong_type(client):
+    resp = client.post(
+        "/uploads/image", files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert resp.status_code == 400
+
+
+def test_uploaded_clip_becomes_a_finished_video(client):
+    with patch("app.main.upload_path", return_value=("https://example.com/up.mp4", "vsha")), \
+         patch("app.main.probe_media", return_value={"duration": 12.5, "width": 1080, "height": 1920}):
+        resp = client.post(
+            "/uploads/video", files={"file": ("phone.mp4", b"\x00\x01fake", "video/mp4")},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "upload"
+    assert body["status"] == "done"
+    assert body["duration"] == 12
+    assert body["aspect_ratio"] == "9:16"
+    assert body["manifest_verified"] == 0
+
+    pool = {e["key"]: e for e in client.get("/timeline/pool").json()}
+    assert pool[f"video:{body['id']}"]["duration"] == 12.0
+
+
+def test_uploaded_clip_over_the_size_limit_is_refused(client):
+    import app.main as m
+
+    oversized = b"\x00" * (2 * 1024 * 1024)
+    with patch.object(m, "MAX_VIDEO_UPLOAD_BYTES", 1024 * 1024):
+        resp = client.post(
+            "/uploads/video", files={"file": ("big.mp4", oversized, "video/mp4")},
+        )
+    assert resp.status_code == 400
+
+
+def test_uploaded_clip_rejects_a_wrong_type(client):
+    resp = client.post(
+        "/uploads/video", files={"file": ("song.mp3", b"id3", "audio/mpeg")},
+    )
+    assert resp.status_code == 400
+
+
+def test_assisted_cut_builds_a_draft_and_drops_invented_shots(client, monkeypatch):
+    monkeypatch.setattr("app.main.OPENAI_API_KEY", "test-openai-key")
+    still = _still(client, prompt="a lamplit desk")
+
+    plan = {
+        "name": "Lena & Fips — 30s",
+        "clips": [
+            {"key": f"studio:{still['id']}", "duration": 4, "look": "warm", "motion": "zoom_in"},
+            {"key": "studio:999999", "duration": 3},          # invented reference
+            {"key": "title", "text": "Loomina", "duration": 2, "transition": "fade"},
+            {"key": "title", "text": "   ", "duration": 2},   # empty card
+        ],
+    }
+    with patch("app.main.plan_sequence", return_value=plan) as mock_plan:
+        resp = client.post("/sequences/auto", json={
+            "brief": "A 30-second spot about a illustrator and her drawn raven.",
+            "target_seconds": 30,
+        })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "draft"
+    assert body["name"] == "Lena & Fips — 30s"
+    # Only the two usable clips survive; the rest are reported, not hidden.
+    assert len(body["clips"]) == 2
+    assert body["dropped_clips"] == 2
+    assert body["clips"][0]["look"] == "warm"
+    assert body["clips"][1]["source"] == "title"
+
+    # The model is shown the real pool, never asked to invent one.
+    pool_arg = mock_plan.call_args.args[1]
+    assert {p["key"] for p in pool_arg} == {f"studio:{still['id']}"}
+
+
+def test_assisted_cut_needs_material_and_a_key(client, monkeypatch):
+    monkeypatch.setattr("app.main.OPENAI_API_KEY", "")
+    assert client.post("/sequences/auto", json={"brief": "anything"}).status_code == 400
+
+    monkeypatch.setattr("app.main.OPENAI_API_KEY", "test-openai-key")
+    resp = client.post("/sequences/auto", json={"brief": "anything"})
+    assert resp.status_code == 400
+    assert "nothing to cut" in resp.json()["detail"]
+
+
+def test_assisted_cut_reports_an_unusable_plan(client, monkeypatch):
+    monkeypatch.setattr("app.main.OPENAI_API_KEY", "test-openai-key")
+    _still(client)
+    with patch("app.main.plan_sequence", return_value={"clips": [{"key": "studio:404"}]}):
+        resp = client.post("/sequences/auto", json={"brief": "a spot"})
+    assert resp.status_code == 502
+
+
+def test_capabilities_report_the_timeline_and_the_real_ffmpeg_build(client):
+    caps = client.get("/capabilities").json()
+    assert caps["sequence"]["aspect_ratios"] == ["16:9", "9:16", "1:1"]
+    assert "enhance" in caps["sequence"]["looks"]
+    assert "zoom_in" in caps["sequence"]["motions"]
+    # Reported so the deployed image's ffmpeg build is inspectable rather than
+    # assumed — the timeline draws its text with Pillow either way.
+    assert isinstance(caps["ffmpeg"]["drawtext"], bool)
+
+
+# ── Timeline: the renderer itself ────────────────────────────────────────
+# These drive real ffmpeg. Everything above mocks the render away, which
+# proves the endpoints but not the filter chains — and the filter chains are
+# where a cut actually breaks.
+
+def _ffmpeg_available():
+    import shutil
+
+    return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+
+
+import pytest  # noqa: E402
+
+needs_ffmpeg = pytest.mark.skipif(not _ffmpeg_available(), reason="ffmpeg/ffprobe not installed")
+
+
+@needs_ffmpeg
+def test_title_card_is_drawn_without_ffmpeg_drawtext():
+    """Text panels go through Pillow on purpose: the ffmpeg used in
+    development has no drawtext filter at all, and this must not depend on
+    which build a host happens to ship."""
+    import io
+
+    from PIL import Image
+
+    from app.pipelines import _render_title_card, ffmpeg_has_drawtext
+
+    png = _render_title_card("Loomina", "one character, every medium", 640, 360)
+    with Image.open(io.BytesIO(png)) as img:
+        assert img.size == (640, 360)
+        # Something was actually drawn — a card that renders as flat
+        # background would still be a valid PNG.
+        assert img.convert("RGB").getextrema()[0][1] > 200
+    assert isinstance(ffmpeg_has_drawtext(), bool)
+
+
+def test_a_fade_is_clamped_to_the_clip_it_sits_on():
+    """A 0.5s fade on a 0.4s card would start after the card is over."""
+    from app.pipelines import _fade_filters
+
+    video, audio = _fade_filters(0.0, 0.5, 2.0)
+    assert "fade=t=out:st=1.500" in video
+    assert "afade=t=out:st=1.500" in audio
+    assert _fade_filters(0.0, 0.0, 2.0) == ("", "")
+
+
+def test_a_neutral_grade_costs_nothing():
+    """Sliders at rest must not add filters — every one of them re-encodes."""
+    from app.pipelines import _grade_chain
+
+    assert _grade_chain({"look": "none"}) == ""
+    assert "unsharp" in _grade_chain({"look": "enhance"})
+    assert "saturation=1.400" in _grade_chain({"look": "none", "saturation": 0.4})
+
+
+@needs_ffmpeg
+def test_render_sequence_cuts_stills_video_and_a_title_card_into_one_file(tmp_path):
+    """The whole renderer, end to end, on real files: a graded still with a
+    camera move, a trimmed clip with audio, and a text panel — joined, faded,
+    with music laid underneath and the merged manifest baked into the MP4."""
+    import io
+    import subprocess
+
+    from PIL import Image
+
+    from app.pipelines import _probe_duration_s, read_embedded_manifest, render_sequence
+
+    still = io.BytesIO()
+    Image.new("RGB", (900, 600), (180, 90, 40)).save(still, format="PNG")
+
+    clip_path = tmp_path / "source.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=25:duration=4",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-shortest", str(clip_path)],
+        check=True, capture_output=True, timeout=120,
+    )
+    music_path = tmp_path / "music.mp3"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=2", str(music_path)],
+        check=True, capture_output=True, timeout=120,
+    )
+
+    sources = {
+        "https://bucket/still.png": still.getvalue(),
+        "https://bucket/clip.mp4": clip_path.read_bytes(),
+        "https://bucket/music.mp3": music_path.read_bytes(),
+    }
+    stored = {}
+
+    def fake_upload(key, data, content_type):
+        stored[key] = data
+        return f"https://bucket/{key}", "sha-" + key
+
+    with patch("app.storage.download_bytes", side_effect=lambda url: sources[url]), \
+         patch("app.storage.upload_bytes", side_effect=fake_upload):
+        result = render_sequence(
+            "Lena & Fips",
+            [
+                {"source": "studio", "ref_id": 1, "url": "https://bucket/still.png",
+                 "duration": 2.0, "look": "warm", "motion": "zoom_in",
+                 "transition": "fade", "fade_duration": 0.4,
+                 "provenance": {"ai_generated": True, "model": "gpt-image-2",
+                                "manifest_verified": True, "cost_usd": 0.006}},
+                {"source": "video", "ref_id": 2, "url": "https://bucket/clip.mp4",
+                 "in_point": 1.0, "out_point": 2.5, "transition": "fade",
+                 "fade_duration": 0.3, "look": "noir", "volume": 0.5,
+                 "provenance": {"ai_generated": True, "model": "Kling-Image2Video-V2.1-Master",
+                                "manifest_verified": False}},
+                {"source": "title", "ref_id": None, "url": None, "duration": 1.5,
+                 "text": "Loomina", "subtitle": "one character, every medium",
+                 "transition": "fade",
+                 "provenance": {"ai_generated": False, "model": "loomina-title-card"}},
+            ],
+            aspect_ratio="16:9",
+            audio_tracks=[{"url": "https://bucket/music.mp3", "volume": 0.2,
+                           "provenance": {"ai_generated": False}}],
+        )
+
+    # 2.0 (still) + 1.5 (trimmed clip) + 1.5 (card) — the clip contributes what
+    # in/out actually trims, not what was asked for.
+    assert 4.6 < result["duration"] < 5.4
+
+    manifest = result["manifest"]
+    assert manifest["sequence"]["clip_count"] == 3
+    assert [s["starts_at_s"] for s in manifest["sources"]] == [0.0, 2.0, 3.5]
+    assert manifest["sources"][1]["trimmed_from"] == {
+        "in_s": 1.0, "out_s": 2.5, "source_duration_s": 4.0,
+    }
+    assert manifest["summary"]["ai_generated_clips"] == 2
+    assert manifest["summary"]["captured_or_uploaded_clips"] == 1
+    assert manifest["summary"]["models"] == [
+        "Kling-Image2Video-V2.1-Master", "gpt-image-2",
+    ]
+    # One source whose own manifest didn't verify makes the whole cut
+    # unverified — that is the honest aggregation, not a rounded-up badge.
+    assert manifest["summary"]["all_sources_verified"] is False
+    assert manifest["assembly"]["provider_calls"] == 0
+
+    # The sidecar and the embedded copy are both written…
+    key = next(k for k in stored if k.endswith(".mp4"))
+    assert key.replace(".mp4", ".manifest.json") in stored
+
+    # …and the file itself still knows what it is made of, with no database
+    # anywhere in reach. This is what an external editor's output cannot do.
+    rendered = tmp_path / "out.mp4"
+    rendered.write_bytes(stored[key])
+    assert read_embedded_manifest(str(rendered)) == manifest
+    assert _probe_duration_s(rendered) == pytest.approx(result["duration"], abs=0.2)
+
+
+@needs_ffmpeg
+def test_render_sequence_gives_a_silent_still_an_audio_track(tmp_path):
+    """Every segment needs the same stream layout or the concat demuxer drops
+    audio from the first still onwards — which would silence a talking clip
+    that follows one."""
+    import io
+    import json
+    import subprocess
+
+    from PIL import Image
+
+    from app.pipelines import render_sequence
+
+    still = io.BytesIO()
+    Image.new("RGB", (400, 400), (20, 120, 200)).save(still, format="PNG")
+    stored = {}
+
+    with patch("app.storage.download_bytes", side_effect=lambda url: still.getvalue()), \
+         patch("app.storage.upload_bytes",
+               side_effect=lambda k, d, c: (stored.setdefault(k, d), f"https://bucket/{k}", "sha")[1:]):
+        render_sequence("Silent", [
+            {"source": "studio", "ref_id": 1, "url": "https://bucket/s.png", "duration": 1.0,
+             "provenance": {"ai_generated": True, "model": "gpt-image-2"}},
+        ], aspect_ratio="1:1")
+
+    out = tmp_path / "silent.mp4"
+    out.write_bytes(stored[next(k for k in stored if k.endswith(".mp4"))])
+    probe = json.loads(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
+         "-of", "json", str(out)],
+        capture_output=True, text=True, timeout=60,
+    ).stdout)
+    kinds = {s["codec_type"] for s in probe["streams"]}
+    assert kinds == {"video", "audio"}
+    video = next(s for s in probe["streams"] if s["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (720, 720)

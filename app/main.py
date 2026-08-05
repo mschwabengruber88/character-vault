@@ -21,6 +21,7 @@ from app.config import (
     GENERATE_API_KEY,
     MAX_KEYLESS_BATCH,
     MAX_WORKSPACES_PER_IP,
+    OPENAI_API_KEY,
     RATE_GLOBAL_PER_DAY,
     RATE_IP_PER_HOUR,
     RATE_VIDEO_PER_DAY,
@@ -51,8 +52,24 @@ from app.pipelines import (
     extract_poster_frame,
     mux_video_with_audio,
     overlay_video,
+    SEQUENCE_LOOKS,
+    SEQUENCE_MAX_FADE,
+    SEQUENCE_MOTIONS,
+    SEQUENCE_SIZES,
+    ffmpeg_has_drawtext,
+    plan_sequence,
+    probe_media,
+    read_embedded_manifest,
+    render_sequence,
 )
-from app.storage import presign_asset_url, upload_bytes, upload_reference_image, with_signed_url
+from app.storage import (
+    is_bucket_url,
+    presign_asset_url,
+    upload_bytes,
+    upload_path,
+    upload_reference_image,
+    with_signed_url,
+)
 
 logger = logging.getLogger("character_vault")
 
@@ -389,6 +406,20 @@ def capabilities():
     return {
         "image_models": available_image_models(),
         "video_models": available_video_models(),
+        "sequence": {
+            "aspect_ratios": list(SEQUENCE_SIZES),
+            "looks": list(SEQUENCE_LOOKS),
+            "motions": list(SEQUENCE_MOTIONS),
+            "max_clips": MAX_SEQUENCE_CLIPS,
+            "max_seconds": MAX_SEQUENCE_SECONDS,
+            "max_audio_tracks": MAX_AUDIO_TRACKS,
+            "auto_cut": bool(OPENAI_API_KEY),
+        },
+        # Reported, not acted on: the timeline draws every piece of text with
+        # Pillow precisely so it does not depend on this. Surfacing it makes
+        # the deployed image's actual build inspectable instead of assumed —
+        # see pipelines.ffmpeg_has_drawtext.
+        "ffmpeg": {"drawtext": ffmpeg_has_drawtext()},
     }
 
 
@@ -1506,3 +1537,638 @@ def create_script(body: ScriptRequest, workspace: str = Depends(require_workspac
 def delete_script(script_id: int, workspace: str = Depends(require_workspace)):
     if not db.delete_script(workspace, script_id):
         raise HTTPException(status_code=404, detail="Script not found")
+
+
+# ── Bringing your own footage ────────────────────────────────────────────
+# Everything else in the vault was generated here. Material shot elsewhere —
+# a phone clip, a product photo, a logo — has to be able to sit on the same
+# timeline, so uploads land as ordinary vault rows rather than as a separate
+# second-class pool. They are marked model="upload" and never claim a
+# provenance manifest, which is what lets the merged manifest of a finished
+# cut say honestly which parts are AI and which are not.
+
+MAX_VIDEO_UPLOAD_BYTES = 120 * 1024 * 1024
+ALLOWED_VIDEO_TYPES = {
+    "video/mp4": "mp4", "video/quicktime": "mov", "video/x-m4v": "m4v",
+    "video/webm": "webm", "video/x-matroska": "mkv",
+}
+UPLOAD_CHUNK = 1024 * 1024
+
+
+async def _spool_upload(file: UploadFile, destination: Path, max_bytes: int) -> int:
+    """Stream an upload to disk, stopping the moment it exceeds the limit.
+
+    `await file.read()` would buy the whole file into memory before the size
+    check could reject it — which makes the limit advisory rather than
+    protective on a container sized for one ffmpeg run.
+    """
+    written = 0
+    with destination.open("wb") as out:
+        while chunk := await file.read(UPLOAD_CHUNK):
+            written += len(chunk)
+            if written > max_bytes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File too large (max {max_bytes // (1024 * 1024)} MB).",
+                )
+            out.write(chunk)
+    return written
+
+
+@app.post("/uploads/image")
+async def upload_image(file: UploadFile = File(...),
+                       workspace: str = Depends(require_workspace)):
+    """A photo from outside, stored as a studio asset so it appears in the
+    timeline pool and the canvas background picker like anything else."""
+    import uuid as _uuid
+
+    if file.content_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a PNG, JPEG or WebP image.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Image too large (max 12 MB).")
+    ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[file.content_type]
+    url, sha256 = upload_bytes(
+        f"uploads/images/{workspace}/{_uuid.uuid4().hex}.{ext}", data, file.content_type,
+    )
+    return _scene_with_signed_url(db.create_studio_image(
+        workspace_id=workspace,
+        kind="upload",
+        prompt=(file.filename or "Uploaded image")[:200],
+        url=url,
+        original_url=url,
+        sha256=sha256,
+        model="upload",
+        quality=None,
+        disclosure=None,
+        cost_usd=0.0,
+        # Not generated here and not run through a genblaze pipeline, so there
+        # is nothing to verify — same honesty rule as the canvas export.
+        manifest_verified=False,
+    ))
+
+
+@app.post("/uploads/video")
+async def upload_video(file: UploadFile = File(...),
+                       workspace: str = Depends(require_workspace)):
+    """A clip from outside, stored as a finished video row so it can be
+    trimmed, graded and cut on the timeline like a generated one."""
+    import tempfile
+    import uuid as _uuid
+
+    ext = ALLOWED_VIDEO_TYPES.get(file.content_type or "")
+    if not ext:
+        raise HTTPException(
+            status_code=400, detail="Upload an MP4, MOV, M4V, WebM or MKV video.")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        local = Path(tmp) / f"upload.{ext}"
+        await _spool_upload(file, local, MAX_VIDEO_UPLOAD_BYTES)
+        probe = probe_media(str(local))
+        url, sha256 = upload_path(
+            f"uploads/video/{workspace}/{_uuid.uuid4().hex}.{ext}", local, file.content_type,
+        )
+
+    video = db.create_video(
+        workspace_id=workspace, character_id=None, character_name=None,
+        kind="upload", prompt=(file.filename or "Uploaded clip")[:200],
+        model="upload",
+        duration=int(probe["duration"]) if probe.get("duration") else None,
+        aspect_ratio=_aspect_label(probe.get("width"), probe.get("height")),
+    )
+    db.finish_video(
+        video["id"], status="done", url=url, original_url=url, sha256=sha256,
+        mime_type=file.content_type, cost_usd=0.0, manifest_verified=False,
+    )
+    return _video_with_signed_url(db.get_video(workspace, video["id"]))
+
+
+def _aspect_label(width: int | None, height: int | None) -> str | None:
+    """Nearest of the three timeline canvases, for display only — the renderer
+    letterboxes anything that doesn't match, so a wrong guess costs nothing."""
+    if not width or not height:
+        return None
+    ratio = width / height
+    return min(
+        (("16:9", 16 / 9), ("9:16", 9 / 16), ("1:1", 1.0)),
+        key=lambda option: abs(option[1] - ratio),
+    )[0]
+
+
+# ── Timeline: the cut ────────────────────────────────────────────────────
+# The step that used to happen outside the app. A sequence is an ordered list
+# of references into the vault — nothing is copied into it — so the edit stays
+# small, stays editable, and can always say exactly which asset each second of
+# the result came from.
+
+MAX_SEQUENCE_CLIPS = 60
+MAX_SEQUENCE_SECONDS = 300
+MAX_AUDIO_TRACKS = 4
+
+SequenceLook = Literal["none", "enhance", "warm", "cool", "noir", "vivid", "vintage", "soft"]
+SequenceMotion = Literal["none", "zoom_in", "zoom_out", "pan_left", "pan_right", "pan_up", "pan_down"]
+# The request schema and the renderer must offer exactly the same set — a look
+# accepted here but unknown there would silently render ungraded.
+assert set(SequenceLook.__args__) == set(SEQUENCE_LOOKS)
+assert set(SequenceMotion.__args__) == set(SEQUENCE_MOTIONS)
+
+
+class TimelineClip(BaseModel):
+    # "title" is a text panel and carries no ref_id; every other source names a
+    # row in the table it is called after.
+    source: Literal["asset", "scene", "studio", "video", "title"]
+    ref_id: int | None = None
+    # Screen time for stills and title cards. Ignored for video clips, whose
+    # length is whatever in/out actually trim out of the source.
+    duration: float = Field(default=3.5, ge=0.2, le=60)
+    in_point: float | None = Field(default=None, ge=0)
+    out_point: float | None = Field(default=None, ge=0)
+    transition: Literal["cut", "fade"] = "cut"
+    fade_duration: float = Field(default=0.5, ge=0.1, le=SEQUENCE_MAX_FADE)
+    look: SequenceLook = "none"
+    motion: SequenceMotion = "none"
+    # Offsets around neutral, so an untouched slider costs nothing.
+    brightness: float = Field(default=0.0, ge=-0.5, le=0.5)
+    contrast: float = Field(default=0.0, ge=-0.8, le=1.5)
+    saturation: float = Field(default=0.0, ge=-1.0, le=2.0)
+    volume: float = Field(default=1.0, ge=0.0, le=4.0)
+    text: str | None = Field(default=None, max_length=300)
+    subtitle: str | None = Field(default=None, max_length=300)
+
+
+class TimelineAudioTrack(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+    volume: float = Field(default=0.25, ge=0.0, le=2.0)
+    label: str | None = Field(default=None, max_length=120)
+
+
+class SequenceRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+    clips: list[TimelineClip] = Field(default_factory=list, max_length=MAX_SEQUENCE_CLIPS)
+    audio_tracks: list[TimelineAudioTrack] = Field(default_factory=list, max_length=MAX_AUDIO_TRACKS)
+
+
+class AutoCutRequest(BaseModel):
+    brief: str = Field(min_length=1, max_length=2000)
+    name: str = Field(default="", max_length=120)
+    target_seconds: int = Field(default=30, ge=5, le=MAX_SEQUENCE_SECONDS)
+    aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+
+
+def _clip_provenance(source: str, row: dict | None) -> dict:
+    """What the merged manifest records about one source.
+
+    `ai_generated` is decided by the model that made it, not by which table it
+    sits in: an uploaded photo lives in studio_images next to generated ones,
+    and the difference is exactly what a viewer of the finished cut deserves to
+    be told.
+    """
+    if source == "title":
+        return {"ai_generated": False, "model": "loomina-title-card",
+                "renderer": "pillow", "manifest_verified": False}
+    row = row or {}
+    model = row.get("model")
+    return {
+        "ai_generated": model not in (None, "upload"),
+        "model": model,
+        "prompt": (row.get("prompt") or "")[:500] or None,
+        "sha256": row.get("sha256"),
+        "disclosure": row.get("disclosure"),
+        "quality": row.get("quality"),
+        "manifest_verified": bool(row.get("manifest_verified")),
+        "cost_usd": row.get("cost_usd"),
+        "created_at": row.get("created_at"),
+        "character": row.get("character_name")
+                     or (" + ".join(row.get("participant_names") or []) or None),
+    }
+
+
+def _resolve_clip(workspace: str, index: int, clip: TimelineClip) -> dict:
+    """Turn one request clip into what the renderer needs: a real URL plus the
+    provenance of whatever is behind it. Every lookup is workspace-scoped, so a
+    guessed row id from another tenant resolves to nothing."""
+    data = clip.model_dump()
+    if clip.source == "title":
+        if not (clip.text or "").strip():
+            raise HTTPException(
+                status_code=400, detail=f"Clip {index + 1}: a text panel needs text.")
+        return {**data, "url": None, "provenance": _clip_provenance("title", None)}
+
+    if clip.ref_id is None:
+        raise HTTPException(
+            status_code=400, detail=f"Clip {index + 1}: no asset selected.")
+
+    lookup = {
+        "asset": db.get_asset,
+        "scene": db.get_scene,
+        "studio": db.get_studio_image,
+        "video": db.get_video,
+    }[clip.source]
+    row = lookup(workspace, clip.ref_id)
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Clip {index + 1}: {clip.source} {clip.ref_id} not found.")
+    if clip.source == "video" and (row.get("status") != "done" or not row.get("url")):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Clip {index + 1}: that video isn't finished yet.")
+    if clip.source == "asset" and row.get("kind") != "image":
+        raise HTTPException(
+            status_code=400, detail=f"Clip {index + 1}: only images can go on the timeline.")
+    if clip.in_point is not None and clip.out_point is not None and clip.out_point <= clip.in_point:
+        raise HTTPException(
+            status_code=400, detail=f"Clip {index + 1}: the out point must come after the in point.")
+
+    # The untouched original where one exists: a disclosed copy carries a
+    # burned-in badge sized for a still, which a video frame would only blur.
+    # The manifest still records the disclosure mode the source was stored with.
+    return {
+        **data,
+        "url": row.get("original_url") or row["url"],
+        "provenance": _clip_provenance(clip.source, row),
+    }
+
+
+def _resolve_sequence(workspace: str, body: SequenceRequest) -> tuple[list[dict], list[dict]]:
+    if not body.clips:
+        raise HTTPException(status_code=400, detail="The timeline is empty — add a clip first.")
+    clips = [_resolve_clip(workspace, i, clip) for i, clip in enumerate(body.clips)]
+
+    # Stills contribute their set duration; a video contributes at most its own
+    # length, which is all the estimate can know without downloading it.
+    estimate = 0.0
+    for clip in clips:
+        if clip["source"] == "video":
+            estimate += (clip.get("out_point") or clip.get("duration") or 5.0) - (clip.get("in_point") or 0.0)
+        else:
+            estimate += clip.get("duration") or 3.5
+    if estimate > MAX_SEQUENCE_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This cut is about {int(estimate)}s — the limit is {MAX_SEQUENCE_SECONDS}s. "
+                   "Shorten a few clips or split it into two sequences.",
+        )
+
+    tracks = []
+    for track in body.audio_tracks:
+        if not is_bucket_url(track.url):
+            raise HTTPException(
+                status_code=400,
+                detail="A soundtrack must be an audio file from this workspace — "
+                       "generate one, or upload it under Audio.",
+            )
+        tracks.append(track.model_dump())
+    return clips, tracks
+
+
+def _sequence_public(sequence: dict) -> dict:
+    """A sequence as the editor sees it: the rendered result and its manifest
+    are signed, the stored clip list is returned untouched."""
+    sequence = dict(sequence)
+    for field, target in (("manifest_url", "signed_manifest_url"),):
+        sequence[target] = None
+        if sequence.get(field):
+            try:
+                sequence[target] = presign_asset_url(sequence[field])
+            except Exception:
+                pass
+    return sequence
+
+
+@app.get("/sequences")
+def list_sequences(workspace: str = Depends(require_workspace)):
+    return [_sequence_public(s) for s in db.list_sequences(workspace)]
+
+
+@app.post("/sequences")
+def create_sequence_endpoint(body: SequenceRequest, workspace: str = Depends(require_workspace)):
+    """Save an edit. Clips are validated against the vault now rather than at
+    render time, so a broken reference is reported while the user is still
+    looking at the timeline."""
+    clips, tracks = _resolve_sequence(workspace, body)
+    return _sequence_public(db.create_sequence(
+        workspace_id=workspace,
+        name=body.name,
+        clips=[c.model_dump() for c in body.clips],
+        aspect_ratio=body.aspect_ratio,
+        audio_tracks=tracks,
+    ))
+
+
+@app.get("/sequences/{sequence_id}")
+def get_sequence(sequence_id: int, workspace: str = Depends(require_workspace)):
+    sequence = db.get_sequence(workspace, sequence_id)
+    if sequence is None:
+        raise HTTPException(status_code=404, detail="Sequence not found")
+    return _sequence_public(sequence)
+
+
+@app.put("/sequences/{sequence_id}")
+def update_sequence(sequence_id: int, body: SequenceRequest,
+                    workspace: str = Depends(require_workspace)):
+    _resolve_sequence(workspace, body)
+    updated = db.update_sequence(
+        workspace_id=workspace,
+        sequence_id=sequence_id,
+        name=body.name,
+        clips=[c.model_dump() for c in body.clips],
+        aspect_ratio=body.aspect_ratio,
+        audio_tracks=[t.model_dump() for t in body.audio_tracks],
+    )
+    if updated is None:
+        existing = db.get_sequence(workspace, sequence_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Sequence not found")
+        raise HTTPException(
+            status_code=409,
+            detail="This sequence is rendering right now — wait for it to finish before editing.",
+        )
+    return _sequence_public(updated)
+
+
+@app.delete("/sequences/{sequence_id}", status_code=204)
+def delete_sequence(sequence_id: int, workspace: str = Depends(require_workspace)):
+    if not db.delete_sequence(workspace, sequence_id):
+        raise HTTPException(status_code=404, detail="Sequence not found")
+
+
+def _run_sequence_render(workspace: str, sequence_id: int, name: str, clips: list[dict],
+                         aspect_ratio: str, tracks: list[dict]) -> None:
+    """Background worker — a 30-second cut is a minute or two of ffmpeg, well
+    past a request's patience, so the row's status is polled instead (same
+    shape as _run_video)."""
+    video_id = None
+    try:
+        result = render_sequence(name, clips, aspect_ratio, tracks)
+        video = db.create_video(
+            workspace_id=workspace, character_id=None,
+            character_name=None, kind="sequence",
+            prompt=f"Timeline cut: {name}"[:500], model="timeline",
+            duration=int(round(result["duration"])), aspect_ratio=aspect_ratio,
+        )
+        video_id = video["id"]
+        db.finish_video(
+            video_id, status="done", url=result["url"], original_url=result["url"],
+            sha256=result["sha256"], mime_type=result["mime_type"],
+            # Local assembly, no provider call — so no cost, and no manifest of
+            # our own to verify. What this cut DOES carry is the merged
+            # manifest over its sources, stored on the sequence.
+            cost_usd=0.0, manifest_verified=False,
+        )
+        db.finish_sequence(
+            sequence_id, status="done", video_id=video_id,
+            manifest=result["manifest"], manifest_url=result["manifest_url"],
+            duration=result["duration"],
+        )
+    except Exception:
+        logger.exception("Sequence %s render failed", sequence_id)
+        db.finish_sequence(
+            sequence_id, status="error", video_id=video_id,
+            error="Rendering failed. Please try again.",
+        )
+    finally:
+        _release_slot(workspace, "sequence")
+
+
+@app.post("/sequences/{sequence_id}/render")
+def render_sequence_endpoint(sequence_id: int, workspace: str = Depends(require_workspace)):
+    """Assemble the cut. No generation_guard and no rate limit: like the canvas
+    export and the video overlay, this calls no provider and costs nothing. The
+    in-flight slot is what keeps one workspace from starting a second ffmpeg
+    run on top of the first."""
+    sequence = db.get_sequence(workspace, sequence_id)
+    if sequence is None:
+        raise HTTPException(status_code=404, detail="Sequence not found")
+
+    body = SequenceRequest(
+        name=sequence["name"], aspect_ratio=sequence["aspect_ratio"],
+        clips=sequence["clips"], audio_tracks=sequence["audio_tracks"],
+    )
+    clips, tracks = _resolve_sequence(workspace, body)
+
+    _acquire_slot(workspace, "sequence")
+    if not db.start_sequence_render(workspace, sequence_id):
+        _release_slot(workspace, "sequence")
+        raise HTTPException(status_code=409, detail="This sequence is already rendering.")
+    threading.Thread(
+        target=_run_sequence_render,
+        args=(workspace, sequence_id, sequence["name"], clips,
+              sequence["aspect_ratio"], tracks),
+        daemon=True,
+    ).start()
+    return _sequence_public(db.get_sequence(workspace, sequence_id))
+
+
+@app.get("/sequences/{sequence_id}/manifest")
+def sequence_manifest(sequence_id: int, workspace: str = Depends(require_workspace)):
+    """The merged provenance manifest of the last render: every clip, where it
+    sits, which model made it, and whether that source's own manifest
+    verified."""
+    sequence = db.get_sequence(workspace, sequence_id)
+    if sequence is None:
+        raise HTTPException(status_code=404, detail="Sequence not found")
+    if not sequence.get("manifest"):
+        raise HTTPException(status_code=400, detail="This sequence hasn't been rendered yet.")
+    return {
+        "manifest": sequence["manifest"],
+        "signed_manifest_url": _sequence_public(sequence)["signed_manifest_url"],
+    }
+
+
+@app.post("/sequences/{sequence_id}/verify")
+def verify_sequence(sequence_id: int, workspace: str = Depends(require_workspace)):
+    """Read the manifest back out of the rendered MP4 and compare it with the
+    stored one.
+
+    This is the point of embedding it: the file carries its own account of what
+    it is made of, so it stays verifiable after it leaves this app — which no
+    external editor's output can do. A mismatch means the file was re-encoded
+    somewhere along the way and the embedded copy no longer describes it.
+    """
+    sequence = db.get_sequence(workspace, sequence_id)
+    if sequence is None:
+        raise HTTPException(status_code=404, detail="Sequence not found")
+    if not sequence.get("video_id") or not sequence.get("manifest"):
+        raise HTTPException(status_code=400, detail="This sequence hasn't been rendered yet.")
+    video = db.get_video(workspace, sequence["video_id"])
+    if video is None or not video.get("url"):
+        raise HTTPException(status_code=404, detail="The rendered file is gone.")
+
+    signed = presign_asset_url(video["url"]) or video["url"]
+    embedded = read_embedded_manifest(signed)
+    return {
+        "embedded": embedded,
+        "found": embedded is not None,
+        "matches_stored": embedded == sequence["manifest"],
+    }
+
+
+# ── Timeline: the media pool ─────────────────────────────────────────────
+
+def _pool_entry(key: str, kind: str, label: str, url: str | None,
+                duration: float | None, extra: dict | None = None) -> dict:
+    entry = {"key": key, "kind": kind, "label": label, "duration": duration,
+             "signed_url": None, **(extra or {})}
+    if url:
+        try:
+            entry["signed_url"] = presign_asset_url(url)
+        except Exception:
+            pass
+    return entry
+
+
+@app.get("/timeline/pool")
+def timeline_pool(workspace: str = Depends(require_workspace)):
+    """Everything in this workspace that can go on a timeline, in one call.
+
+    The editor needs stills and clips side by side; fetching four endpoints and
+    stitching them client-side is what the canvas does for backgrounds, and it
+    shows — the pool is the same list four times over, with four chances to
+    disagree about what a label looks like."""
+    pool = []
+    for asset in db.list_assets(workspace, "image"):
+        pool.append(_pool_entry(
+            f"asset:{asset['id']}", "still",
+            f"{asset.get('character_name') or '?'} — {(asset.get('prompt') or '')[:60]}",
+            asset["url"], None,
+            {"source": "asset", "ref_id": asset["id"], "model": asset.get("model")},
+        ))
+    for scene in db.list_scenes(workspace):
+        pool.append(_pool_entry(
+            f"scene:{scene['id']}", "still",
+            f"Scene: {' + '.join(scene.get('participant_names') or [])} — {(scene.get('prompt') or '')[:50]}",
+            scene["url"], None,
+            {"source": "scene", "ref_id": scene["id"], "model": scene.get("model")},
+        ))
+    for image in db.list_studio_images(workspace):
+        pool.append(_pool_entry(
+            f"studio:{image['id']}", "still",
+            f"{image['kind']} — {(image.get('prompt') or '')[:60]}",
+            image["url"], None,
+            {"source": "studio", "ref_id": image["id"], "model": image.get("model")},
+        ))
+    for video in db.list_videos(workspace):
+        if video.get("status") != "done" or not video.get("url"):
+            continue
+        pool.append(_pool_entry(
+            f"video:{video['id']}", "video",
+            f"{(video.get('character_name') + ': ') if video.get('character_name') else ''}"
+            f"{(video.get('prompt') or '')[:60]}",
+            video["url"], float(video["duration"]) if video.get("duration") else None,
+            {"source": "video", "ref_id": video["id"], "model": video.get("model"),
+             "kind_label": video.get("kind")},
+        ))
+    return pool
+
+
+@app.get("/timeline/audio")
+def timeline_audio(workspace: str = Depends(require_workspace)):
+    """Audio that can be laid under a cut: generated voiceovers, dialogues, and
+    anything uploaded through /uploads/music."""
+    tracks = []
+    for clip in db.list_audio_clips(workspace):
+        tracks.append(_pool_entry(
+            f"audio:{clip['id']}", "audio", (clip.get("text") or "")[:70],
+            clip["url"], None, {"url": clip["url"], "voice": clip.get("voice")},
+        ))
+    for dialogue in db.list_dialogues(workspace):
+        tracks.append(_pool_entry(
+            f"dialogue:{dialogue['id']}", "audio",
+            f"Dialogue: {' + '.join(dialogue.get('participant_names') or [])}",
+            dialogue["url"], None, {"url": dialogue["url"]},
+        ))
+    return tracks
+
+
+# ── Timeline: the assisted cut ───────────────────────────────────────────
+
+@app.post("/sequences/auto", dependencies=[Depends(generation_guard("script", 1))])
+def auto_cut(body: AutoCutRequest, workspace: str = Depends(require_workspace)):
+    """Let the model propose an edit over what is already in the vault.
+
+    It returns an edit decision list, never media — and every shot key it names
+    is checked against the real pool here, so an invented reference is dropped
+    rather than fetched. The result is saved as a normal draft sequence: it is
+    a starting point to be reworked in the editor, not a finished cut.
+    """
+    if not OPENAI_API_KEY:
+        raise HTTPException(
+            status_code=400, detail="The assisted cut needs OPENAI_API_KEY to be configured.")
+
+    pool = timeline_pool(workspace)
+    if not pool:
+        raise HTTPException(
+            status_code=400,
+            detail="There is nothing to cut yet — generate or upload some material first.",
+        )
+    by_key = {entry["key"]: entry for entry in pool}
+
+    with generation_slot(workspace, "auto_cut"):
+        try:
+            plan = plan_sequence(
+                body.brief,
+                [{"key": e["key"], "kind": e["kind"], "label": e["label"],
+                  "duration": e["duration"]} for e in pool],
+                body.target_seconds, body.aspect_ratio,
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Assisted cut planning failed")
+            raise HTTPException(status_code=502, detail="The assisted cut failed. Please try again.")
+
+    clips, dropped = [], 0
+    for raw in (plan.get("clips") or [])[:MAX_SEQUENCE_CLIPS]:
+        if not isinstance(raw, dict):
+            continue
+        key = str(raw.get("key") or "")
+        fields = {
+            "duration": raw.get("duration"),
+            "transition": raw.get("transition"),
+            "look": raw.get("look"),
+            "motion": raw.get("motion"),
+            "text": raw.get("text"),
+            "subtitle": raw.get("subtitle"),
+        }
+        fields = {k: v for k, v in fields.items() if v not in (None, "")}
+        if key == "title":
+            fields.setdefault("text", "")
+            if not str(fields["text"]).strip():
+                dropped += 1
+                continue
+            candidate = {"source": "title", **fields}
+        else:
+            entry = by_key.get(key)
+            if entry is None:
+                dropped += 1
+                continue
+            candidate = {"source": entry["source"], "ref_id": entry["ref_id"], **fields}
+            if entry["kind"] == "video":
+                # A model has no way to know how much of a clip is usable, so
+                # it never gets to trim one — the whole clip plays, and the
+                # editor sets in/out by eye.
+                candidate.pop("motion", None)
+        try:
+            clips.append(TimelineClip(**candidate))
+        except Exception:
+            dropped += 1
+
+    if not clips:
+        raise HTTPException(
+            status_code=502,
+            detail="The assisted cut came back without a usable clip. Try a more specific brief.",
+        )
+
+    name = (body.name or plan.get("name") or body.brief)[:120].strip() or "Assisted cut"
+    sequence = db.create_sequence(
+        workspace_id=workspace, name=name,
+        clips=[c.model_dump() for c in clips],
+        aspect_ratio=body.aspect_ratio, audio_tracks=[],
+    )
+    result = _sequence_public(sequence)
+    # Reported rather than hidden: a plan that lost half its shots to bad
+    # references is a plan the user should look at closely.
+    result["dropped_clips"] = dropped
+    return result

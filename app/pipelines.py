@@ -2,6 +2,8 @@ import logging
 import os
 import tempfile
 import threading
+from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline, StepStatus
@@ -1220,6 +1222,723 @@ def _draw_caption(image_bytes: bytes, text: str) -> bytes:
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
+
+
+@lru_cache(maxsize=1)
+def ffmpeg_has_drawtext() -> bool:
+    """Whether this machine's ffmpeg was built with libfreetype.
+
+    Nothing here depends on the answer — every piece of text this app burns
+    into video goes through Pillow (`_draw_caption`, `_render_title_card`),
+    which wraps lines and picks fonts far better than drawtext can and needs no
+    ffmpeg feature at all. The probe exists so a deployed image can be asked
+    what it actually has (it is reported by /capabilities): the ffmpeg used
+    during development has NO drawtext filter, and a `-vf drawtext=…` that
+    silently works on one host and dies on another is exactly the surprise this
+    app should not ship. Any future change tempted to reach for drawtext has to
+    pass this check first.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-filters"],
+            capture_output=True, text=True, timeout=20,
+        ).stdout
+    except Exception:
+        return False
+    return any(line.split()[1:2] == ["drawtext"] for line in out.splitlines() if line.strip())
+
+
+# ── Timeline: cut existing vault assets into one sequence ────────────────
+# The last step of the chain. Everything else in this file CREATES material;
+# this assembles material that already exists into a finished cut, so no
+# provider is called and nothing is billed — local ffmpeg work, like the canvas
+# overlay.
+#
+# Every clip is encoded to its own normalised segment first and the segments
+# are then joined with the concat demuxer (`-c copy`). The alternative — one
+# large filter_complex with xfade — would allow true cross-dissolves, but it
+# holds every input open at once, and this app already learned on the small
+# production container that a filtergraph sized for the host rather than the
+# container gets SIGKILLed before frame 1 (see overlay_video). Sequential
+# segments keep peak memory at one clip, whatever the cut's length.
+#
+# The price of that choice is the shape of a "fade": a dip to black (out on the
+# ending clip's tail, in on the starting clip's head), not a cross-dissolve.
+# That is a real transition, just not a blended one.
+
+SEQUENCE_SIZES = {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}
+SEQUENCE_FPS = 24
+SEQUENCE_MAX_FADE = 2.0
+# A fade may never eat more than this share of the clip it sits on, or a 0.5s
+# fade on a 0.4s title card would start after the card is already over.
+SEQUENCE_FADE_SHARE = 0.4
+
+# Colour looks. Deliberately built from ffmpeg's own primitives rather than
+# shipped LUT files: no binary assets to license or version, and every look
+# stays readable as what it does. `eq` handles exposure/saturation,
+# `colorbalance` shifts the shadows/midtones/highlights per channel — the same
+# controls a grading panel exposes, just spelled out.
+SEQUENCE_LOOKS = {
+    "none": "",
+    "enhance": "eq=contrast=1.10:saturation=1.08:gamma=1.02,unsharp=5:5:0.6:5:5:0.0",
+    "warm": "eq=contrast=1.06:saturation=1.10,colorbalance=rs=0.06:gs=0.01:bs=-0.06:rm=0.05:bm=-0.05",
+    "cool": "eq=contrast=1.06:saturation=1.02,colorbalance=rs=-0.06:bs=0.08:rm=-0.04:bm=0.06",
+    "noir": "hue=s=0,eq=contrast=1.28:brightness=-0.02,unsharp=5:5:0.4:5:5:0.0",
+    "vivid": "eq=contrast=1.14:saturation=1.35:gamma=1.04",
+    "vintage": "curves=preset=vintage,eq=saturation=0.88:contrast=0.96",
+    "soft": "eq=contrast=0.94:brightness=0.03:saturation=0.96,gblur=sigma=0.6",
+}
+
+# Camera moves for stills. A still held dead-still for four seconds is what
+# makes a slideshow read as a slideshow; a slow push or drift is the single
+# cheapest thing that makes the same material read as film.
+SEQUENCE_MOTIONS = ("none", "zoom_in", "zoom_out", "pan_left", "pan_right", "pan_up", "pan_down")
+
+
+def _render_title_card(text: str, subtitle: str | None, width: int, height: int) -> bytes:
+    """A text panel as a PNG, drawn with Pillow — see ffmpeg_has_drawtext() for
+    why this never goes through ffmpeg's drawtext filter."""
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (width, height), (11, 10, 22))
+    draw = ImageDraw.Draw(img)
+
+    def _font(size: int, bold: bool):
+        font = ImageFont.truetype(str(_CAPTION_FONT), size)
+        if bold:
+            try:
+                font.set_variation_by_name("Bold")
+            except Exception:
+                pass  # non-variable font fallback — still renders, just not bold
+        return font
+
+    def _wrap(content: str, font, max_width: int) -> list[str]:
+        lines, current = [], ""
+        for word in content.split():
+            trial = f"{current} {word}".strip()
+            if draw.textlength(trial, font=font) <= max_width or not current:
+                current = trial
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines
+
+    max_width = int(width * 0.82)
+    title_font = _font(max(24, width // 16), bold=True)
+    title_lines = _wrap(text, title_font, max_width)
+    title_step = int(title_font.size * 1.25)
+
+    sub_font = sub_lines = None
+    sub_step = 0
+    if subtitle:
+        sub_font = _font(max(16, width // 30), bold=False)
+        sub_lines = _wrap(subtitle, sub_font, max_width)
+        sub_step = int(sub_font.size * 1.35)
+
+    gap = int(height * 0.045) if sub_lines else 0
+    block = title_step * len(title_lines) + gap + sub_step * len(sub_lines or [])
+    y = (height - block) / 2
+
+    for line in title_lines:
+        draw.text(((width - draw.textlength(line, font=title_font)) / 2, y),
+                  line, font=title_font, fill=(255, 255, 255))
+        y += title_step
+    if sub_lines:
+        y += gap
+        for line in sub_lines:
+            draw.text(((width - draw.textlength(line, font=sub_font)) / 2, y),
+                      line, font=sub_font, fill=(168, 255, 53))
+            y += sub_step
+
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _still_png(image_bytes: bytes, caption: str | None) -> bytes:
+    """Normalise any stored still to a plain RGB PNG, with an optional caption
+    burned in. Going through Pillow unconditionally also rescues inputs ffmpeg
+    would misread — CMYK JPEGs, palette PNGs, uploads whose extension lies."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    if caption:
+        return _draw_caption(image_bytes, caption)
+    with Image.open(BytesIO(image_bytes)) as img:
+        out = BytesIO()
+        img.convert("RGB").save(out, format="PNG")
+        return out.getvalue()
+
+
+def _has_audio_stream(path: Path) -> bool:
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+             "stream=index", "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+    except Exception:
+        return False
+    return bool(out)
+
+
+def _grade_chain(clip: dict) -> str:
+    """Colour work for one clip: a named look, plus manual trims on top.
+
+    The manual values are offsets around neutral (0 = unchanged) so a slider at
+    rest costs nothing, and they compose with the look rather than replacing
+    it — nudging exposure on a graded clip is the normal case, not an
+    either/or."""
+    parts = []
+    look = SEQUENCE_LOOKS.get(clip.get("look") or "none", "")
+    if look:
+        parts.append(look)
+    brightness = float(clip.get("brightness") or 0.0)
+    contrast = float(clip.get("contrast") or 0.0)
+    saturation = float(clip.get("saturation") or 0.0)
+    if brightness or contrast or saturation:
+        parts.append(
+            f"eq=brightness={max(-0.5, min(0.5, brightness)):.3f}"
+            f":contrast={max(0.2, min(2.5, 1.0 + contrast)):.3f}"
+            f":saturation={max(0.0, min(3.0, 1.0 + saturation)):.3f}"
+        )
+    return ",".join(parts)
+
+
+def _fade_filters(fade_in: float, fade_out: float, length: float) -> tuple[str, str]:
+    """Video and audio fade fragments for one segment (either may be empty).
+    Returned separately because stills get silence rather than a filter chain."""
+    video, audio = [], []
+    if fade_in > 0:
+        video.append(f"fade=t=in:st=0:d={fade_in:.3f}")
+        audio.append(f"afade=t=in:st=0:d={fade_in:.3f}")
+    if fade_out > 0:
+        start = max(0.0, length - fade_out)
+        video.append(f"fade=t=out:st={start:.3f}:d={fade_out:.3f}")
+        audio.append(f"afade=t=out:st={start:.3f}:d={fade_out:.3f}")
+    return ",".join(video), ",".join(audio)
+
+
+def _fit_chain(width: int, height: int) -> str:
+    """Fit any source into the output frame without cropping or distorting it —
+    letterboxed/pillarboxed instead, so a 9:16 portrait dropped into a 16:9 cut
+    keeps its whole frame."""
+    return (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"setsar=1"
+    )
+
+
+def _kenburns_chain(motion: str, width: int, height: int, frames: int) -> str:
+    """A slow camera move over a still, via zoompan.
+
+    zoompan expands ONE input frame into `frames` output frames, so the caller
+    must feed a single image (not `-loop 1`) — looping would multiply the move
+    once per looped frame and produce a stutter. The source is first scaled to
+    twice the output: zoompan steps its crop window in integer pixels, and on a
+    frame-sized input those steps are visible as judder.
+    """
+    over = f"scale={width * 2}:{height * 2}:force_original_aspect_ratio=decrease," \
+           f"pad={width * 2}:{height * 2}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
+    step = 0.12 / max(1, frames)  # ~12% travel across the whole clip, regardless of length
+    centre_x, centre_y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+    if motion == "zoom_in":
+        z, x, y = f"min(zoom+{step:.6f},1.12)", centre_x, centre_y
+    elif motion == "zoom_out":
+        z, x, y = f"if(lte(zoom,1.0),1.12,max(1.0,zoom-{step:.6f}))", centre_x, centre_y
+    elif motion in ("pan_left", "pan_right"):
+        travel = f"(iw-iw/zoom)*(on/{max(1, frames)})"
+        x = travel if motion == "pan_right" else f"(iw-iw/zoom)*(1-on/{max(1, frames)})"
+        z, y = "1.12", centre_y
+    else:  # pan_up / pan_down
+        travel = f"(ih-ih/zoom)*(on/{max(1, frames)})"
+        y = travel if motion == "pan_down" else f"(ih-ih/zoom)*(1-on/{max(1, frames)})"
+        z, x = "1.12", centre_x
+    return (f"{over},zoompan=z='{z}':x='{x}':y='{y}'"
+            f":d={frames}:s={width}x{height}:fps={SEQUENCE_FPS}")
+
+
+_X264 = ["-c:v", "libx264", "-preset", "veryfast", "-threads", "2",
+         "-r", str(SEQUENCE_FPS), "-pix_fmt", "yuv420p"]
+# Every segment gets an audio track — silent for stills — because the concat
+# demuxer needs the same stream layout in every part, and a cut mixing talking
+# clips with stills would otherwise lose its audio at the first still.
+_AAC = ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2"]
+_SILENCE = "anullsrc=channel_layout=stereo:sample_rate=48000"
+
+
+def _run_ffmpeg(args: list[str], what: str, timeout: int = 600) -> None:
+    import subprocess
+
+    try:
+        subprocess.run(args, check=True, capture_output=True, timeout=timeout)
+    except subprocess.CalledProcessError as exc:
+        # capture_output swallows stderr into the exception — surface it, or a
+        # production failure is undiagnosable from the logs (same reasoning as
+        # overlay_video).
+        logger.error("ffmpeg %s failed: %s", what,
+                     (exc.stderr or b"").decode(errors="replace")[-2000:])
+        raise
+
+
+def _join_chain(*parts: str) -> str:
+    return ",".join(p for p in parts if p)
+
+
+def _encode_still_segment(clip: dict, image_path: Path, out_path: Path, length: float,
+                          width: int, height: int, fade_in: float, fade_out: float) -> None:
+    motion = clip.get("motion") or "none"
+    video_fade, _ = _fade_filters(fade_in, fade_out, length)
+    frames = max(2, int(round(length * SEQUENCE_FPS)))
+
+    args = ["ffmpeg", "-y"]
+    if motion in SEQUENCE_MOTIONS and motion != "none":
+        args += ["-i", str(image_path)]  # single frame — zoompan expands it
+        geometry = _kenburns_chain(motion, width, height, frames)
+    else:
+        args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(image_path)]
+        geometry = f"{_fit_chain(width, height)},fps={SEQUENCE_FPS}"
+    args += ["-f", "lavfi", "-t", f"{length:.3f}", "-i", _SILENCE,
+             "-vf", _join_chain(geometry, _grade_chain(clip), video_fade, "format=yuv420p"),
+             "-map", "0:v:0", "-map", "1:a:0",
+             *_X264, *_AAC, "-t", f"{length:.3f}", str(out_path)]
+    _run_ffmpeg(args, "still segment", timeout=420)
+
+
+def _encode_video_segment(clip: dict, source: Path, out_path: Path, start: float, length: float,
+                          width: int, height: int, fade_in: float, fade_out: float) -> None:
+    video_fade, audio_fade = _fade_filters(fade_in, fade_out, length)
+    has_audio = _has_audio_stream(source)
+    volume = float(clip.get("volume") if clip.get("volume") is not None else 1.0)
+    volume = max(0.0, min(4.0, volume))
+
+    args = ["ffmpeg", "-y"]
+    if start > 0:
+        args += ["-ss", f"{start:.3f}"]
+    args += ["-i", str(source)]
+    if not has_audio:
+        args += ["-f", "lavfi", "-i", _SILENCE]
+    args += ["-t", f"{length:.3f}",
+             "-map", "0:v:0", "-map", "0:a:0" if has_audio else "1:a:0",
+             "-vf", _join_chain(f"{_fit_chain(width, height)},fps={SEQUENCE_FPS}",
+                                _grade_chain(clip), video_fade, "format=yuv420p")]
+    if has_audio:
+        audio_chain = _join_chain(
+            f"volume={volume:.3f}" if abs(volume - 1.0) > 1e-6 else "", audio_fade,
+        )
+        if audio_chain:
+            args += ["-af", audio_chain]
+    args += [*_X264, *_AAC, str(out_path)]
+    _run_ffmpeg(args, "video segment", timeout=600)
+
+
+def _ffmetadata_escape(value: str) -> str:
+    for char in ("\\", "=", ";", "#", "\n"):
+        value = value.replace(char, "\\" + char)
+    return value
+
+
+def _write_ffmetadata(path: Path, tags: dict[str, str]) -> None:
+    """ffmpeg's own metadata format. Used instead of repeated `-metadata k=v`
+    arguments because the merged manifest runs to several kilobytes of JSON,
+    well past what is safe to pass as a single argv element."""
+    lines = [";FFMETADATA1"]
+    lines += [f"{key}={_ffmetadata_escape(value)}" for key, value in tags.items()]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _build_sequence_manifest(name: str, entries: list[dict], total: float, width: int,
+                             height: int, audio_tracks: list[dict]) -> dict:
+    """The merged provenance manifest: what this cut is made of.
+
+    Each source keeps its own record — model, prompt, hash, disclosure mode and
+    whether ITS manifest verified — alongside where it sits on the timeline and
+    what grading was applied to it. The summary reports `all_sources_verified`
+    rather than one verified flag for the cut: the assembly ran no genblaze
+    pipeline, so there is no manifest over the output to verify, and claiming
+    one would be exactly the unearned badge this app argues against.
+    """
+    costs = [e["provenance"].get("cost_usd") for e in entries
+             if e["provenance"].get("cost_usd") is not None]
+    generated = [e for e in entries if e["provenance"].get("ai_generated")]
+    # Only generative models. The title-card renderer and an uploaded clip's
+    # "upload" marker are producers too, but listing them here would read as
+    # "this cut used four AI models" — the one claim this summary exists to
+    # get right.
+    models = sorted({e["provenance"].get("model") for e in generated
+                     if e["provenance"].get("model")})
+    return {
+        "type": "loomina.sequence.provenance",
+        "version": 1,
+        "assembled_at": datetime.now(timezone.utc).isoformat(),
+        "sequence": {
+            "name": name,
+            "duration_s": round(total, 3),
+            "width": width,
+            "height": height,
+            "fps": SEQUENCE_FPS,
+            "clip_count": len(entries),
+        },
+        "assembly": {
+            "tool": "ffmpeg",
+            "method": "per-clip encode + concat demuxer",
+            "text_panels": "pillow",
+            "provider_calls": 0,
+            "cost_usd": 0.0,
+        },
+        "sources": entries,
+        "audio": audio_tracks,
+        "summary": {
+            "ai_generated_clips": len(generated),
+            "captured_or_uploaded_clips": len(entries) - len(generated),
+            "models": models,
+            "source_cost_usd": round(sum(costs), 6) if costs else None,
+            # True only if every AI-generated source carried a manifest that
+            # verified. One unverified source makes the whole cut unverified —
+            # that is the honest aggregation.
+            "all_sources_verified": bool(generated) and all(
+                e["provenance"].get("manifest_verified") for e in generated
+            ),
+        },
+    }
+
+
+def render_sequence(
+    name: str,
+    clips: list[dict],
+    aspect_ratio: str = "16:9",
+    audio_tracks: list[dict] | None = None,
+) -> dict:
+    """Cut `clips` into one MP4 and store it in B2 with a merged manifest.
+
+    Each clip arrives already resolved by the caller (which owns database
+    access): {source, ref_id, url, duration, in_point, out_point, transition,
+    fade_duration, look, motion, brightness, contrast, saturation, volume,
+    text, subtitle, provenance}. `source` is "title" for a text panel, "video"
+    for a moving clip, anything else for a still.
+
+    `audio_tracks` are laid UNDER the finished cut — music or a voiceover added
+    after the fact: [{url, volume, provenance}]. The clips keep their own
+    audio; the tracks are mixed beneath it.
+
+    Returns {url, sha256, mime_type, duration, manifest, manifest_url}.
+    """
+    import json
+    import uuid as _uuid
+
+    from app.storage import download_bytes, upload_bytes
+
+    if not clips:
+        raise ValueError("A sequence needs at least one clip.")
+    width, height = SEQUENCE_SIZES.get(aspect_ratio, SEQUENCE_SIZES["16:9"])
+    audio_tracks = audio_tracks or []
+
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+
+        # Pass 1 — fetch every source and settle its real length. A video's
+        # length comes from the clip itself (trimmed by in/out), never from the
+        # requested duration, so the timeline can't claim time the clip doesn't
+        # have.
+        prepared = []
+        for index, clip in enumerate(clips):
+            if clip["source"] == "title":
+                path = tmp / f"src{index}.png"
+                path.write_bytes(_render_title_card(
+                    clip.get("text") or "", clip.get("subtitle"), width, height,
+                ))
+                prepared.append({"clip": clip, "path": path, "kind": "still",
+                                 "start_in_source": 0.0,
+                                 "length": max(0.2, float(clip.get("duration") or 3.0))})
+            elif clip["source"] == "video":
+                path = tmp / f"src{index}.mp4"
+                path.write_bytes(download_bytes(clip["url"]))
+                available = _probe_duration_s(path)
+                start = min(max(0.0, float(clip.get("in_point") or 0.0)),
+                            max(0.0, available - 0.2))
+                end = clip.get("out_point")
+                end = available if end is None else min(float(end), available)
+                prepared.append({"clip": clip, "path": path, "kind": "video",
+                                 "start_in_source": start, "length": max(0.2, end - start),
+                                 "source_duration": available})
+            else:
+                path = tmp / f"src{index}.png"
+                path.write_bytes(_still_png(download_bytes(clip["url"]), clip.get("text")))
+                prepared.append({"clip": clip, "path": path, "kind": "still",
+                                 "start_in_source": 0.0,
+                                 "length": max(0.2, float(clip.get("duration") or 3.0))})
+
+        # A fade belongs to the cut BETWEEN two clips, so it is drawn on both
+        # sides: out on the clip that ends, in on the clip that begins. A fade
+        # on clip 0 has no predecessor and simply opens the film from black.
+        for item in prepared:
+            item["fade_in"] = item["fade_out"] = 0.0
+        for i, item in enumerate(prepared):
+            if item["clip"].get("transition") != "fade":
+                continue
+            span = min(float(item["clip"].get("fade_duration") or 0.5),
+                       SEQUENCE_MAX_FADE, item["length"] * SEQUENCE_FADE_SHARE)
+            if i > 0:
+                span = min(span, prepared[i - 1]["length"] * SEQUENCE_FADE_SHARE)
+                prepared[i - 1]["fade_out"] = max(prepared[i - 1]["fade_out"], span)
+            item["fade_in"] = max(item["fade_in"], span)
+
+        # Pass 2 — one normalised segment per clip.
+        segments, entries, timeline_at = [], [], 0.0
+        for index, item in enumerate(prepared):
+            seg = tmp / f"seg{index}.mp4"
+            clip = item["clip"]
+            if item["kind"] == "video":
+                _encode_video_segment(clip, item["path"], seg, item["start_in_source"],
+                                      item["length"], width, height,
+                                      item["fade_in"], item["fade_out"])
+            else:
+                _encode_still_segment(clip, item["path"], seg, item["length"],
+                                      width, height, item["fade_in"], item["fade_out"])
+            segments.append(seg)
+
+            entry = {
+                "index": index,
+                "source": clip["source"],
+                "ref_id": clip.get("ref_id"),
+                "starts_at_s": round(timeline_at, 3),
+                "duration_s": round(item["length"], 3),
+                "transition_in": clip.get("transition") or "cut",
+                "look": clip.get("look") or "none",
+                "motion": clip.get("motion") or "none",
+                "provenance": dict(clip.get("provenance") or {}),
+            }
+            if clip["source"] == "title":
+                entry["text"] = clip.get("text")
+                entry["subtitle"] = clip.get("subtitle")
+            else:
+                entry["url"] = clip["url"]
+                if clip.get("text"):
+                    entry["burned_in_caption"] = clip["text"]
+            if item["kind"] == "video":
+                entry["trimmed_from"] = {
+                    "in_s": round(item["start_in_source"], 3),
+                    "out_s": round(item["start_in_source"] + item["length"], 3),
+                    "source_duration_s": round(item["source_duration"], 3),
+                }
+            entries.append(entry)
+            timeline_at += item["length"]
+
+        # Pass 3 — join. Every segment shares codec, rate, size and channel
+        # layout, so the concat demuxer can stream-copy them.
+        list_path = tmp / "segments.txt"
+        list_path.write_text("\n".join(f"file '{seg}'" for seg in segments) + "\n")
+        joined = tmp / "joined.mp4"
+        _run_ffmpeg(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
+             "-c", "copy", "-fflags", "+genpts", str(joined)],
+            "concat", timeout=420,
+        )
+
+        total = _probe_duration_s(joined)
+        manifest = _build_sequence_manifest(
+            name, entries, total, width, height,
+            [{"url": t.get("url"), "volume": t.get("volume", 0.25),
+              "provenance": t.get("provenance") or {}} for t in audio_tracks],
+        )
+
+        # Pass 4 — lay the added audio under the cut and bake the manifest into
+        # the file. `duration=first` keeps the cut's own length authoritative:
+        # a soundtrack longer than the film is cut off, a shorter one (looped
+        # by -stream_loop) never extends it.
+        meta_path = tmp / "manifest.ffmeta"
+        _write_ffmetadata(meta_path, {
+            "title": name,
+            "comment": (
+                f"Assembled by Loomina from {len(entries)} vault clips "
+                f"({manifest['summary']['ai_generated_clips']} AI-generated). "
+                "Full provenance in the loomina_provenance tag."
+            ),
+            "loomina_provenance": json.dumps(manifest, separators=(",", ":")),
+        })
+
+        out_path = tmp / "out.mp4"
+        args = ["ffmpeg", "-y", "-i", str(joined)]
+        for track_index, track in enumerate(audio_tracks):
+            track_path = tmp / f"track{track_index}.src"
+            track_path.write_bytes(download_bytes(track["url"]))
+            args += ["-stream_loop", "-1", "-i", str(track_path)]
+        args += ["-f", "ffmetadata", "-i", str(meta_path)]
+
+        if audio_tracks:
+            mix = []
+            for track_index, track in enumerate(audio_tracks):
+                volume = max(0.0, min(2.0, float(track.get("volume") or 0.25)))
+                mix.append(f"[{track_index + 1}:a]volume={volume:.3f}[t{track_index}]")
+            labels = "[0:a]" + "".join(f"[t{i}]" for i in range(len(audio_tracks)))
+            mix.append(f"{labels}amix=inputs={len(audio_tracks) + 1}"
+                       f":duration=first:dropout_transition=0:normalize=0[aout]")
+            args += ["-filter_complex", ";".join(mix),
+                     "-map", "0:v:0", "-map", "[aout]",
+                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                     "-map_metadata", str(len(audio_tracks) + 1)]
+        else:
+            args += ["-map", "0:v:0", "-map", "0:a:0", "-c", "copy", "-map_metadata", "1"]
+        args += ["-movflags", "use_metadata_tags+faststart", str(out_path)]
+        _run_ffmpeg(args, "final mux", timeout=600)
+
+        data = out_path.read_bytes()
+        duration = _probe_duration_s(out_path)
+
+    stem = _uuid.uuid4().hex
+    url, sha = upload_bytes(f"videos/sequence/{stem}.mp4", data, "video/mp4")
+    # The sidecar keeps the manifest readable without an ffprobe round-trip and
+    # survives any player or upload that strips container metadata.
+    manifest_url, _ = upload_bytes(
+        f"videos/sequence/{stem}.manifest.json",
+        json.dumps(manifest, indent=2).encode("utf-8"),
+        "application/json",
+    )
+    return {
+        "url": url,
+        "sha256": sha,
+        "mime_type": "video/mp4",
+        "duration": duration,
+        "manifest": manifest,
+        "manifest_url": manifest_url,
+    }
+
+
+def read_embedded_manifest(path_or_url: str) -> dict | None:
+    """Read the merged manifest back out of a rendered MP4.
+
+    The point of embedding it is that the cut carries its own provenance
+    wherever it travels — this is the reader that proves it, and what a
+    verifier would use on a file that arrived without our database.
+    """
+    import json
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format_tags",
+             "-of", "json", path_or_url],
+            capture_output=True, text=True, timeout=60,
+        ).stdout
+        tags = json.loads(out or "{}").get("format", {}).get("tags", {})
+    except Exception:
+        return None
+    raw = tags.get("loomina_provenance") or tags.get("LOOMINA_PROVENANCE")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def probe_media(path_or_url: str) -> dict:
+    """Duration and pixel size of a media file, for uploads that arrive with no
+    metadata of their own. Best-effort: a file ffprobe can't read is still
+    stored, it just shows up in the timeline without a known length."""
+    import json
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries",
+             "format=duration:stream=width,height,codec_type",
+             "-of", "json", path_or_url],
+            capture_output=True, text=True, timeout=60,
+        ).stdout
+        data = json.loads(out or "{}")
+    except Exception:
+        return {"duration": None, "width": None, "height": None}
+    try:
+        duration = float(data.get("format", {}).get("duration"))
+    except (TypeError, ValueError):
+        duration = None
+    video = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
+    return {"duration": duration, "width": video.get("width"), "height": video.get("height")}
+
+
+# ── AI-assisted cut ──────────────────────────────────────────────────────
+# The editorial decision — which shot, how long, in what order — is the one
+# part of this chain the app could not previously help with. The model gets
+# what an assistant editor would get: the shot list with its prompts and real
+# durations, the brief, and the target length. It returns an edit, not media,
+# and every id it names is checked against the pool before anything renders —
+# a hallucinated shot is dropped, not fetched.
+
+SEQUENCE_PLANNER_MODEL = "gpt-4o-mini"
+
+_PLANNER_SYSTEM = (
+    "You are an assistant video editor. You are given a shot list from a media "
+    "library and a brief, and you return an edit decision list as JSON. You "
+    "never invent shots: every clip you use must reference a key from the shot "
+    "list verbatim. Good editing means varying shot length (2-5s for stills, "
+    "the natural length for motion clips), opening on the strongest image, "
+    "using fades only where a beat genuinely changes, and ending on the shot "
+    "that carries the message. Add short title cards only where they earn "
+    "their screen time — an opener and a closing line at most, unless asked "
+    "for more."
+)
+
+_PLANNER_SCHEMA = (
+    'Return ONLY JSON of the form {"name": string, "clips": [clip, ...]} where a '
+    'clip is either {"key": "<shot key from the list>", "duration": number, '
+    '"transition": "cut"|"fade", "look": "none"|"enhance"|"warm"|"cool"|"noir"|'
+    '"vivid"|"vintage"|"soft", "motion": "none"|"zoom_in"|"zoom_out"|"pan_left"|'
+    '"pan_right", "text": string|null} or a title card {"key": "title", '
+    '"duration": number, "transition": "cut"|"fade", "text": string, '
+    '"subtitle": string|null}. "motion" applies to stills only. "text" on a '
+    'non-title clip is a caption burned into the frame — use it sparingly.'
+)
+
+
+def plan_sequence(brief: str, pool: list[dict], target_seconds: int = 30,
+                  aspect_ratio: str = "16:9") -> dict:
+    """Ask the model for an edit over `pool`.
+
+    `pool` entries: {key, kind ("still"/"video"), label, duration}. Returns the
+    raw {"name", "clips"} dict — the caller validates every key against the
+    pool and turns it into real clips, so a wrong or invented key can never
+    reach the renderer.
+    """
+    import json
+
+    from openai import OpenAI
+
+    if not pool:
+        raise ValueError("There is nothing in the vault to cut yet.")
+
+    shots = "\n".join(
+        f"- {p['key']} [{p['kind']}"
+        + (f", {p['duration']:.1f}s" if p.get("duration") else "")
+        + f"]: {(p.get('label') or '').strip()[:160]}"
+        for p in pool
+    )
+    user = (
+        f"Brief: {brief}\n"
+        f"Target length: about {target_seconds} seconds.\n"
+        f"Aspect ratio: {aspect_ratio}.\n\n"
+        f"Shot list:\n{shots}\n\n{_PLANNER_SCHEMA}"
+    )
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    resp = client.chat.completions.create(
+        model=SEQUENCE_PLANNER_MODEL,
+        messages=[{"role": "system", "content": _PLANNER_SYSTEM},
+                  {"role": "user", "content": user}],
+        response_format={"type": "json_object"},
+        max_tokens=2000,
+        temperature=0.7,
+    )
+    return json.loads(resp.choices[0].message.content or "{}")
 
 
 def generate_motion_comic(panels: list[dict], music_url: str | None = None) -> dict:

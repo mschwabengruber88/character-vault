@@ -174,6 +174,36 @@ CREATE TABLE IF NOT EXISTS canvas_templates (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Timeline sequences: an ordered cut of assets that already live in the vault.
+-- clips_json is the edit itself (a list of clip dicts — see
+-- app.main.TimelineClip), kept as JSON rather than a child table because a
+-- clip is only ever read and written as part of its whole sequence and never
+-- queried across sequences.
+--
+-- manifest_json is the MERGED provenance manifest of the last render: what
+-- every second of the finished cut is made of, which model produced it, and
+-- whether that source's own manifest verified. It is written once per render
+-- and never edited, so the copy on B2 and this row always agree.
+CREATE TABLE IF NOT EXISTS sequences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    name TEXT NOT NULL,
+    clips_json TEXT NOT NULL,
+    aspect_ratio TEXT NOT NULL DEFAULT '16:9',
+    -- Music/voiceover laid under the finished cut, added after the fact:
+    -- [{url, volume, label}]. A list rather than one column because a spot
+    -- routinely wants a bed AND a voiceover, at different levels.
+    audio_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'draft',
+    video_id INTEGER,
+    manifest_json TEXT,
+    manifest_url TEXT,
+    duration REAL,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 MIGRATIONS = (
@@ -442,6 +472,19 @@ def list_assets(workspace_id: str, kind: str | None = None) -> list[dict]:
         return [dict(row) for row in rows]
 
 
+def get_asset(workspace_id: str, asset_id: int) -> dict | None:
+    """One asset by id, scoped through its character's workspace. Assets carry
+    no workspace_id of their own — they inherit it from the character."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT assets.*, characters.name AS character_name
+               FROM assets JOIN characters ON characters.id = assets.character_id
+               WHERE assets.id = ? AND characters.workspace_id = ?""",
+            (asset_id, workspace_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def add_asset(
     character_id: int,
     kind: str,
@@ -692,6 +735,135 @@ def delete_canvas_template(workspace_id: str, template_id: int) -> bool:
         return cur.rowcount > 0
 
 
+# ── Timeline sequences ───────────────────────────────────────────────────
+# The row stores clips and manifest as JSON text; every reader here hands the
+# caller parsed Python objects, so no endpoint ever has to json.loads() them.
+
+def _sequence_row(row) -> dict:
+    import json
+
+    d = dict(row)
+    d["clips"] = json.loads(d.pop("clips_json") or "[]")
+    d["audio_tracks"] = json.loads(d.pop("audio_json") or "[]")
+    d["manifest"] = json.loads(d["manifest_json"]) if d.get("manifest_json") else None
+    d.pop("manifest_json", None)
+    return d
+
+
+def create_sequence(
+    workspace_id: str,
+    name: str,
+    clips: list[dict],
+    aspect_ratio: str,
+    audio_tracks: list[dict],
+) -> dict:
+    import json
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO sequences
+               (workspace_id, name, clips_json, aspect_ratio, audio_json,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (workspace_id, name, json.dumps(clips), aspect_ratio,
+             json.dumps(audio_tracks), now(), now()),
+        )
+        return _sequence_row(conn.execute(
+            "SELECT * FROM sequences WHERE id = ?", (cur.lastrowid,)
+        ).fetchone())
+
+
+def list_sequences(workspace_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sequences WHERE workspace_id = ? ORDER BY id DESC",
+            (workspace_id,),
+        ).fetchall()
+        return [_sequence_row(row) for row in rows]
+
+
+def get_sequence(workspace_id: str, sequence_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sequences WHERE id = ? AND workspace_id = ?",
+            (sequence_id, workspace_id),
+        ).fetchone()
+        return _sequence_row(row) if row else None
+
+
+def update_sequence(
+    workspace_id: str,
+    sequence_id: int,
+    name: str,
+    clips: list[dict],
+    aspect_ratio: str,
+    audio_tracks: list[dict],
+) -> dict | None:
+    """Save an edit. A render in flight is left alone — editing the clip list
+    while ffmpeg is working would otherwise make the resulting manifest
+    describe a cut that no longer exists in the row it belongs to."""
+    import json
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """UPDATE sequences
+               SET name = ?, clips_json = ?, aspect_ratio = ?, audio_json = ?,
+                   updated_at = ?
+               WHERE id = ? AND workspace_id = ? AND status != 'rendering'""",
+            (name, json.dumps(clips), aspect_ratio, json.dumps(audio_tracks), now(),
+             sequence_id, workspace_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        return _sequence_row(conn.execute(
+            "SELECT * FROM sequences WHERE id = ?", (sequence_id,)
+        ).fetchone())
+
+
+def start_sequence_render(workspace_id: str, sequence_id: int) -> bool:
+    """Flip a sequence to 'rendering'. Returns False if it already is, which
+    is what stops two renders of the same cut from racing each other."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE sequences SET status = 'rendering', error = NULL, updated_at = ? "
+            "WHERE id = ? AND workspace_id = ? AND status != 'rendering'",
+            (now(), sequence_id, workspace_id),
+        )
+        return cur.rowcount > 0
+
+
+def finish_sequence(
+    sequence_id: int,
+    *,
+    status: str,
+    video_id: int | None = None,
+    manifest: dict | None = None,
+    manifest_url: str | None = None,
+    duration: float | None = None,
+    error: str | None = None,
+) -> None:
+    import json
+
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE sequences
+               SET status = ?, video_id = ?, manifest_json = ?, manifest_url = ?,
+                   duration = ?, error = ?, updated_at = ?
+               WHERE id = ?""",
+            (status, video_id, json.dumps(manifest) if manifest else None,
+             manifest_url, duration, error, now(), sequence_id),
+        )
+
+
+def delete_sequence(workspace_id: str, sequence_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM sequences WHERE id = ? AND workspace_id = ?",
+            (sequence_id, workspace_id),
+        )
+        return cur.rowcount > 0
+
+
 # ── Studio images ────────────────────────────────────────────────────────
 
 def create_studio_image(
@@ -734,6 +906,15 @@ def list_studio_images(workspace_id: str, kind: str | None = None) -> list[dict]
                 (workspace_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+def get_studio_image(workspace_id: str, image_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM studio_images WHERE id = ? AND workspace_id = ?",
+            (image_id, workspace_id),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def delete_studio_image(workspace_id: str, image_id: int) -> bool:

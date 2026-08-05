@@ -127,6 +127,17 @@
             <button type="button" class="nav-subitem" data-open="canvas" data-mode="video" data-i18n="navCanvasVideo">Video overlay</button>
           </div>
         </div>
+
+        <div class="nav-group" data-group="timeline">
+          <button type="button" class="scenes-nav nav-group-toggle" aria-expanded="false">
+            <span class="nav-glyph">⧉</span><span data-i18n="navGroupTimeline">Edit</span>
+            <span class="nav-chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-body" hidden>
+            <button type="button" class="nav-subitem" data-open="timeline" data-mode="new" data-i18n="navTimelineNew">New cut</button>
+            <button type="button" class="nav-subitem" data-open="timeline" data-mode="list" data-i18n="navTimelineList">My cuts</button>
+          </div>
+        </div>
       </nav>
     </aside>
 
@@ -686,6 +697,134 @@
         <div id="canvas-templates-grid" class="asset-grid"></div>
         <p id="canvas-templates-empty" class="empty-note" hidden data-i18n="canvasTemplatesEmpty">No templates saved yet — build a layout and save it from the editor.</p>
       </div>
+
+      <div id="timeline-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2 data-i18n="tlTitle">Edit</h2>
+            <p class="detail-description" data-i18n="tlDesc">Cut your images, scenes and clips into one film — trim, grade, add camera moves, lay music underneath. The result lands in the vault carrying a manifest of everything it is made of.</p>
+          </div>
+        </div>
+
+        <div class="generate-card tl-toolbar">
+          <input type="text" id="tl-name" maxlength="120" class="tl-name-input"
+                 data-i18n-ph="tlNamePh" placeholder="Name of this cut">
+          <label class="model-row">
+            <span class="model-label" data-i18n="tlAspect">Format</span>
+            <select id="tl-aspect" class="filter-select">
+              <option value="16:9">16:9 — 1280×720</option>
+              <option value="9:16">9:16 — 720×1280</option>
+              <option value="1:1">1:1 — 720×720</option>
+            </select>
+          </label>
+          <span id="tl-total" class="tl-total"></span>
+          <span id="tl-dirty" class="tl-dirty" hidden data-i18n="tlUnsaved">unsaved changes</span>
+          <span class="tl-toolbar-spacer"></span>
+          <button type="button" id="tl-auto-open" class="button small" data-i18n="tlAutoOpen">✦ Assisted cut</button>
+          <button type="button" id="tl-new-button" class="button small" data-i18n="tlNew">New</button>
+          <button type="button" id="tl-save-button" class="button small" data-i18n="tlSave">Save</button>
+          <button type="button" id="tl-render-button" class="button primary" data-i18n="tlRenderBtn">Render</button>
+        </div>
+
+        <div id="tl-auto-row" class="generate-card tl-auto-row" hidden>
+          <label class="tl-auto-field">
+            <span class="model-label" data-i18n="tlAutoBrief">What should this film say?</span>
+            <textarea id="tl-auto-brief" rows="2" maxlength="2000"
+                      data-i18n-ph="tlAutoBriefPh"
+                      placeholder="e.g. A 30-second spot: an illustrator meets the character she drew."></textarea>
+          </label>
+          <label class="model-row">
+            <span class="model-label" data-i18n="tlAutoSeconds">Target length (s)</span>
+            <input type="number" id="tl-auto-seconds" class="tl-number" min="5" max="300" step="5" value="30">
+          </label>
+          <button type="button" id="tl-auto-run" class="button primary small" data-i18n="tlAutoRun">Propose a cut</button>
+          <p class="generate-hint" data-i18n="tlAutoHint">The model only orders and times what is already in your vault — it generates nothing, and every shot it picks stays editable.</p>
+        </div>
+
+        <div class="tl-workspace">
+          <aside class="tl-pool">
+            <div class="tl-pool-head">
+              <input type="search" id="tl-pool-search" class="tl-pool-search"
+                     data-i18n-ph="tlPoolSearch" placeholder="Search material">
+              <div class="tl-pool-filters">
+                <button type="button" class="tl-pool-filter active" data-filter="all" data-i18n="tlFilterAll">All</button>
+                <button type="button" class="tl-pool-filter" data-filter="still" data-i18n="tlFilterStills">Stills</button>
+                <button type="button" class="tl-pool-filter" data-filter="video" data-i18n="tlFilterClips">Clips</button>
+              </div>
+            </div>
+            <div id="tl-pool-grid" class="tl-pool-grid"></div>
+            <p id="tl-pool-empty" class="empty-note" hidden data-i18n="tlPoolEmpty">Nothing here yet — generate something, or bring your own footage in below.</p>
+            <div class="tl-pool-uploads">
+              <label class="button small upload-button">
+                <span data-i18n="tlUploadPhoto">Upload photo</span>
+                <input type="file" id="tl-upload-image" accept="image/png,image/jpeg,image/webp" hidden>
+              </label>
+              <label class="button small upload-button">
+                <span data-i18n="tlUploadVideo">Upload video</span>
+                <input type="file" id="tl-upload-video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-m4v" hidden>
+              </label>
+              <button type="button" id="tl-add-title" class="button small" data-i18n="tlAddTitle">+ Text panel</button>
+            </div>
+          </aside>
+
+          <div class="tl-center">
+            <div class="tl-strip-wrap">
+              <div id="tl-strip" class="tl-strip"></div>
+              <p id="tl-strip-empty" class="empty-note" data-i18n="tlStripEmpty">Click material on the left to put it on the timeline. Drag the clips to reorder them; click the marker between two clips to switch cut ↔ fade.</p>
+            </div>
+
+            <div class="tl-audio">
+              <div class="tl-audio-head">
+                <span class="model-label" data-i18n="tlAudioTitle">Audio under the cut</span>
+                <select id="tl-audio-select" class="filter-select"></select>
+                <button type="button" id="tl-audio-add" class="button small" data-i18n="tlAudioAdd">Add</button>
+                <label class="button small upload-button">
+                  <span data-i18n="tlUploadMusic">Upload music</span>
+                  <input type="file" id="tl-upload-music" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a" hidden>
+                </label>
+              </div>
+              <div id="tl-audio-lane" class="tl-audio-lane"></div>
+              <p id="tl-audio-empty" class="generate-hint" data-i18n="tlAudioEmpty">No track yet. Anything you add plays under the clips' own sound, not instead of it.</p>
+            </div>
+
+            <div id="tl-status" class="generation-status" hidden></div>
+
+            <div id="tl-result" class="tl-result" hidden>
+              <video id="tl-result-video" class="tl-result-video" controls playsinline></video>
+              <div class="tl-result-row">
+                <span id="tl-result-meta" class="tl-result-meta"></span>
+                <a id="tl-result-download" class="button small" download data-i18n="tlDownload">Download</a>
+              </div>
+              <div id="tl-provenance" class="tl-provenance" hidden></div>
+            </div>
+          </div>
+
+          <aside class="tl-inspector">
+            <div class="tl-inspector-head">
+              <span class="model-label" data-i18n="tlInspector">Clip</span>
+              <span id="tl-inspector-actions" class="tl-inspector-actions" hidden>
+                <button type="button" id="tl-clip-left" class="button small" title="Move left">‹</button>
+                <button type="button" id="tl-clip-right" class="button small" title="Move right">›</button>
+                <button type="button" id="tl-clip-duplicate" class="button small" data-i18n="tlDuplicate">Duplicate</button>
+                <button type="button" id="tl-clip-delete" class="button small danger" data-i18n="tlRemove">Remove</button>
+              </span>
+            </div>
+            <p id="tl-inspector-empty" class="empty-note" data-i18n="tlInspectorEmpty">Select a clip on the timeline to trim and grade it.</p>
+            <div id="tl-inspector-body" class="tl-inspector-body"></div>
+          </aside>
+        </div>
+      </div>
+
+      <div id="timeline-list-view" hidden>
+        <div class="detail-head">
+          <div>
+            <h2 data-i18n="tlListTitle">My cuts</h2>
+            <p class="detail-description" data-i18n="tlListDesc">Every saved cut stays editable — it only references your assets, so reopening one costs nothing.</p>
+          </div>
+        </div>
+        <div id="tl-sequence-grid" class="asset-grid"></div>
+        <p id="tl-sequence-empty" class="empty-note" hidden data-i18n="tlListEmpty">No cuts yet — build one under “New cut”.</p>
+      </div>
     </section>
 
   </main>
@@ -779,5 +918,6 @@
   <script src="/static/app.js"></script>
   <script src="/static/vendor/fabric.min.js"></script>
   <script src="/static/canvas.js"></script>
+  <script src="/static/timeline.js"></script>
 </body>
 </html>

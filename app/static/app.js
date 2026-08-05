@@ -353,6 +353,132 @@ const TRANSLATIONS = {
     videoSpeechLabel: "✦ Let them speak (optional) — uses the character’s fixed voice",
     videoSpeechPh: "e.g. 'Hi. Nice to meet you.'",
     toastPickVoiceFirst: "Give this character a voice in its profile first.",
+
+    navGroupTimeline: "Edit",
+    navTimelineNew: "New cut",
+    navTimelineList: "My cuts",
+    tlTitle: "Edit",
+    tlDesc: "Cut your images, scenes and clips into one film — trim, grade, add camera moves, lay music underneath. The result lands in the vault carrying a manifest of everything it is made of.",
+    tlListTitle: "My cuts",
+    tlListDesc: "Every saved cut stays editable — it only references your assets, so reopening one costs nothing.",
+    tlListEmpty: "No cuts yet — build one under “New cut”.",
+    tlNamePh: "Name of this cut",
+    tlUntitled: "Untitled cut",
+    tlAspect: "Format",
+    tlTotal: "{duration} · {clips} clips",
+    tlUnsaved: "unsaved changes",
+    tlNew: "New",
+    tlSave: "Save",
+    tlSaved: "Cut saved.",
+    tlNothingToSave: "Put something on the timeline first.",
+    tlRenderBtn: "Render",
+    tlRendering: "Rendering the cut… this takes a moment per clip. Stored on Backblaze B2 with a merged provenance manifest.",
+    tlRenderDone: "The cut is ready.",
+    tlRenderFailed: "Rendering failed.",
+    tlOpen: "Open",
+    tlDelete: "Delete",
+    tlDeleted: "Cut deleted.",
+    tlConfirmDelete: "Delete this cut? The assets in it are untouched.",
+    tlClipsWord: "clips",
+    tlStatus_draft: "draft",
+    tlStatus_rendering: "rendering",
+    tlStatus_done: "rendered",
+    tlStatus_error: "failed",
+    tlPoolSearch: "Search material",
+    tlPoolEmpty: "Nothing here yet — generate something, or bring your own footage in below.",
+    tlPoolAdd: "Add to the timeline",
+    tlFilterAll: "All",
+    tlFilterStills: "Stills",
+    tlFilterClips: "Clips",
+    tlKindStill: "still",
+    tlOwnFootage: "your own",
+    tlOwnBadge: "own",
+    tlUploadPhoto: "Upload photo",
+    tlUploadVideo: "Upload video",
+    tlUploadMusic: "Upload music",
+    tlUploadingImage: "Uploading the photo…",
+    tlUploadingVideo: "Uploading the clip… large files take a moment.",
+    tlUploaded: "Added to your material.",
+    tlUploadFailed: "The upload failed.",
+    tlAddTitle: "+ Text panel",
+    tlNewTitleText: "Your text",
+    tlStripEmpty: "Click material on the left to put it on the timeline. Drag the clips to reorder them; click the marker between two clips to switch cut ↔ fade.",
+    tlJoinCut: "Hard cut — click for a fade",
+    tlJoinFade: "Fade — click for a hard cut",
+    tlInspector: "Clip",
+    tlInspectorEmpty: "Select a clip on the timeline to trim and grade it.",
+    tlClipTitleCard: "Text panel",
+    tlSource_asset: "Portrait",
+    tlSource_scene: "Scene",
+    tlSource_studio: "Studio",
+    tlSource_video: "Clip",
+    tlTitleText: "Headline",
+    tlTitleSubtitle: "Second line (optional)",
+    tlDuration: "On screen (s)",
+    tlIn: "In point (s)",
+    tlOut: "Out point (s)",
+    tlTrimHint: "Only what lies between in and out ends up in the cut.",
+    tlVolume: "Clip volume",
+    tlTransition: "Transition in",
+    tlTransitionCut: "Cut",
+    tlTransitionFade: "Fade",
+    tlTransitionHint: "A fade dips through black on both sides of the join.",
+    tlFadeLength: "Fade length (s)",
+    tlLook: "Look",
+    tlLook_none: "Untouched",
+    tlLook_enhance: "Enhance",
+    tlLook_warm: "Warm",
+    tlLook_cool: "Cool",
+    tlLook_noir: "Noir",
+    tlLook_vivid: "Vivid",
+    tlLook_vintage: "Vintage",
+    tlLook_soft: "Soft",
+    tlMotion: "Camera move",
+    tlMotion_none: "Still",
+    tlMotion_zoom_in: "Slow push in",
+    tlMotion_zoom_out: "Slow pull out",
+    tlMotion_pan_left: "Drift left",
+    tlMotion_pan_right: "Drift right",
+    tlMotion_pan_up: "Drift up",
+    tlMotion_pan_down: "Drift down",
+    tlMotionHint: "A slow move is what stops a still from reading as a slideshow.",
+    tlGrade: "Fine grade",
+    tlBrightness: "Brightness",
+    tlContrast: "Contrast",
+    tlSaturation: "Saturation",
+    tlCaption: "Caption in the frame",
+    tlCaptionHint: "Burned into the still, bottom bar.",
+    tlCaptionVideoHint: "For clips, use Canvas → video overlay instead.",
+    tlDuplicate: "Duplicate",
+    tlRemove: "Remove",
+    tlAudioTitle: "Audio under the cut",
+    tlAudioPick: "Pick a voiceover or dialogue…",
+    tlAudioAdd: "Add",
+    tlAudioTrack: "Track",
+    tlAudioVolume: "Level",
+    tlAudioEmpty: "No track yet. Anything you add plays under the clips' own sound, not instead of it.",
+    tlAudioMax: "Four tracks is the limit.",
+    tlDownload: "Download",
+    tlResultMeta: "{duration} · {clips} clips",
+    tlProvTitle: "What this cut is made of",
+    tlProvHead: "{ai} AI-generated clips, {own} of your own.",
+    tlProvModels: "Models",
+    tlProvUnknownModel: "unknown source",
+    tlProvAllVerified: "✓ Every AI source carried a provenance manifest that verified.",
+    tlProvNotAllVerified: "Not every source carried a manifest that verified — the details are listed per clip.",
+    tlVerify: "Verify the file",
+    tlVerifyHint: "Reads the manifest back out of the rendered MP4 itself.",
+    tlVerifyOk: "The file still carries its own manifest, and it matches.",
+    tlVerifyMismatch: "The file's embedded manifest is missing or no longer matches.",
+    tlAutoOpen: "✦ Assisted cut",
+    tlAutoBrief: "What should this film say?",
+    tlAutoBriefPh: "e.g. A 30-second spot: an illustrator meets the character she drew.",
+    tlAutoSeconds: "Target length (s)",
+    tlAutoRun: "Propose a cut",
+    tlAutoRunning: "Planning the cut…",
+    tlAutoHint: "The model only orders and times what is already in your vault — it generates nothing, and every shot it picks stays editable.",
+    tlAutoDone: "A cut has been proposed — rework it as you like.",
+    tlAutoDoneWithDrops: "A cut has been proposed. {n} of its suggestions pointed at nothing and were dropped.",
   },
   de: {
     provenanceNote: "Jedes Asset auf Backblaze B2 gespeichert – mit verifiziertem Herkunftsnachweis",
@@ -698,6 +824,132 @@ const TRANSLATIONS = {
     videoSpeechLabel: "✦ Lass sie sprechen (optional) – nutzt die feste Stimme des Charakters",
     videoSpeechPh: "z. B. 'Hi. Nice to meet you.'",
     toastPickVoiceFirst: "Gib diesem Charakter zuerst im Profil eine Stimme.",
+
+    navGroupTimeline: "Schnitt",
+    navTimelineNew: "Neuer Schnitt",
+    navTimelineList: "Meine Schnitte",
+    tlTitle: "Schnitt",
+    tlDesc: "Setze deine Bilder, Szenen und Clips zu einem Film zusammen — kürzen, färben, Kamerabewegung geben, Musik unterlegen. Das Ergebnis landet im Vault und trägt einen Nachweis darüber, woraus es besteht.",
+    tlListTitle: "Meine Schnitte",
+    tlListDesc: "Jeder gespeicherte Schnitt bleibt bearbeitbar — er verweist nur auf deine Assets, das Wiederöffnen kostet nichts.",
+    tlListEmpty: "Noch keine Schnitte — leg unter „Neuer Schnitt“ einen an.",
+    tlNamePh: "Name dieses Schnitts",
+    tlUntitled: "Namenloser Schnitt",
+    tlAspect: "Format",
+    tlTotal: "{duration} · {clips} Clips",
+    tlUnsaved: "ungespeicherte Änderungen",
+    tlNew: "Neu",
+    tlSave: "Speichern",
+    tlSaved: "Schnitt gespeichert.",
+    tlNothingToSave: "Leg zuerst etwas auf die Zeitleiste.",
+    tlRenderBtn: "Rendern",
+    tlRendering: "Der Schnitt wird gerendert … das dauert pro Clip einen Moment. Landet auf Backblaze B2 mit zusammengeführtem Herkunftsnachweis.",
+    tlRenderDone: "Der Schnitt ist fertig.",
+    tlRenderFailed: "Das Rendern ist fehlgeschlagen.",
+    tlOpen: "Öffnen",
+    tlDelete: "Löschen",
+    tlDeleted: "Schnitt gelöscht.",
+    tlConfirmDelete: "Diesen Schnitt löschen? Die enthaltenen Assets bleiben unangetastet.",
+    tlClipsWord: "Clips",
+    tlStatus_draft: "Entwurf",
+    tlStatus_rendering: "rendert",
+    tlStatus_done: "gerendert",
+    tlStatus_error: "fehlgeschlagen",
+    tlPoolSearch: "Material durchsuchen",
+    tlPoolEmpty: "Hier ist noch nichts — generiere etwas, oder bring unten eigenes Material herein.",
+    tlPoolAdd: "Auf die Zeitleiste legen",
+    tlFilterAll: "Alle",
+    tlFilterStills: "Standbilder",
+    tlFilterClips: "Clips",
+    tlKindStill: "Bild",
+    tlOwnFootage: "eigenes Material",
+    tlOwnBadge: "eigen",
+    tlUploadPhoto: "Foto hochladen",
+    tlUploadVideo: "Video hochladen",
+    tlUploadMusic: "Musik hochladen",
+    tlUploadingImage: "Das Foto wird hochgeladen …",
+    tlUploadingVideo: "Der Clip wird hochgeladen … große Dateien brauchen einen Moment.",
+    tlUploaded: "Zu deinem Material hinzugefügt.",
+    tlUploadFailed: "Der Upload ist fehlgeschlagen.",
+    tlAddTitle: "+ Texttafel",
+    tlNewTitleText: "Dein Text",
+    tlStripEmpty: "Klick links auf Material, um es auf die Zeitleiste zu legen. Clips lassen sich per Ziehen umsortieren; ein Klick auf die Marke zwischen zwei Clips schaltet Schnitt ↔ Blende um.",
+    tlJoinCut: "Harter Schnitt — klicken für eine Blende",
+    tlJoinFade: "Blende — klicken für einen harten Schnitt",
+    tlInspector: "Clip",
+    tlInspectorEmpty: "Wähl einen Clip auf der Zeitleiste, um ihn zu kürzen und zu färben.",
+    tlClipTitleCard: "Texttafel",
+    tlSource_asset: "Porträt",
+    tlSource_scene: "Szene",
+    tlSource_studio: "Studio",
+    tlSource_video: "Clip",
+    tlTitleText: "Überschrift",
+    tlTitleSubtitle: "Zweite Zeile (optional)",
+    tlDuration: "Standzeit (s)",
+    tlIn: "Startpunkt (s)",
+    tlOut: "Endpunkt (s)",
+    tlTrimHint: "Nur was zwischen Start- und Endpunkt liegt, landet im Schnitt.",
+    tlVolume: "Lautstärke des Clips",
+    tlTransition: "Übergang davor",
+    tlTransitionCut: "Schnitt",
+    tlTransitionFade: "Blende",
+    tlTransitionHint: "Eine Blende geht auf beiden Seiten des Übergangs durch Schwarz.",
+    tlFadeLength: "Blendendauer (s)",
+    tlLook: "Look",
+    tlLook_none: "Unbehandelt",
+    tlLook_enhance: "Aufwerten",
+    tlLook_warm: "Warm",
+    tlLook_cool: "Kühl",
+    tlLook_noir: "Noir",
+    tlLook_vivid: "Kräftig",
+    tlLook_vintage: "Vintage",
+    tlLook_soft: "Weich",
+    tlMotion: "Kamerabewegung",
+    tlMotion_none: "Unbewegt",
+    tlMotion_zoom_in: "Langsam heran",
+    tlMotion_zoom_out: "Langsam zurück",
+    tlMotion_pan_left: "Nach links ziehen",
+    tlMotion_pan_right: "Nach rechts ziehen",
+    tlMotion_pan_up: "Nach oben ziehen",
+    tlMotion_pan_down: "Nach unten ziehen",
+    tlMotionHint: "Eine langsame Bewegung ist das, was ein Standbild nicht mehr wie eine Diashow wirken lässt.",
+    tlGrade: "Feinabstimmung",
+    tlBrightness: "Helligkeit",
+    tlContrast: "Kontrast",
+    tlSaturation: "Sättigung",
+    tlCaption: "Text im Bild",
+    tlCaptionHint: "Wird als Balken unten ins Standbild gebrannt.",
+    tlCaptionVideoHint: "Für Clips stattdessen Canvas → Video-Overlay nutzen.",
+    tlDuplicate: "Duplizieren",
+    tlRemove: "Entfernen",
+    tlAudioTitle: "Ton unter dem Schnitt",
+    tlAudioPick: "Sprachaufnahme oder Dialog wählen …",
+    tlAudioAdd: "Hinzufügen",
+    tlAudioTrack: "Spur",
+    tlAudioVolume: "Pegel",
+    tlAudioEmpty: "Noch keine Spur. Was du hinzufügst, läuft unter dem Ton der Clips — nicht an seiner Stelle.",
+    tlAudioMax: "Mehr als vier Spuren gehen nicht.",
+    tlDownload: "Herunterladen",
+    tlResultMeta: "{duration} · {clips} Clips",
+    tlProvTitle: "Woraus dieser Schnitt besteht",
+    tlProvHead: "{ai} KI-generierte Clips, {own} eigene.",
+    tlProvModels: "Modelle",
+    tlProvUnknownModel: "unbekannte Quelle",
+    tlProvAllVerified: "✓ Jede KI-Quelle trug einen Herkunftsnachweis, der verifiziert werden konnte.",
+    tlProvNotAllVerified: "Nicht jede Quelle trug einen verifizierbaren Nachweis — die Details stehen pro Clip.",
+    tlVerify: "Datei prüfen",
+    tlVerifyHint: "Liest den Nachweis direkt aus der gerenderten MP4-Datei zurück.",
+    tlVerifyOk: "Die Datei trägt ihren Nachweis noch, und er stimmt überein.",
+    tlVerifyMismatch: "Der eingebettete Nachweis fehlt oder passt nicht mehr.",
+    tlAutoOpen: "✦ Schnitt vorschlagen",
+    tlAutoBrief: "Was soll dieser Film sagen?",
+    tlAutoBriefPh: "z. B. Ein 30-Sekunden-Spot: Eine Illustratorin trifft die Figur, die sie gezeichnet hat.",
+    tlAutoSeconds: "Ziellänge (s)",
+    tlAutoRun: "Schnitt vorschlagen",
+    tlAutoRunning: "Der Schnitt wird geplant …",
+    tlAutoHint: "Das Modell ordnet und timet nur, was schon in deinem Vault liegt — es generiert nichts, und jede gewählte Einstellung bleibt bearbeitbar.",
+    tlAutoDone: "Ein Schnitt wurde vorgeschlagen — arbeite ihn um, wie du magst.",
+    tlAutoDoneWithDrops: "Ein Schnitt wurde vorgeschlagen. {n} Vorschläge zeigten ins Leere und wurden verworfen.",
   },
 };
 
@@ -1260,6 +1512,8 @@ function renderDetail(character) {
   hideScriptView();
   hideCanvasView();
   hideCanvasTemplatesView();
+  hideTimelineView();
+  hideTimelineListView();
   setActiveNavGroup(null);
   el("detail-placeholder").hidden = character !== null;
   el("detail-content").hidden = character === null;
@@ -2170,7 +2424,8 @@ function setupKeyDialog() {
 // scannable instead of listing every mode as its own top-level button. Each
 // heading maps to one or more of the 4 underlying views; opening any view
 // expands and highlights its heading so "where am I" stays visible.
-const NAV_GROUP_OF = { scenes: "bild", studio: "bild", audio: "ton", video: "video", canvas: "canvas" };
+const NAV_GROUP_OF = { scenes: "bild", studio: "bild", audio: "ton", video: "video",
+                       canvas: "canvas", timeline: "timeline" };
 
 function setActiveNavGroup(openKey) {
   // Clears "current view" highlighting only — expand/collapse state (hidden,
@@ -2232,6 +2487,8 @@ function showScenesView() {
   hideScriptView();
   hideCanvasView();
   hideCanvasTemplatesView();
+  hideTimelineView();
+  hideTimelineListView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("scenes-view").hidden = false;
@@ -2411,6 +2668,8 @@ function showStudioView() {
   hideScriptView();
   hideCanvasView();
   hideCanvasTemplatesView();
+  hideTimelineView();
+  hideTimelineListView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("studio-view").hidden = false;
@@ -2618,6 +2877,8 @@ function showAudioView() {
   hideScriptView();
   hideCanvasView();
   hideCanvasTemplatesView();
+  hideTimelineView();
+  hideTimelineListView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("audio-view").hidden = false;
@@ -2960,6 +3221,8 @@ function showVideoView() {
   hideScriptView();
   hideCanvasView();
   hideCanvasTemplatesView();
+  hideTimelineView();
+  hideTimelineListView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("video-view").hidden = false;
@@ -3427,6 +3690,8 @@ function showScriptView() {
   hideScriptView();
   hideCanvasView();
   hideCanvasTemplatesView();
+  hideTimelineView();
+  hideTimelineListView();
   el("detail-placeholder").hidden = true;
   el("detail-content").hidden = true;
   el("script-view").hidden = false;
