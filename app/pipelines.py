@@ -94,12 +94,15 @@ IDENTITY_INSTRUCTION = (
     "Render that same person in a new scene: "
 )
 
-# OpenAI API list prices per 1024x1024 image (July 2026); draft iterations
-# cost ~15x less than finals — the main waste-reduction lever.
+# OpenAI API list prices per 1024x1024 image for gpt-image-2 (August 2026);
+# draft iterations cost ~35x less than finals — the main waste-reduction lever.
+# The spread widened with gpt-image-2: drafts got cheaper than on gpt-image-1
+# ($0.006 vs $0.011), finals dearer ($0.211 vs $0.167). Iterating in draft and
+# rendering only the keeper in final therefore pays off more than before.
 QUALITY_TIERS = {"draft": "low", "final": "high"}
-IMAGE_COST_USD = {"draft": 0.011, "final": 0.167}
+IMAGE_COST_USD = {"draft": 0.006, "final": 0.211}
 
-# Image-model registry. gpt-image-1 (OpenAI) is the general-purpose model
+# Image-model registry. gpt-image-2 (OpenAI) is the general-purpose model
 # with only loose "family resemblance" from references. flux-kontext-pro and
 # gemini-2.5-flash-image ("Nano Banana") run on GMI Cloud and do real
 # identity conditioning from reference images — purpose-built for keeping the
@@ -110,8 +113,8 @@ IMAGE_COST_USD = {"draft": 0.011, "final": 0.167}
 # silently ignore the reference. It's deliberately not offered here.
 # gemini-2.5-flash-image (Nano Banana) is the verified identity model.
 IMAGE_MODELS = {
-    "gpt-image-1": {
-        "label": "OpenAI gpt-image-1",
+    "gpt-image-2": {
+        "label": "OpenAI gpt-image-2",
         "provider": "openai",
         "identity": False,
         "quality_tiers": True,
@@ -124,7 +127,7 @@ IMAGE_MODELS = {
         "cost_usd": 0.039,  # GMI list price estimate
     },
 }
-DEFAULT_IMAGE_MODEL = "gpt-image-1"
+DEFAULT_IMAGE_MODEL = "gpt-image-2"
 
 
 def available_image_models() -> list[dict]:

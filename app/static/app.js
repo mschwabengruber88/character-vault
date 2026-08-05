@@ -2018,7 +2018,7 @@ async function offerPortraitOptions(character, description) {
         prompt: description,
         count: PORTRAIT_OPTION_COUNT,
         quality: "draft",
-        model: el("image-model")?.value || "gpt-image-1",
+        model: el("image-model")?.value || "gpt-image-2",
         disclosure: "invisible",
       }),
     });

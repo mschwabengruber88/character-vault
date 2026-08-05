@@ -5,3 +5,6 @@ __pycache__/
 *.db
 output/
 .DS_Store
+
+.env.bak
+railway-backup.json

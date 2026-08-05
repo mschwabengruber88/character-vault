@@ -52,7 +52,7 @@ Other things worth knowing:
 | Purpose | Provider | Model |
 |---|---|---|
 | Storage | Backblaze B2 (`genblaze-s3`) | S3-compatible object storage |
-| Portrait / images | OpenAI (`genblaze-openai`) | `gpt-image-1` |
+| Portrait / images | OpenAI (`genblaze-openai`) | `gpt-image-2` |
 | Identity images & scenes | GMI Cloud | `gemini-2.5-flash-image` (Nano Banana) |
 | Video | GMI Cloud | Kling 2.1 (i2v / t2v), Pixverse 5.6 (i2v / t2v), Veo 3 Fast |
 | Lip-sync | GMI Cloud | `kling-lip-sync` |

@@ -9,8 +9,8 @@ def _fake_portrait(tag="x"):
         "url": f"https://example.com/{tag}.png",
         "original_url": f"https://example.com/{tag}.png",
         "sha256": tag, "mime_type": "image/png", "manifest_verified": True,
-        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
-        "model": "gpt-image-1",
+        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.006,
+        "model": "gpt-image-2",
     }
 
 
@@ -68,8 +68,8 @@ def test_studio_and_audio_isolated(client, other_client):
     with patch("app.main.generate_studio_image", return_value={
         "url": "https://example.com/s.png", "original_url": "https://example.com/s.png",
         "sha256": "s", "mime_type": "image/png", "manifest_verified": True,
-        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
-        "model": "gpt-image-1", "kind": "photo-art",
+        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.006,
+        "model": "gpt-image-2", "kind": "photo-art",
     }):
         img = client.post("/studio", json={"kind": "photo-art", "prompt": "x"},
                           headers={"X-API-Key": API_KEY}).json()
@@ -128,7 +128,7 @@ def test_delete_character_with_batch_job(client):
         prompt="four portraits",
         requested=4,
         quality="draft",
-        model="gpt-image-1",
+        model="gpt-image-2",
         disclosure="invisible",
         cost_estimate=0.044,
     )
@@ -216,7 +216,7 @@ def test_generate_image_success(client):
     assert data["url"] == "https://example.com/a.visible.png"
     assert data["disclosure"] == "visible"
     assert data["original_url"] == "https://example.com/a.png"
-    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft", "gpt-image-1", None, None)
+    mock_gen.assert_called_once_with(char_id, "a friendly robot", "visible", [], "draft", "gpt-image-2", None, None)
 
     character = client.get(f"/characters/{char_id}").json()
     assert len(character["assets"]) == 1
@@ -241,7 +241,7 @@ def test_generate_image_disclosure_defaults_to_invisible(client):
             headers={"X-API-Key": API_KEY},
         )
     assert resp.status_code == 200
-    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft", "gpt-image-1", None, None)
+    mock_gen.assert_called_once_with(char_id, "a quiet librarian", "invisible", [], "draft", "gpt-image-2", None, None)
 
 
 def test_generate_image_rejects_unknown_disclosure(client):
@@ -296,7 +296,7 @@ def test_generate_image_quality_and_cost_persisted(client):
             "manifest_verified": True,
             "disclosure": "invisible",
             "quality": "final",
-            "cost_usd": 0.167,
+            "cost_usd": 0.211,
         }
         resp = client.post(
             f"/characters/{char_id}/generate/image",
@@ -306,7 +306,7 @@ def test_generate_image_quality_and_cost_persisted(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["quality"] == "final"
-    assert data["cost_usd"] == 0.167
+    assert data["cost_usd"] == 0.211
     assert mock_gen.call_args.args[4] == "final"
 
 
@@ -314,8 +314,8 @@ def test_capabilities_lists_available_models(client):
     resp = client.get("/capabilities")
     assert resp.status_code == 200
     slugs = {m["slug"] for m in resp.json()["image_models"]}
-    # gpt-image-1 is always available; GMI models only if GMI_API_KEY is set
-    assert "gpt-image-1" in slugs
+    # gpt-image-2 is always available; GMI models only if GMI_API_KEY is set
+    assert "gpt-image-2" in slugs
 
 
 def test_generate_image_rejects_unavailable_model(client):
@@ -524,7 +524,7 @@ def test_personality_and_seed_flow_into_generation(client):
         mock_gen.return_value = {
             "url": "https://example.com/v.png", "original_url": "https://example.com/v.png",
             "sha256": "s", "mime_type": "image/png", "manifest_verified": True,
-            "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011, "model": "gpt-image-1",
+            "disclosure": "invisible", "quality": "draft", "cost_usd": 0.006, "model": "gpt-image-2",
         }
         client.post(f"/characters/{cid}/generate/image",
                     json={"prompt": "a portrait"}, headers={"X-API-Key": API_KEY})
@@ -556,7 +556,7 @@ def test_scene_generation_stores_participants(client):
                 "original_url": f"https://s3.eu-central-003.backblazeb2.com/{__import__('app.config', fromlist=['B2_BUCKET_NAME']).B2_BUCKET_NAME}/x{cid}.png",
                 "sha256": f"sha{cid}", "mime_type": "image/png",
                 "manifest_verified": True, "disclosure": "invisible",
-                "quality": "draft", "cost_usd": 0.011, "model": "gpt-image-1",
+                "quality": "draft", "cost_usd": 0.006, "model": "gpt-image-2",
             }
             client.post(f"/characters/{cid}/generate/image",
                         json={"prompt": "p"}, headers={"X-API-Key": API_KEY})
@@ -858,8 +858,8 @@ def test_studio_generation_and_listing(client):
             "url": "https://example.com/art.png",
             "original_url": "https://example.com/art.png",
             "sha256": "artsha", "mime_type": "image/png", "manifest_verified": True,
-            "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
-            "model": "gpt-image-1", "kind": "photo-art",
+            "disclosure": "invisible", "quality": "draft", "cost_usd": 0.006,
+            "model": "gpt-image-2", "kind": "photo-art",
         }
         resp = client.post(
             "/studio",
@@ -887,8 +887,8 @@ def test_studio_keyless_allowed(client):
     with patch("app.main.generate_studio_image", return_value={
         "url": "https://example.com/s.png", "original_url": "https://example.com/s.png",
         "sha256": "s", "mime_type": "image/png", "manifest_verified": True,
-        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.011,
-        "model": "gpt-image-1", "kind": "background",
+        "disclosure": "invisible", "quality": "draft", "cost_usd": 0.006,
+        "model": "gpt-image-2", "kind": "background",
     }):
         resp = client.post("/studio", json={"kind": "background", "prompt": "a forest"})
     assert resp.status_code == 200
