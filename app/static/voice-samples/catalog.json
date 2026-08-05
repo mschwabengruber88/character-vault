@@ -6,7 +6,8 @@
       "provider": "openai",
       "gender": "neutral",
       "age": "adult",
-      "style": "balanced"
+      "style": "balanced",
+      "language": "multi"
     },
     {
       "id": "ash",
@@ -14,7 +15,8 @@
       "provider": "openai",
       "gender": "male",
       "age": "adult",
-      "style": "warm"
+      "style": "warm",
+      "language": "multi"
     },
     {
       "id": "ballad",
@@ -22,7 +24,8 @@
       "provider": "openai",
       "gender": "male",
       "age": "young",
-      "style": "soft"
+      "style": "soft",
+      "language": "multi"
     },
     {
       "id": "coral",
@@ -30,7 +33,8 @@
       "provider": "openai",
       "gender": "female",
       "age": "young",
-      "style": "bright"
+      "style": "bright",
+      "language": "multi"
     },
     {
       "id": "echo",
@@ -38,7 +42,8 @@
       "provider": "openai",
       "gender": "male",
       "age": "adult",
-      "style": "calm"
+      "style": "calm",
+      "language": "multi"
     },
     {
       "id": "fable",
@@ -46,7 +51,8 @@
       "provider": "openai",
       "gender": "neutral",
       "age": "adult",
-      "style": "storyteller"
+      "style": "storyteller",
+      "language": "multi"
     },
     {
       "id": "nova",
@@ -54,7 +60,8 @@
       "provider": "openai",
       "gender": "female",
       "age": "young",
-      "style": "friendly"
+      "style": "friendly",
+      "language": "multi"
     },
     {
       "id": "onyx",
@@ -62,7 +69,8 @@
       "provider": "openai",
       "gender": "male",
       "age": "mature",
-      "style": "deep"
+      "style": "deep",
+      "language": "multi"
     },
     {
       "id": "sage",
@@ -70,7 +78,8 @@
       "provider": "openai",
       "gender": "female",
       "age": "adult",
-      "style": "measured"
+      "style": "measured",
+      "language": "multi"
     },
     {
       "id": "shimmer",
@@ -78,7 +87,35 @@
       "provider": "openai",
       "gender": "female",
       "age": "young",
-      "style": "light"
+      "style": "light",
+      "language": "multi"
+    },
+    {
+      "id": "verse",
+      "name": "Verse",
+      "provider": "openai",
+      "gender": "male",
+      "age": "adult",
+      "style": "expressive",
+      "language": "multi"
+    },
+    {
+      "id": "marin",
+      "name": "Marin",
+      "provider": "openai",
+      "gender": "female",
+      "age": "adult",
+      "style": "natural, high quality",
+      "language": "multi"
+    },
+    {
+      "id": "cedar",
+      "name": "Cedar",
+      "provider": "openai",
+      "gender": "male",
+      "age": "adult",
+      "style": "natural, high quality",
+      "language": "multi"
     },
     {
       "id": "shimmer-child",
@@ -86,7 +123,8 @@
       "provider": "openai",
       "gender": "female",
       "age": "child",
-      "style": "pitched-up, bright"
+      "style": "pitched-up, light",
+      "language": "multi"
     },
     {
       "id": "ballad-child",
@@ -94,7 +132,8 @@
       "provider": "openai",
       "gender": "male",
       "age": "child",
-      "style": "pitched-up, soft"
+      "style": "pitched-up, soft",
+      "language": "multi"
     }
   ],
   "gmi": [
@@ -104,7 +143,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "energetic, mid-range"
+      "style": "energetic, mid-range",
+      "language": "en"
     },
     {
       "id": "Ashley",
@@ -112,7 +152,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "adult",
-      "style": "warm, natural"
+      "style": "warm, natural",
+      "language": "en"
     },
     {
       "id": "Blake",
@@ -120,7 +161,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "rich, intimate"
+      "style": "rich, intimate",
+      "language": "en"
     },
     {
       "id": "Carter",
@@ -128,7 +170,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "mature",
-      "style": "radio announcer"
+      "style": "radio announcer",
+      "language": "en"
     },
     {
       "id": "Clive",
@@ -136,7 +179,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "British, calm"
+      "style": "British, calm",
+      "language": "en"
     },
     {
       "id": "Craig",
@@ -144,7 +188,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "mature",
-      "style": "older British, refined"
+      "style": "older British, refined",
+      "language": "en"
     },
     {
       "id": "Deborah",
@@ -152,7 +197,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "mature",
-      "style": "gentle, elegant"
+      "style": "gentle, elegant",
+      "language": "en"
     },
     {
       "id": "Dennis",
@@ -160,7 +206,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "smooth, calm"
+      "style": "smooth, calm",
+      "language": "en"
     },
     {
       "id": "Dominus",
@@ -168,7 +215,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "robotic, deep"
+      "style": "robotic, deep",
+      "language": "en"
     },
     {
       "id": "Edward",
@@ -176,7 +224,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "fast-talking, emphatic"
+      "style": "fast-talking, emphatic",
+      "language": "en"
     },
     {
       "id": "Elizabeth",
@@ -184,7 +233,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "adult",
-      "style": "professional"
+      "style": "professional",
+      "language": "en"
     },
     {
       "id": "Hades",
@@ -192,7 +242,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "mature",
-      "style": "commanding, gruff"
+      "style": "commanding, gruff",
+      "language": "en"
     },
     {
       "id": "Hana",
@@ -200,7 +251,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "young",
-      "style": "bright, expressive"
+      "style": "bright, expressive",
+      "language": "en"
     },
     {
       "id": "Julia",
@@ -208,7 +260,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "young",
-      "style": "quirky, high-pitched"
+      "style": "quirky, high-pitched",
+      "language": "en"
     },
     {
       "id": "Luna",
@@ -216,7 +269,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "adult",
-      "style": "calm, relaxing"
+      "style": "calm, relaxing",
+      "language": "en"
     },
     {
       "id": "Mark",
@@ -224,7 +278,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "energetic, rapid-fire"
+      "style": "energetic, rapid-fire",
+      "language": "en"
     },
     {
       "id": "Olivia",
@@ -232,7 +287,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "young",
-      "style": "British, upbeat"
+      "style": "British, upbeat",
+      "language": "en"
     },
     {
       "id": "Pixie",
@@ -240,7 +296,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "child",
-      "style": "childlike"
+      "style": "childlike",
+      "language": "en"
     },
     {
       "id": "Priya",
@@ -248,7 +305,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "adult",
-      "style": "Indian accent"
+      "style": "Indian accent",
+      "language": "en"
     },
     {
       "id": "Ronald",
@@ -256,7 +314,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "mature",
-      "style": "British, deep"
+      "style": "British, deep",
+      "language": "en"
     },
     {
       "id": "Sarah",
@@ -264,7 +323,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "young",
-      "style": "young adult, natural"
+      "style": "young adult, natural",
+      "language": "en"
     },
     {
       "id": "Shaun",
@@ -272,7 +332,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "adult",
-      "style": "friendly, dynamic"
+      "style": "friendly, dynamic",
+      "language": "en"
     },
     {
       "id": "Theodore",
@@ -280,7 +341,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "mature",
-      "style": "gravelly, elderly"
+      "style": "gravelly, elderly",
+      "language": "en"
     },
     {
       "id": "Timothy",
@@ -288,7 +350,8 @@
       "provider": "gmi",
       "gender": "male",
       "age": "young",
-      "style": "lively American"
+      "style": "lively American",
+      "language": "en"
     },
     {
       "id": "Wendy",
@@ -296,7 +359,8 @@
       "provider": "gmi",
       "gender": "female",
       "age": "adult",
-      "style": "British, posh"
+      "style": "British, posh",
+      "language": "en"
     }
   ]
 }

@@ -243,6 +243,7 @@ const TRANSLATIONS = {
     filterMale: "Male",
     filterNeutral: "Neutral",
     filterAnyAge: "Any age",
+    filterAnyLanguage: "Any language",
     filterChild: "Child",
     filterYoung: "Young / teen",
     filterAdult: "Adult",
@@ -586,6 +587,7 @@ const TRANSLATIONS = {
     filterMale: "Männlich",
     filterNeutral: "Neutral",
     filterAnyAge: "Beliebiges Alter",
+    filterAnyLanguage: "Alle Sprachen",
     filterChild: "Kind",
     filterYoung: "Jung / Teenager",
     filterAdult: "Erwachsen",
@@ -722,6 +724,10 @@ function applyI18n() {
   });
   const toggle = el("lang-toggle");
   if (toggle) toggle.textContent = lang === "de" ? "EN" : "DE";
+  // Language names come from Intl, not from data-i18n, so they have to be
+  // rebuilt by hand when the UI language changes.
+  buildLanguageFilter("create");
+  buildLanguageFilter("edit");
 }
 
 function setLang(next) {
@@ -987,6 +993,8 @@ const PROVIDER_LABEL = { openai: "OpenAI TTS", gmi: "GMI (Inworld)" };
 
 async function loadVoices() {
   state.voices = await api("/voices").catch(() => ({}));
+  buildLanguageFilter("create");
+  buildLanguageFilter("edit");
   refreshVoicePicker("create");
 }
 
@@ -1016,10 +1024,16 @@ function buildVoicePicker(select, currentValue, filters) {
   none.value = "";
   none.textContent = t("voiceNone");
   select.appendChild(none);
+  const language = filters && filters.language;
   let shown = 0;
   for (const [provider, voices] of Object.entries(state.voices || {})) {
     const filtered = voices.filter((v) =>
-      (!gender || v.gender === gender) && (!age || v.age === age));
+      (!gender || v.gender === gender)
+      && (!age || v.age === age)
+      // "multi" voices (OpenAI) read any language acceptably, so they stay
+      // visible whichever language is selected. Inworld voices don't — each is
+      // built for one language — so they only show under their own.
+      && (!language || v.language === language || v.language === "multi"));
     if (!filtered.length) continue;
     const group = document.createElement("optgroup");
     group.label = PROVIDER_LABEL[provider] || provider;
@@ -1050,8 +1064,46 @@ function refreshVoicePicker(prefix) {
   const filters = {
     gender: el(`${prefix}-voice-filter-gender`).value,
     age: el(`${prefix}-voice-filter-age`).value,
+    language: el(`${prefix}-voice-filter-language`)?.value || "",
   };
   buildVoicePicker(select, select.value, filters);
+}
+
+// Fill a language filter from the catalog. Names come from Intl.DisplayNames in
+// the active UI language, so "de" reads as "Deutsch" for a German user and
+// "German" for an English one — without carrying a hand-written list of
+// language names in every translation.
+function buildLanguageFilter(prefix) {
+  const select = el(`${prefix}-voice-filter-language`);
+  if (!select) return;
+  const codes = new Set();
+  for (const voices of Object.values(state.voices || {})) {
+    for (const v of voices) {
+      if (v.language && v.language !== "multi") codes.add(v.language);
+    }
+  }
+  let names;
+  try {
+    names = new Intl.DisplayNames([lang], { type: "language" });
+  } catch { names = null; }
+
+  const previous = select.value;
+  select.innerHTML = "";
+  const any = document.createElement("option");
+  any.value = "";
+  any.textContent = t("filterAnyLanguage");
+  select.appendChild(any);
+  const sorted = [...codes].map((code) => ({
+    code,
+    label: (names && names.of(code)) || code.toUpperCase(),
+  })).sort((a, b) => a.label.localeCompare(b.label));
+  for (const { code, label } of sorted) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = label;
+    select.appendChild(option);
+  }
+  select.value = [...select.options].some((o) => o.value === previous) ? previous : "";
 }
 
 function splitVoiceValue(value) {
@@ -1451,6 +1503,7 @@ function setupCreateForm() {
   });
   el("create-voice-filter-gender").addEventListener("change", () => refreshVoicePicker("create"));
   el("create-voice-filter-age").addEventListener("change", () => refreshVoicePicker("create"));
+  el("create-voice-filter-language").addEventListener("change", () => refreshVoicePicker("create"));
   el("create-cancel").addEventListener("click", () => { form.hidden = true; });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1507,6 +1560,7 @@ async function uploadReferenceImage(characterId, file) {
 function setupProfileEditing() {
   el("edit-voice-filter-gender").addEventListener("change", () => refreshVoicePicker("edit"));
   el("edit-voice-filter-age").addEventListener("change", () => refreshVoicePicker("edit"));
+  el("edit-voice-filter-language").addEventListener("change", () => refreshVoicePicker("edit"));
   el("edit-profile-button").addEventListener("click", () => {
     const c = state.currentCharacter;
     if (!c) return;
@@ -1517,6 +1571,7 @@ function setupProfileEditing() {
     el("edit-seed").value = c.seed ?? "";
     el("edit-voice-filter-gender").value = "";
     el("edit-voice-filter-age").value = "";
+    el("edit-voice-filter-language").value = "";
     buildVoicePicker(el("edit-voice"), c.voice_id ? `${c.voice_provider}:${c.voice_id}` : "");
     el("edit-form").hidden = false;
   });

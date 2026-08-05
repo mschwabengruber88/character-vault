@@ -53,6 +53,9 @@
               <option value="adult" data-i18n="filterAdult">Adult</option>
               <option value="mature" data-i18n="filterMature">Mature</option>
             </select>
+            <!-- Options are filled from the catalog itself, so adding a voice in
+                 a new language needs no markup change. -->
+            <select id="create-voice-filter-language" class="filter-select" aria-label="Filter by language"></select>
           </div>
           <div class="voice-pick-row">
             <select id="create-voice"></select>
@@ -223,6 +226,7 @@
                 <option value="adult" data-i18n="filterAdult">Adult</option>
                 <option value="mature" data-i18n="filterMature">Mature</option>
               </select>
+              <select id="edit-voice-filter-language" class="filter-select" aria-label="Filter by language"></select>
             </div>
             <div class="voice-pick-row">
               <select id="edit-voice"></select>
