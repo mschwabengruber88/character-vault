@@ -1181,17 +1181,16 @@ def _probe_duration_s(path: Path) -> float:
 _CAPTION_FONT = Path(__file__).parent / "static" / "fonts" / "NotoSans.ttf"
 
 
-def _draw_caption(image_bytes: bytes, text: str) -> bytes:
-    """Burn a bottom-bar caption into a still image with PIL, not ffmpeg's
-    drawtext — the locally-tested ffmpeg build doesn't have libfreetype
-    compiled in, and Railway's apt-get ffmpeg isn't guaranteed to either, so
-    this sidesteps that entirely and gets the same result more portably."""
-    from io import BytesIO
+def _caption_plate(w: int, h: int, text: str):
+    """The bottom bar and its wrapped text on a transparent RGBA plate.
 
+    Kept separate from the burn-in so the timeline can lay the same bar over an
+    already-moved frame instead of into the source picture — see
+    `_caption_overlay` for why that distinction matters.
+    """
     from PIL import Image, ImageDraw, ImageFont
 
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
-    w, h = img.size
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img, "RGBA")
     font_size = max(20, w // 22)
     font = ImageFont.truetype(str(_CAPTION_FONT), font_size)
@@ -1222,9 +1221,40 @@ def _draw_caption(image_bytes: bytes, text: str) -> bytes:
         tw = draw.textlength(line, font=font)
         draw.text(((w - tw) / 2, y), line, font=font, fill=(255, 255, 255, 255))
         y += line_height
+    return img
+
+
+def _draw_caption(image_bytes: bytes, text: str) -> bytes:
+    """Burn a bottom-bar caption into a still image with PIL, not ffmpeg's
+    drawtext — the locally-tested ffmpeg build doesn't have libfreetype
+    compiled in, and Railway's apt-get ffmpeg isn't guaranteed to either, so
+    this sidesteps that entirely and gets the same result more portably."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    with Image.open(BytesIO(image_bytes)) as src:
+        img = src.convert("RGBA")
+        img.alpha_composite(_caption_plate(img.width, img.height, text))
+        out = BytesIO()
+        img.convert("RGB").save(out, format="PNG")
+        return out.getvalue()
+
+
+def _caption_overlay(text: str, width: int, height: int) -> bytes:
+    """The caption alone, transparent, at the size of the FINISHED frame.
+
+    Captions used to be burned into the still before zoompan ran. A camera move
+    then dragged the text along with the picture and pushed it off the edge —
+    and video clips lost their line entirely, because only stills went through
+    Pillow at all. Compositing this plate after the move fixes both at once:
+    the bar sits on the output frame, so it holds still and works for any
+    source.
+    """
+    from io import BytesIO
 
     out = BytesIO()
-    img.save(out, format="PNG")
+    _caption_plate(width, height, text).save(out, format="PNG")
     return out.getvalue()
 
 
@@ -1635,7 +1665,7 @@ def _join_chain(*parts: str) -> str:
 # Bump whenever an encoder flag or a filter chain changes, or a stale piece
 # encoded by the previous version will be served as a cache hit and the film
 # will quietly mix two generations of settings.
-_PIECE_CACHE_VERSION = 1
+_PIECE_CACHE_VERSION = 2  # captions moved from the source image to an overlay
 
 
 def _cache_dir() -> Path:
@@ -1787,11 +1817,31 @@ def _encode_piece(clip: dict, out_path: Path, *, source: Path | None, offset: fl
     audio_args, audio_graph = _audio_inputs_for(clip, source, has_audio, offset, length, voice)
     args += audio_args
 
-    video_chain = _join_chain(geometry, _grade_chain(clip), video_fade, "format=yuv420p")
+    # The caption is composited AFTER the move and the grade. Burned into the
+    # source instead, a zoom drags it along and pushes it off the frame — and
+    # video clips never got one at all, because only stills passed through
+    # Pillow. The fade comes last so it covers picture and text together.
+    caption = (clip.get("text") or "").strip()
+    overlay = None
+    if caption and clip["source"] != "title":
+        overlay = _cached(
+            "caption", _cache_key({"t": caption, "w": width, "h": height}), ".png",
+            lambda out: out.write_bytes(_caption_overlay(caption, width, height)))
+
     if audio_fade:
         audio_graph = audio_graph.replace("[aout]", "[apre]") + f";[apre]{audio_fade}[aout]"
 
-    args += ["-filter_complex", f"[0:v]{video_chain}[vout];{audio_graph}",
+    base = _join_chain(geometry, _grade_chain(clip))
+    if overlay is None:
+        video_graph = f"[0:v]{_join_chain(base, video_fade, 'format=yuv420p')}[vout]"
+    else:
+        # -loop 1: a single PNG would otherwise cover only the first frame.
+        index = sum(1 for a in args if a == "-i")
+        args += ["-loop", "1", "-i", str(overlay)]
+        video_graph = (f"[0:v]{base}[vbase];[vbase][{index}:v]overlay=0:0"
+                       f",{_join_chain(video_fade, 'format=yuv420p')}[vout]")
+
+    args += ["-filter_complex", f"{video_graph};{audio_graph}",
              "-map", "[vout]", "-map", "[aout]",
              *_X264, *_AAC, "-t", f"{length:.3f}", str(out_path)]
     _run_ffmpeg(args, "piece", timeout=600)
@@ -2043,9 +2093,12 @@ def render_sequence(
                                  "source_duration": available})
             else:
                 sha = (clip.get("provenance") or {}).get("sha256")
-                key = _cache_key({"url": clip["url"], "sha": sha, "cap": clip.get("text")})
+                # No caption here any more — it is overlaid per piece, after the
+                # camera move, so the same normalised still serves every clip
+                # that happens to use this image.
+                key = _cache_key({"url": clip["url"], "sha": sha})
                 path = _cached("still", key, ".png", lambda out, c=clip: out.write_bytes(
-                    _still_png(download_bytes(c["url"]), c.get("text"))))
+                    _still_png(download_bytes(c["url"]), None)))
                 length = max(0.2, float(clip.get("duration") or 3.0))
                 prepared.append({"clip": {**clip, "_still": True}, "path": path,
                                  "still": True, "start": 0.0, "voice": voice})
