@@ -1,0 +1,10 @@
+# In /opt/n8n/Caddyfile einfuegen.
+loomina.schwabengruber.cloud {
+    reverse_proxy loomina:8000 {
+        # Ein Video rendert 1-4 Minuten, waehrend der Browser wartet.
+        transport http {
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+}

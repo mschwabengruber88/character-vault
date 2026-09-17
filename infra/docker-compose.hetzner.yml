@@ -1,0 +1,27 @@
+# Loomina auf dem eigenen Server (/opt/loomina).
+# Kein eigener Caddy: der vorhandene n8n-Caddy nimmt die Anfragen entgegen und
+# reicht sie im Docker-Netz weiter, wie bei den anderen Diensten auch.
+services:
+  loomina:
+    image: loomina/app:1
+    container_name: loomina
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # SQLite auf dem Volume, nicht im Image: sonst waere nach jedem neuen
+      # Build jede Figur und jedes geteilte Arbeitsbereich-Token weg.
+      DB_PATH: /data/character_vault.db
+      PORT: "8000"
+      CORS_ORIGINS: https://loomina.schwabengruber.cloud
+    volumes:
+      - vault-data:/data
+    # ffmpeg-Rendering braucht Luft, der Server hat aber nur 4 GB insgesamt.
+    mem_limit: 640m
+    networks: [n8n_default]
+
+volumes:
+  vault-data:
+
+networks:
+  n8n_default:
+    external: true
